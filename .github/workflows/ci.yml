@@ -1,0 +1,29 @@
+name: Compose validation
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Validate Compose configuration
+        env:
+          BACKEND_IMAGE: ghcr.io/mintech123/kimgosu-backend:validation-only
+          STORAGE_ROOT: /tmp/kimgosu-data
+        run: |
+          mkdir -p secrets
+          printf '%s' 'validation-only-not-a-real-secret' > secrets/db_password.txt
+          printf '%s' 'validation-only-not-a-real-secret' > secrets/jwt_secret.txt
+          docker compose config --quiet
+
+# Application tests, image publication and PC deployment will be added when
+# the backend Dockerfile and the Windows deployment runner are available.

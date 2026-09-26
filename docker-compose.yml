@@ -1,0 +1,162 @@
+name: kimgosu
+
+# CI builds one backend image and supplies its immutable GHCR reference.
+# Expected image contents and commands are documented in DOCKER.md.
+x-backend: &backend
+  image: ${BACKEND_IMAGE:?Set BACKEND_IMAGE to a built backend image}
+  restart: unless-stopped
+  init: true
+  environment: &backend-env
+    APP_ENV: production
+    DB_HOST: db
+    DB_PORT: "5432"
+    DB_NAME: ${POSTGRES_DB:-kimgosu}
+    DB_USER: ${POSTGRES_USER:-kimgosu}
+    DB_PASSWORD_FILE: /run/secrets/db_password
+    JWT_SECRET_FILE: /run/secrets/jwt_secret
+    CELERY_BROKER_URL: redis://redis:6379/0
+    CHAT_REDIS_URL: redis://redis:6379/1
+    UPLOAD_DIR: /app/uploads
+  secrets:
+    - db_password
+    - jwt_secret
+  networks:
+    - backend
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+services:
+  proxy:
+    image: nginx:1.28-alpine
+    restart: unless-stopped
+    ports:
+      # Local development access only. TLS is required before public exposure.
+      - "127.0.0.1:${HTTP_PORT:-8080}:80"
+    volumes:
+      - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - backend
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  api:
+    <<: *backend
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
+    volumes:
+      - type: bind
+        source: "${STORAGE_ROOT:-G:/shared_storage/kimgosu}/uploads"
+        target: /app/uploads
+        bind:
+          create_host_path: false
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    stop_grace_period: 30s
+
+  worker:
+    <<: *backend
+    command: ["celery", "-A", "app.tasks.celery_app:celery_app", "worker", "--loglevel=info", "--concurrency=2"]
+    volumes:
+      - type: bind
+        source: "${STORAGE_ROOT:-G:/shared_storage/kimgosu}/uploads"
+        target: /app/uploads
+        bind:
+          create_host_path: false
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    stop_grace_period: 60s
+
+  scheduler:
+    <<: *backend
+    command: ["celery", "-A", "app.tasks.celery_app:celery_app", "beat", "--loglevel=info", "--schedule=/app/scheduler/celerybeat-schedule"]
+    volumes:
+      - type: bind
+        source: "${STORAGE_ROOT:-G:/shared_storage/kimgosu}/scheduler"
+        target: /app/scheduler
+        bind:
+          create_host_path: false
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  migrate:
+    <<: *backend
+    restart: "no"
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-kimgosu}
+      POSTGRES_USER: ${POSTGRES_USER:-kimgosu}
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    secrets:
+      - db_password
+    volumes:
+      - type: bind
+        source: "${STORAGE_ROOT:-G:/shared_storage/kimgosu}/postgres"
+        target: /var/lib/postgresql/data
+        bind:
+          create_host_path: false
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks:
+      - backend
+
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - type: bind
+        source: "${STORAGE_ROOT:-G:/shared_storage/kimgosu}/redis"
+        target: /data
+        bind:
+          create_host_path: false
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - backend
+
+networks:
+  backend:
+    driver: bridge
+
+secrets:
+  db_password:
+    file: ./secrets/db_password.txt
+  jwt_secret:
+    file: ./secrets/jwt_secret.txt
