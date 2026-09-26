@@ -19,11 +19,10 @@ if (-not $env:GHCR_USERNAME -or -not $env:GHCR_TOKEN) { throw 'GHCR login creden
 
 $dockerConfig = Join-Path $deployDir 'docker-auth-temp'
 New-Item -ItemType Directory -Force -Path $dockerConfig | Out-Null
-$env:DOCKER_CONFIG = $dockerConfig
 try {
-    $env:GHCR_TOKEN | docker login ghcr.io -u $env:GHCR_USERNAME --password-stdin
+    $env:GHCR_TOKEN | docker --config $dockerConfig login ghcr.io -u $env:GHCR_USERNAME --password-stdin
     if ($LASTEXITCODE -ne 0) { throw 'GHCR login failed.' }
-    docker pull $env:BACKEND_IMAGE
+    docker --config $dockerConfig pull $env:BACKEND_IMAGE
     if ($LASTEXITCODE -ne 0) { throw 'Image pull failed.' }
 
     New-Item -ItemType Directory -Force -Path (Join-Path $deployDir 'deploy') | Out-Null
@@ -56,6 +55,6 @@ try {
         Pop-Location
     }
 } finally {
-    docker logout ghcr.io | Out-Null
+    docker --config $dockerConfig logout ghcr.io | Out-Null
     Remove-Item -LiteralPath $dockerConfig -Recurse -Force -ErrorAction SilentlyContinue
 }
