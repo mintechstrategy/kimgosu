@@ -4,10 +4,12 @@ import asyncio
 import json
 import logging
 import os
+from pathlib import Path
 import secrets
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 from starlette.concurrency import run_in_threadpool
@@ -31,7 +33,8 @@ class RoomCreate(BaseModel):
 
 class MessageCreate(BaseModel):
     clientMessageId: UUID
-    text: str = Field(min_length=1, max_length=4000)
+    text: str = Field(default="", max_length=4000)
+    attachmentIds: list[UUID] = Field(default_factory=list, max_length=5)
 
 
 class ReadUpdate(BaseModel):
@@ -56,15 +59,38 @@ def room_for_user(connection, room_id: UUID, user_id: UUID):
     return row
 
 
-def serialize_message(row):
+def serialize_attachment(row):
+    return {"id": str(row["id"]), "filename": row["filename"],
+            "contentType": row["content_type"], "byteSize": row["byte_size"]}
+
+
+def attachment_map(connection, message_ids):
+    result = {message_id: [] for message_id in message_ids}
+    if message_ids:
+        rows = connection.execute(text("""
+            SELECT id, message_id, filename, content_type, byte_size
+            FROM chat_attachments WHERE message_id = ANY(:ids)
+            ORDER BY created_at, id
+        """), {"ids": list(message_ids)}).mappings()
+        for row in rows:
+            result[row["message_id"]].append(serialize_attachment(row))
+    return result
+
+
+def serialize_message(row, attachments=None):
     return {
         "id": str(row["id"]),
         "roomId": str(row["room_id"]),
         "senderUserId": str(row["sender_user_id"]),
         "clientMessageId": str(row["client_message_id"]),
         "text": row["body"],
+        "attachments": attachments or [],
         "createdAt": row["created_at"].isoformat(),
     }
+
+
+def attachment_path(attachment_id: UUID) -> Path:
+    return Path(os.environ["UPLOAD_DIR"]) / "chat" / str(attachment_id)
 
 
 @router.post("/subjects", status_code=201)
@@ -193,18 +219,89 @@ def list_messages(room_id: UUID, request: Request, before: UUID | None = None,
             ORDER BY created_at DESC, id DESC LIMIT :limit
         """), {"room_id": room_id, "cursor_time": cursor["created_at"] if cursor else None,
                 "cursor_id": cursor["id"] if cursor else None, "limit": limit + 1}).mappings().all()
-    has_more = len(rows) > limit
-    rows = rows[:limit]
-    return {"items": [serialize_message(x) for x in reversed(rows)],
+        has_more = len(rows) > limit
+        rows = rows[:limit]
+        files = attachment_map(connection, [row["id"] for row in rows])
+    return {"items": [serialize_message(x, files[x["id"]]) for x in reversed(rows)],
             "nextCursor": str(rows[-1]["id"]) if has_more else None}
+
+
+@router.post("/rooms/{room_id}/attachments", status_code=201)
+def upload_attachment(room_id: UUID, request: Request, file: UploadFile = File(...),
+                      principal: dict = Depends(identity)):
+    attachment_id = uuid4()
+    path = attachment_path(attachment_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    filename = (file.filename or "file").replace("\\", "/").split("/")[-1]
+    filename = "".join(ch for ch in filename if ch.isprintable())[:255] or "file"
+    content_type = (file.content_type or "application/octet-stream")[:255]
+    byte_size = 0
+    try:
+        with db(request).connect() as connection:
+            room_for_user(connection, room_id, principal["user_id"])
+        with path.open("xb") as output:
+            while chunk := file.file.read(1024 * 1024):
+                byte_size += len(chunk)
+                if byte_size > 100 * 1024 * 1024:
+                    raise HTTPException(413, "Attachment exceeds 100 MB")
+                output.write(chunk)
+        if byte_size == 0:
+            raise HTTPException(422, "Empty attachment")
+        with db(request).begin() as connection:
+            connection.execute(text("""
+                INSERT INTO chat_attachments
+                  (id, room_id, uploader_user_id, filename, content_type, byte_size)
+                VALUES (:id, :room_id, :user_id, :filename, :content_type, :byte_size)
+            """), {"id": attachment_id, "room_id": room_id,
+                    "user_id": principal["user_id"], "filename": filename,
+                    "content_type": content_type, "byte_size": byte_size})
+    except Exception:
+        path.unlink(missing_ok=True)
+        raise
+    return {"id": str(attachment_id), "filename": filename,
+            "contentType": content_type, "byteSize": byte_size}
+
+
+@router.get("/attachments/{attachment_id}/download")
+def download_attachment(attachment_id: UUID, request: Request,
+                        principal: dict = Depends(identity)):
+    with db(request).connect() as connection:
+        row = connection.execute(text("""
+            SELECT a.room_id, a.filename, a.message_id FROM chat_attachments a
+            JOIN chat_participants p ON p.room_id = a.room_id
+            WHERE a.id = :id AND p.user_id = :user_id
+        """), {"id": attachment_id, "user_id": principal["user_id"]}).mappings().first()
+        if row is None or row["message_id"] is None:
+            raise HTTPException(404, "Attachment not found")
+    path = attachment_path(attachment_id)
+    if not path.is_file():
+        raise HTTPException(404, "Attachment file missing")
+    return FileResponse(path, filename=row["filename"], media_type="application/octet-stream",
+                        headers={"X-Content-Type-Options": "nosniff", "Cache-Control": "private, no-store"})
+
+
+@router.delete("/attachments/{attachment_id}", status_code=204)
+def discard_attachment(attachment_id: UUID, request: Request,
+                       principal: dict = Depends(identity)):
+    with db(request).begin() as connection:
+        deleted = connection.execute(text("""
+            DELETE FROM chat_attachments
+            WHERE id = :id AND uploader_user_id = :user_id AND message_id IS NULL
+            RETURNING id
+        """), {"id": attachment_id, "user_id": principal["user_id"]}).scalar_one_or_none()
+        if deleted is None:
+            raise HTTPException(404, "Unsent attachment not found")
+    attachment_path(attachment_id).unlink(missing_ok=True)
 
 
 @router.post("/rooms/{room_id}/messages", status_code=201)
 async def send_message(room_id: UUID, body: MessageCreate, request: Request,
                        principal: dict = Depends(identity)):
     message_text = body.text.strip()
-    if not message_text:
-        raise HTTPException(422, "Message cannot be blank")
+    if not message_text and not body.attachmentIds:
+        raise HTTPException(422, "Message needs text or an attachment")
+    if len(set(body.attachmentIds)) != len(body.attachmentIds):
+        raise HTTPException(422, "Duplicate attachment ID")
     def persist():
         with db(request).begin() as connection:
             room_for_user(connection, room_id, principal["user_id"])
@@ -225,13 +322,27 @@ async def send_message(room_id: UUID, body: MessageCreate, request: Request,
                         "client_id": body.clientMessageId}).mappings().one()
                 if row["body"] != message_text:
                     raise HTTPException(409, "clientMessageId was already used for different content")
+                files = attachment_map(connection, [row["id"]])[row["id"]]
+                if {UUID(item["id"]) for item in files} != set(body.attachmentIds):
+                    raise HTTPException(409, "clientMessageId was already used for different attachments")
             else:
+                if body.attachmentIds:
+                    attached = connection.execute(text("""
+                        UPDATE chat_attachments SET message_id = :message_id
+                        WHERE id = ANY(:ids) AND room_id = :room_id
+                          AND uploader_user_id = :user_id AND message_id IS NULL
+                        RETURNING id
+                    """), {"message_id": row["id"], "ids": body.attachmentIds,
+                            "room_id": room_id, "user_id": principal["user_id"]}).scalars().all()
+                    if len(attached) != len(body.attachmentIds):
+                        raise HTTPException(409, "Attachment is missing, owned by another user, or already sent")
                 connection.execute(text("""
                 UPDATE chat_rooms
                 SET last_message_at = GREATEST(COALESCE(last_message_at, :created_at), :created_at)
                 WHERE id = :room_id
                 """), {"created_at": row["created_at"], "room_id": room_id})
-            return serialize_message(row), created
+                files = attachment_map(connection, [row["id"]])[row["id"]]
+            return serialize_message(row, files), created
 
     result, created = await run_in_threadpool(persist)
     if created:

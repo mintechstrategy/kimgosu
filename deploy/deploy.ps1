@@ -46,7 +46,7 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Database migration failed.' }
         docker compose up -d --no-deps --wait api worker scheduler
         if ($LASTEXITCODE -ne 0) { throw 'Application containers failed.' }
-        docker compose up -d --no-deps --wait proxy
+        docker compose up -d --no-deps --force-recreate --wait proxy
         if ($LASTEXITCODE -ne 0) { throw 'Proxy failed.' }
         $status = Invoke-RestMethod -Uri 'http://127.0.0.1:8080/health/ready' -TimeoutSec 15
         if ($status.status -ne 'ready') { throw 'Readiness smoke test failed.' }

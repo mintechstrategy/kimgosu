@@ -7,3 +7,4 @@ celery[redis]>=5.4,<6
 alembic>=1.14,<2
 SQLAlchemy>=2.0,<3
 PyJWT>=2.10,<3
+python-multipart>=0.0.20,<1

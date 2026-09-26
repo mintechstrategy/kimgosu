@@ -45,6 +45,18 @@ def call(method, path, bearer=None, body=None, expected=200):
     return json.loads(raw) if raw else None
 
 
+def upload(room_id, bearer, payload=b"file-content"):
+    boundary = "kimgosu-test-boundary"
+    data = (f"--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"example.txt\"\r\n"
+            "Content-Type: text/plain\r\n\r\n").encode() + payload + f"\r\n--{boundary}--\r\n".encode()
+    req = Request(BASE + f"/rooms/{room_id}/attachments", method="POST", data=data,
+                  headers={"Content-Type": f"multipart/form-data; boundary={boundary}",
+                           "Authorization": f"Bearer {bearer}"})
+    with urlopen(req, timeout=10) as response:
+        assert response.status == 201
+        return json.load(response)
+
+
 def main():
     owner, visitor, stranger = uuid4(), uuid4(), uuid4()
     owner_token = token(owner)
@@ -72,10 +84,22 @@ def main():
          {"clientMessageId": client_id, "text": "Changed"}, 409)
     call("POST", path, stranger_token,
          {"clientMessageId": str(uuid4()), "text": "No access"}, 404)
+    attachment = upload(room["id"], visitor_token)
+    call("GET", f"/attachments/{attachment['id']}/download", owner_token, expected=404)
+    attachment_message = call("POST", path, visitor_token,
+                              {"clientMessageId": str(uuid4()), "attachmentIds": [attachment["id"]]}, 201)
+    assert attachment_message["attachments"][0]["id"] == attachment["id"]
+    download = Request(BASE + f"/attachments/{attachment['id']}/download",
+                       headers={"Authorization": f"Bearer {owner_token}"})
+    with urlopen(download, timeout=10) as response:
+        assert response.read() == b"file-content"
+    call("GET", f"/attachments/{attachment['id']}/download", stranger_token, expected=404)
+    unsent = upload(room["id"], visitor_token)
+    call("DELETE", f"/attachments/{unsent['id']}", visitor_token, expected=204)
     listing = call("GET", path, owner_token)
-    assert [m["id"] for m in listing["items"]] == [message["id"]]
+    assert [m["id"] for m in listing["items"]] == [message["id"], attachment_message["id"]]
     rooms = call("GET", "/rooms", owner_token)
-    assert rooms["items"][0]["unreadCount"] == 1
+    assert rooms["items"][0]["unreadCount"] == 2
     second_subject = call("POST", "/subjects", writer, {"subjectType": "future_service",
         "subjectId": str(uuid4()), "ownerUserId": str(owner)}, 201)
     call("POST", "/rooms", visitor_token, {"subjectId": second_subject["id"]}, 201)
@@ -85,12 +109,17 @@ def main():
     assert len(second_page["items"]) == 1 and second_page["items"][0]["id"] != first_page["items"][0]["id"]
     call("POST", f"/rooms/{room['id']}/read", owner_token,
          {"throughMessageId": message["id"]})
-    assert call("GET", "/rooms", owner_token)["items"][0]["unreadCount"] == 0
+    assert next(item for item in call("GET", "/rooms", owner_token)["items"]
+                if item["id"] == room["id"])["unreadCount"] == 1
+    call("POST", f"/rooms/{room['id']}/read", owner_token,
+         {"throughMessageId": attachment_message["id"]})
+    assert next(item for item in call("GET", "/rooms", owner_token)["items"]
+                if item["id"] == room["id"])["unreadCount"] == 0
     ticket = call("POST", f"/rooms/{room['id']}/ws-ticket", owner_token)
     assert ticket["ticket"] and ticket["expiresInSeconds"] == 30
     call("POST", f"/rooms/{room['id']}/ws-ticket", stranger_token, expected=404)
     call("GET", "/rooms", expected=401)
-    print("PASS: subject registration, room reuse, membership, message idempotency, read state, ticket")
+    print("PASS: subjects, rooms, access control, messages, private attachments, read state, tickets")
 
 
 if __name__ == "__main__":

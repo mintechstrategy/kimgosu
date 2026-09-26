@@ -14,7 +14,9 @@
 
 `subject_type + subject_id`는 서비스를 가리키는 안정적인 키다. 채팅 DB는 특정 서비스 테이블에 직접 묶이지 않는다. 각 서비스 도메인이 자체 리소스를 검증한 뒤 `chat:subjects:write` 권한으로 subject를 등록한다. 일반 사용자가 임의의 서비스나 소유자를 지정해 subject를 만들 수 없다. 한 subject에 대해 발신자별 방 하나가 생성되며 재요청 시 기존 방을 돌려준다. 같은 서비스에서 별도의 거래/사건마다 채팅방이 필요하면 해당 거래/사건을 별도 subject로 등록한다.
 
-초기 버전은 2인 대화를 제공한다. 참가자 테이블은 이후 그룹 대화에도 확장할 수 있다. 현재 구현은 텍스트 메시지에 한정한다. 사진·파일 업로드는 파일 서비스와 권한 모델을 만든 뒤 메시지 첨부 관계로 추가한다. 결제·거래 상태는 채팅 테이블에 넣지 않는다.
+초기 버전은 2인 대화를 제공한다. 참가자 테이블은 이후 그룹 대화에도 확장할 수 있다. 텍스트와 비공개 파일 첨부를 지원한다. 파일은 방에 업로드한 뒤 메시지에 연결하며, 메시지당 최대 5개·파일당 최대 100MB다. 결제·거래 상태는 채팅 테이블에 넣지 않는다.
+
+메시지에 연결하지 않은 업로드는 24시간 후 정기 작업이 삭제한다. 파일 원본 이름은 메타데이터로만 사용하고 저장 경로에는 무작위 UUID를 쓴다. 다운로드는 참여자 인증을 거쳐 첨부 형식과 관계없이 다운로드로 응답한다.
 
 ## 인증
 
@@ -33,15 +35,18 @@ REST: `Authorization: Bearer <JWT>`. 검증 항목은 HS256 서명, `iss=kimgosu
 | GET | `/rooms?limit=20&cursor=` | 내가 참여한 방과 안 읽은 수 조회. `nextCursor`로 다음 페이지 |
 | GET | `/rooms/{id}` | 방과 subject, 참여자 조회 |
 | GET | `/rooms/{id}/messages?limit=30&before=` | 시간순 메시지. `nextCursor`는 다음 요청의 `before` 값 |
-| POST | `/rooms/{id}/messages` | `{clientMessageId:UUID,text}`. 동일 클라이언트 ID 재시도는 기존 메시지 반환; 다른 내용이면 409 |
+| POST | `/rooms/{id}/attachments` | multipart `file` 한 개 업로드. 방 참여자만 가능. 메시지당 최대 5개 연결 |
+| GET | `/attachments/{id}/download` | 연결된 파일을 방 참여자만 다운로드. 브라우저에서 다운로드로 처리 |
+| DELETE | `/attachments/{id}` | 아직 메시지에 연결하지 않은 자신의 파일 삭제 |
+| POST | `/rooms/{id}/messages` | `{clientMessageId:UUID,text?,attachmentIds?}`. 텍스트 또는 첨부 필수. 동일 클라이언트 ID 재시도는 기존 메시지 반환; 다른 내용이면 409 |
 | POST | `/rooms/{id}/read` | `{throughMessageId}`까지 읽음. 상태는 뒤로 가지 않음 |
 | POST | `/rooms/{id}/ws-ticket` | 참여자에게 30초짜리 일회용 티켓 발급 |
 | WS | `/ws/rooms/{id}?ticket=` | `message.created`, `message.read` 이벤트 수신 |
 
-WebSocket은 수신 전용이다. 쓰기는 REST에서 DB에 확정한 뒤 Redis로 알린다. 일시적인 Redis 이벤트 누락이나 재연결 시 `GET /messages`로 서버 기록을 다시 읽는다. 여러 FastAPI 프로세스 사이의 이벤트 전달에도 Redis를 사용한다. 메시지 본문은 1–4000자, 공백만 있는 본문은 거부한다.
+WebSocket은 수신 전용이다. 쓰기는 REST에서 DB에 확정한 뒤 Redis로 알린다. 일시적인 Redis 이벤트 누락이나 재연결 시 `GET /messages`로 서버 기록을 다시 읽는다. 여러 FastAPI 프로세스 사이의 이벤트 전달에도 Redis를 사용한다. 메시지 본문은 최대 4000자, 텍스트와 첨부가 모두 없으면 거부한다. 첨부 파일은 웹 서버 정적 경로로 공개하지 않는다.
 
 방이 없거나 요청자가 참여하지 않은 경우 둘 다 404를 반환한다. 인증 누락/만료는 401, 서비스 등록 권한 부족은 403이다. 서비스 subject의 소유자 변경은 채팅 참여자를 자동 변경하지 않으므로 409로 거부한다.
 
 ## 검증
 
-격리된 Compose 스택에서 방 재사용, 비참여자 차단, 중복 전송, 읽음·목록 페이지, 브라우저용 티켓, Nginx를 통과하는 WebSocket 실시간 수신을 검증한다. CI도 동일한 테스트를 수행한다.
+격리된 Compose 스택에서 방 재사용, 비참여자 차단, 중복 전송, 읽음·목록 페이지, 비공개 파일 업로드·다운로드, 브라우저용 티켓, Nginx를 통과하는 WebSocket 실시간 수신을 검증한다. CI도 동일한 테스트를 수행한다.
