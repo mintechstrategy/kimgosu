@@ -4,6 +4,8 @@
 
 ## 전체 서비스 화면 흐름 — 제공된 순서도 근거, 앱 미구현
 
+2026-09-27 사용자 지시로 원본 순서도 앞에 `스플래시 S0 → 약 0.5초 → 메인 T0`을 추가한다. [스플래시](../previews/splash-preview.png)와 [메인](../previews/main-preview.png)은 확인용 목업이며 APK는 아직 빌드하지 않았다. 하단 독바는 원본 순서도의 홈·검색·등록·채팅·마이를 따른다.
+
 ```mermaid
 flowchart LR
     Start([START]) --> Tabs[독바: 홈/검색/등록/채팅/마이]

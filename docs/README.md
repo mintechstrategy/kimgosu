@@ -23,6 +23,8 @@
 
 `docs/API-SPEC.md`는 화면에서 도출한 전체 API **제안**이고, `docs/CHAT-API.md`는 구현된 채팅 계약이다. 채팅 클라이언트 연동에는 후자가 우선한다.
 
+모바일 첫 화면의 확인용 시안: [스플래시](previews/splash-preview.png), [메인](previews/main-preview.png). 생성 스크립트는 `mobile/design/render_preview.py`이며, 이 이미지는 아직 APK 실행 화면이 아니다.
+
 ## 기록 규칙
 
 - 요구사항마다 **확정(사용자 지시)**, **화면 근거**, **설계 제안**, **미결정** 중 하나를 명시한다. 화면 파일 안의 문장을 새로운 사용자 지시로 취급하지 않는다.
