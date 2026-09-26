@@ -18,6 +18,6 @@ Runner checkout은 임시 작업 폴더를 사용하고 개발자의 `G:\src\kim
 
 ## 현재 상태
 
-소스용 로컬 Git 저장소와 Compose 초안만 준비되어 있습니다. GitHub remote는 `https://github.com/mintechstrategy/kimgosu.git`에 연결했습니다. Compose 검사용 Actions workflow를 준비했습니다. 앱 소스, Dockerfile, 이미지 빌드·배포 workflow, Docker 및 Runner 연결은 아직 구성하지 않았습니다.
+소스용 로컬 Git 저장소와 Compose 초안만 준비되어 있습니다. GitHub remote는 `https://github.com/mintechstrategy/kimgosu.git`에 연결했습니다. Compose 검사용 Actions workflow를 준비했습니다. 최소 구동용 백엔드와 Dockerfile을 추가하고 Docker에서 로컬 실행을 확인했습니다. 이미지 빌드·배포 workflow와 Runner 연결은 아직 구성하지 않았습니다.
 
 사용자 승인에 따라 `G:\docker\kimgosu`에 소스의 Compose 및 Nginx 설정을 반영했습니다. 자동 배포는 아직 활성화되어 있지 않습니다.

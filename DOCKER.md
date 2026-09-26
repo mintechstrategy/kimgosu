@@ -1,6 +1,6 @@
 # 김고수 Docker 구성
 
-이 구성은 배포용 초안입니다. 아직 앱 소스, Dockerfile, GHCR 이미지, GitHub Actions 및 Runner는 없습니다. Compose 파일만으로 앱이 실행되거나 자동 배포되지는 않습니다.
+FastAPI 상태 확인 API, Celery worker/beat, Alembic 초기 마이그레이션과 Dockerfile을 포함합니다. 실제 김고수 업무 기능은 아직 구현하지 않았습니다. 로컬 이미지 `kimgosu-backend:local`로 실행을 검증했습니다. GHCR 게시 및 PC Runner 자동 배포는 아직 연결하지 않았습니다.
 
 ## 준비
 
@@ -68,3 +68,9 @@ Docker Desktop의 G 드라이브 접근 및 PostgreSQL 초기화/파일 권한�
 이 폴더는 백업이 아닙니다. PostgreSQL은 실행 중인 데이터 폴더를 단순 복사하는 대신 DB 백업 도구로 백업하고, 업로드 파일도 별도 디스크 또는 외부 저장소에 백업해야 합니다.
 
 이미지 태그는 선택한 버전 계열로 지정했습니다. 실제 배포 전에 검증한 patch 버전 또는 digest로 고정합니다. PostgreSQL major 업그레이드는 단순 이미지 교체로 수행하지 않습니다.
+
+## 로컬 이미지 실행 기록
+
+소스 폴더에서 `docker build -t kimgosu-backend:local .`로 빌드합니다. 배포 폴더 `.env`에는 `BACKEND_IMAGE=kimgosu-backend:local`을 설정합니다. 배포 폴더에서 `docker compose up -d --wait`로 실행합니다.
+
+`http://localhost:8080/docs`에서 API 문서를 확인할 수 있습니다. `/health/ready`의 DB·Redis 연결, Worker ping, 업로드 쓰기, Alembic 초기 버전을 확인했습니다. scheduler는 기동되지만 업무용 정기 작업은 아직 등록하지 않았습니다.
