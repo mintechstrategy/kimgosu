@@ -18,12 +18,12 @@
 
 | Method | Path | 화면 동작 | 주요 입력 → 응답 |
 |---|---|---|---|
-| GET | `/catalog/categories` | 전체·인기 카테고리 | `mode=remote\|onsite\|all` → `id,name,serviceMode,popularityRank` |
+| GET | `/catalog/categories` | 전체·인기 카테고리 | `mode=remote/onsite/all` → `id,name,serviceMode,popularityRank` |
 | GET | `/catalog/regions` | 시·도 및 시·군·구 선택 | `parentId?` → `id,name,parentId` |
 | GET | `/home` | 홈의 최근 서비스·인기 서비스 | `regionIds?` → `recentServices,popularRemoteServices,popularCategories`; 지역 미설정 시 비대면 서비스 중심 |
 | GET | `/search/suggestions` | 검색어·연관 카테고리 | `q`(공백 제외 1자 이상) → `categories,recentQueries,popularQueries` |
-| GET | `/services` | 서비스 목록 | `categoryId,regionIds?,mode?,sort=recent\|popular,cursor,limit` → 서비스 카드 목록 |
-| GET | `/quote-requests` | 견적 요청 목록 | `categoryId?,regionIds?,status=open\|closed,sort=recent,cursor,limit` → 견적 카드 목록 |
+| GET | `/services` | 서비스 목록 | `categoryId,regionIds?,mode?,sort=recent/popular,cursor,limit` → 서비스 카드 목록 |
+| GET | `/quote-requests` | 견적 요청 목록 | `categoryId?,regionIds?,status=open/closed,sort=recent,cursor,limit` → 견적 카드 목록 |
 | PUT | `/me/search-history/{query}` | 최근 검색어 기록 | 로그인 사용자만 저장, 같은 검색어는 최신 기록으로 갱신 |
 | GET | `/me/search-history` | 최근 검색어 | 최근순 목록 |
 | DELETE | `/me/search-history/{query}` | 최근 검색어 삭제 | `204` |
