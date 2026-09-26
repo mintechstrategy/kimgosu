@@ -14,7 +14,7 @@
 |---|---|---|---|
 | 1 | 요구사항정의서 | [REQUIREMENTS.md](planning/REQUIREMENTS.md) | 요구사항 ID, 근거, 상태, 관련 산출물 |
 | 2 | 프로그램 명세서 | [PROGRAM-SPEC.md](architecture/PROGRAM-SPEC.md) | 기능·모듈·처리·예외·구현 상태 |
-| 3 | 코드인스턴스 | [CODE-INSTANCES.md](architecture/CODE-INSTANCES.md) | 설계 요소와 실제 코드·실행 컨테이너의 대응 |
+| 3 | 코드인스턴스 | [CODE-INSTANCES.md](architecture/CODE-INSTANCES.md) | 테이블·API에서 사용하는 코드 그룹, 값, 의미, 상태, 출처 |
 | 4 | 테이블정의서 | [TABLE-DEFINITION.md](architecture/TABLE-DEFINITION.md) | 실제 DB 스키마, 키·제약·관계·마이그레이션 |
 | 5 | 인터페이스 정의서 | [INTERFACE-DEFINITION.md](architecture/INTERFACE-DEFINITION.md) | 앱/웹·백엔드·외부 시스템·비동기 경계 |
 | 6 | API정의서 | [API-DEFINITION.md](api/API-DEFINITION.md) | 구현/제안 API 구분 및 상세 명세 진입점 |
@@ -30,6 +30,7 @@
 - 결정이 내려지면 [결정 기록](planning/DECISIONS.md)에 날짜·결정·근거·영향을 남기고 관련 문서를 갱신한다. 이전 제안과 충돌하면 우선순위를 명시한다.
 - 기능을 구현하기 전 해당 도메인의 미결정 사항을 확인하고, 구현 후 API/설계 문서의 실제 상태를 갱신한다.
 - 기능·정책·DB·배포가 바뀌는 커밋마다 위 8종의 영향 여부를 확인하고, 영향받은 문서를 같은 변경에서 갱신한다. 영향이 없는 문서는 억지로 수정하지 않는다.
+- 테이블 컬럼·API 필드에 새 구분값을 도입하거나 기존 값의 의미를 바꾸면 [코드인스턴스](architecture/CODE-INSTANCES.md)를 반드시 갱신한다.
 - 새 산출물은 `docs/planning/`(요구사항·흐름·결정), `docs/architecture/`(구성·데이터·배포 설계), `docs/api/`(도메인별 계약)에 둔다. 기존 두 API 문서는 링크를 유지하기 위해 현재 위치에 둔다.
 
 ## 원본 자료

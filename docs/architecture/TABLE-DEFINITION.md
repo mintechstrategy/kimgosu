@@ -11,3 +11,5 @@
 | `chat_attachments` | `id uuid`, `room_id uuid`, `uploader_user_id uuid`, `message_id uuid nullable`, `filename varchar(255)`, `content_type varchar(255)`, `byte_size bigint`, `created_at` | PK `id`; FK room CASCADE, message SET NULL, 참가자 FK; 크기 1–104857600 byte | 비공개 파일 메타데이터 |
 
 사용자/서비스/견적 테이블에 대한 FK가 없는 것은 채팅 모듈의 도메인 독립 설계 때문이다. 실제 계정 도메인이 구현되면 사용자 삭제·익명화 정책과 참조 무결성 방식을 [결정 기록](../planning/DECISIONS.md)에 따라 확정한다. 전체 컬럼 기본값과 인덱스는 마이그레이션 원문을 최종 기준으로 한다.
+
+`chat_subjects.subject_type`의 형식과 향후 등록되는 값은 [코드인스턴스](CODE-INSTANCES.md)의 `CHAT_SUBJECT_TYPE` 그룹에서 관리한다. 현재 DB는 코드 목록을 FK나 enum으로 제한하지 않는다.

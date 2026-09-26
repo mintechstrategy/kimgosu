@@ -1,17 +1,36 @@
 # 코드인스턴스
 
-기준일: 2026-09-27. 여기서 `코드인스턴스`는 설계 기능이 어떤 **소스 코드와 실행 컨테이너**로 실현되는지 추적하는 목록으로 정의한다. 다른 의미를 의도한 경우 정의를 갱신한다.
+기준일: 2026-09-27. 이 문서의 **코드**는 테이블 컬럼 또는 API 필드에 저장·전달하는 구분값이다. 소스 파일 목록이나 Docker 컨테이너 목록을 뜻하지 않는다. 코드값의 영문 표기는 저장/전송값이며, 화면 문구는 별도로 현지화한다.
 
-| 기능/인스턴스 | 소스 | 실행 단위 | 상태 |
-|---|---|---|---|
-| HTTP·WebSocket API | `app/main.py`, `app/chat/api.py`, `app/chat/auth.py` | `api` 컨테이너, Uvicorn worker 2개 | 구현 |
-| 비동기 작업 | `app/tasks/celery_app.py` | `worker`, `scheduler` 컨테이너 | 채팅 첨부 정리 구현 |
-| 스키마 적용 | `migrations/env.py`, `migrations/versions/` | 일회성 `migrate` 컨테이너 | 구현 |
-| 리버스 프록시 | `deploy/nginx.conf` | `proxy` 컨테이너 | 구현 |
-| 관계형 DB | Alembic SQL, `docker-compose.yml` | `db` (PostgreSQL 17) | 구현 |
-| 이벤트·작업 브로커 | `app/main.py`, `app/tasks/celery_app.py`, `docker-compose.yml` | `redis` (Redis 7.4) | 구현 |
-| CI 빌드·검증 | `.github/workflows/ci.yml`, `Dockerfile`, `tests/chat_*.py` | GitHub Actions | 구현 |
-| 로컬 배포 | `deploy/agent.py`, `deploy/deploy.ps1` | 사용자 PC 배포 에이전트와 Docker Compose | 구현 |
-| 모바일 앱·웹 | 해당 코드 없음 | 없음 | 미구현 |
+## 코드 관리 원칙
 
-소스 디렉터리 `G:\src\kimgosu`, 배포 디렉터리 `G:\docker\kimgosu`, 영속 저장소 `G:\shared_storage\kimgosu`의 구분은 [스토리지 배치](../../STORAGE-LAYOUT.md)를 따른다.
+- 코드 그룹 ID를 고정하고 값의 의미, 사용 위치, 상태, 출처를 함께 기록한다. 값의 이름을 바꾸거나 삭제하면 기존 DB 데이터와 앱/웹 클라이언트에 영향이 있으므로 호환·마이그레이션 계획을 먼저 적는다.
+- `구현`은 현재 코드·DB에서 실제로 쓰는 값, `제안`은 API 초안에만 있는 값이다. 제안값은 구현 계약이 아니다.
+- 사용자가 추가할 수 있는 카테고리·지역·리뷰 태그 같은 **기준정보 목록**은 이 문서에 임의로 열거하지 않는다. 해당 테이블과 운영 정책이 생기면 코드 그룹인지 기준정보인지 결정한다.
+- 현재 `common_codes` 같은 공통 코드 테이블은 없다. 아래 구현값은 채팅 스키마의 문자열 필드 또는 API/이벤트에서 사용한다.
+
+## 구현된 코드 그룹
+
+| 그룹 ID | 사용 위치 | 값 | 의미 | 근거·제약 |
+|---|---|---|---|---|
+| `CHAT_EVENT_TYPE` | WebSocket 이벤트 `type` | `message.created` | 새 메시지 저장 후 통지 | `app/chat/api.py`, [채팅 API](../CHAT-API.md) |
+| `CHAT_EVENT_TYPE` | WebSocket 이벤트 `type` | `message.read` | 읽음 위치 변경 후 통지 | `app/chat/api.py`, [채팅 API](../CHAT-API.md) |
+| `CHAT_SUBJECT_TYPE` | `chat_subjects.subject_type`, API `subjectType` | **확정 목록 없음** | 연결하는 업무 도메인의 종류 | `[a-z][a-z0-9_]{1,79}` 형식만 검사. 신규 도메인이 도입될 때 값과 소유 서비스를 이 표에 등록해야 함 |
+| `CHAT_SCOPE` | JWT `scope` | `chat:subjects:write` | 신뢰된 서비스의 채팅 subject 등록 권한 | `app/chat/auth.py` |
+| `HEALTH_STATUS` | `/health/live`, `/health/ready`의 `status` | `ok` | 프로세스 생존 | `app/main.py` |
+| `HEALTH_STATUS` | `/health/ready`의 `status` | `ready` | DB·Redis 사용 가능 | `app/main.py` |
+| `HEALTH_STATUS` | `/health/ready`의 `status` | `not_ready` | DB 또는 Redis 준비 실패, HTTP 503 | `app/main.py` |
+
+`CHAT_SUBJECT_TYPE`은 자유 형식 문자열이지만, 서비스 연동 시 의미가 바뀌면 기존 방의 연결 대상 해석이 달라진다. 따라서 실제로 쓰기 시작한 값은 이 문서에 추가하고 재사용·폐기 정책을 기록한다. 현재 제품 서비스/견적 도메인은 미구현이라 운영용 subject type을 확정하지 않았다.
+
+## 제안 단계의 코드 그룹 — 아직 DB/API 미구현
+
+| 그룹 ID | 사용 예정 위치 | 제안값 | 의미 | 근거·결정 필요 사항 |
+|---|---|---|---|---|
+| `SERVICE_MODE` | 서비스·견적 `mode`, 검색 필터 | `remote`, `onsite` | 비대면, 대면 | [API 초안](../API-SPEC.md). `all`은 목록 필터의 전체 선택값으로만 제안, 저장값 아님 |
+| `SERVICE_PACKAGE_TIER` | 서비스 `packages[].tier` | `basic`, `prime`, `super` | 서비스 패키지 등급 | [API 초안](../API-SPEC.md). 명칭·필수 등급 확인 필요 |
+| `QUOTE_REQUEST_STATUS` | 견적 `status` | `open`, `closed` | 접수 중, 마감 | [API 초안](../API-SPEC.md). 취소/숨김/완료 추가 여부 미결정 |
+| `SERVICE_SORT` | 서비스 목록 `sort` | `recent`, `popular` | 최신순, 인기순 | [API 초안](../API-SPEC.md). 인기 산식 미결정 |
+| `API_ERROR_CODE` | 공통 오류 응답 `code` | `VALIDATION_ERROR`, `UNAUTHENTICATED`, `FORBIDDEN`, `NOT_FOUND`, `CONFLICT`, `RATE_LIMITED`, `BLOCKED_CONTENT` | 오류 유형 | [API 초안](../API-SPEC.md). 현재 채팅 구현은 FastAPI 기본 오류 응답을 사용하므로 이 코드 문자열을 반환하지 않음 |
+
+이 표는 업무 정책을 확정한 후 실제 컬럼·API 필드와 1:1로 대조해 확장한다. `closingDays=3/7/14`는 견적 입력 규칙 후보로 [API 초안](../API-SPEC.md)에 있으나 상태 코드 그룹은 아니다.
