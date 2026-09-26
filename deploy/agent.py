@@ -19,6 +19,7 @@ STATE_FILE = DEPLOY_ROOT / "deployment-state.json"
 LOG_FILE = DEPLOY_ROOT / "deployment-agent.log"
 POLL_SECONDS = 30
 FILES = {"docker-compose.yml", "deploy/nginx.conf", "deploy/deploy.ps1", "DOCKER.md"}
+_credential_cache = None
 
 
 def log(message):
@@ -27,16 +28,20 @@ def log(message):
 
 
 def credential():
+    global _credential_cache
+    if _credential_cache is not None:
+        return _credential_cache
     result = subprocess.run(
         ["git", "credential", "fill"],
         input="protocol=https\nhost=github.com\nusername=mintechstrategy\n\n",
         text=True,
         capture_output=True,
         check=True,
-        timeout=20,
+        timeout=60,
     )
     values = dict(line.split("=", 1) for line in result.stdout.splitlines() if "=" in line)
-    return values["username"], values["password"]
+    _credential_cache = (values["username"], values["password"])
+    return _credential_cache
 
 
 def request(url, token):
@@ -107,8 +112,14 @@ def deploy(run, username, token):
 
 
 def check_once():
+    global _credential_cache
     username, token = credential()
-    run = latest_run(token)
+    try:
+        run = latest_run(token)
+    except urllib.error.HTTPError as exc:
+        if exc.code == 401:
+            _credential_cache = None
+        raise
     if not run or run["status"] != "completed" or run["conclusion"] != "success":
         return
     state = json.loads(STATE_FILE.read_text(encoding="utf-8")) if STATE_FILE.exists() else {}
