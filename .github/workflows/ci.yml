@@ -19,16 +19,36 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Check Python syntax
-        run: python -m compileall -q app migrations
+        run: python -m compileall -q app migrations tests
       - name: Validate Compose
         env:
           BACKEND_IMAGE: ghcr.io/mintechstrategy/kimgosu-backend:validation-only
           STORAGE_ROOT: /tmp/kimgosu-data
         run: |
           mkdir -p secrets
-          printf '%s' 'validation-only' > secrets/db_password.txt
-          printf '%s' 'validation-only' > secrets/jwt_secret.txt
+          openssl rand -hex 32 > secrets/db_password.txt
+          openssl rand -hex 32 > secrets/jwt_secret.txt
           docker compose config --quiet
+      - name: Build and exercise chat API
+        env:
+          BACKEND_IMAGE: kimgosu-backend:ci
+          STORAGE_ROOT: /tmp/kimgosu-data
+          CHAT_TEST_BASE: http://127.0.0.1:8080/api/v1/chat
+          CHAT_TEST_HTTP_PORT: "8080"
+          CHAT_TEST_JWT_SECRET_FILE: secrets/jwt_secret.txt
+        run: |
+          mkdir -p /tmp/kimgosu-data/{postgres,redis,uploads,scheduler}
+          docker build -t "$BACKEND_IMAGE" .
+          docker compose up -d --wait --wait-timeout 120
+          python -m pip install 'websocket-client>=1,<2'
+          python tests/chat_smoke.py
+          python tests/chat_realtime.py
+      - name: Stop test containers
+        if: always()
+        env:
+          BACKEND_IMAGE: kimgosu-backend:ci
+          STORAGE_ROOT: /tmp/kimgosu-data
+        run: docker compose down --remove-orphans
 
   build:
     if: github.event_name != 'pull_request'

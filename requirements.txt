@@ -1,7 +1,9 @@
 fastapi>=0.115,<1
 uvicorn>=0.34,<1
+wsproto>=1.2,<2
 psycopg[binary]>=3.2,<4
 redis>=5,<7
 celery[redis]>=5.4,<6
 alembic>=1.14,<2
 SQLAlchemy>=2.0,<3
+PyJWT>=2.10,<3

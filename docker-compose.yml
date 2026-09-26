@@ -17,6 +17,7 @@ x-backend: &backend
     CELERY_BROKER_URL: redis://redis:6379/0
     CHAT_REDIS_URL: redis://redis:6379/1
     UPLOAD_DIR: /app/uploads
+    FRONTEND_ORIGINS: ${FRONTEND_ORIGINS:-}
   secrets:
     - db_password
     - jwt_secret
@@ -125,7 +126,7 @@ services:
         bind:
           create_host_path: false
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
       interval: 5s
       timeout: 5s
       retries: 10

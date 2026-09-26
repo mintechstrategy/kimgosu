@@ -2,23 +2,33 @@ import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from redis import Redis
 from sqlalchemy import create_engine, text
 
 from app.settings import database_url
+from app.chat.api import router as chat_router
 
 
 @asynccontextmanager
 async def lifespan(app):
     app.state.db = create_engine(database_url(), pool_pre_ping=True, connect_args={"connect_timeout": 3})
     app.state.redis = Redis.from_url(os.environ["CHAT_REDIS_URL"], socket_connect_timeout=3, socket_timeout=3)
+    from redis.asyncio import Redis as AsyncRedis
+    app.state.chat_events = AsyncRedis.from_url(os.environ["CHAT_REDIS_URL"], decode_responses=True)
     yield
+    await app.state.chat_events.aclose()
     app.state.redis.close()
     app.state.db.dispose()
 
 
 app = FastAPI(title="Kimgosu API", version="0.1.0", lifespan=lifespan)
+origins = [origin.strip() for origin in os.getenv("FRONTEND_ORIGINS", "").split(",") if origin.strip()]
+if origins:
+    app.add_middleware(CORSMiddleware, allow_origins=origins, allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+                       allow_headers=["Authorization", "Content-Type"], allow_credentials=False)
+app.include_router(chat_router, prefix="/api/v1/chat", tags=["chat"])
 
 
 @app.get("/health/live")
