@@ -32,15 +32,15 @@ def credential():
     if _credential_cache is not None:
         return _credential_cache
     result = subprocess.run(
-        ["git", "credential", "fill"],
-        input="protocol=https\nhost=github.com\nusername=mintechstrategy\n\n",
+        ["git", "credential-manager", "get"],
+        input="protocol=https\nhost=github.com\npath=mintechstrategy/kimgosu.git\nusername=mintechstrategy\n\n",
         text=True,
         capture_output=True,
         check=True,
-        timeout=60,
+        timeout=15,
     )
     values = dict(line.split("=", 1) for line in result.stdout.splitlines() if "=" in line)
-    _credential_cache = (values["username"], values["password"])
+    _credential_cache = ("mintechstrategy", values["password"])
     return _credential_cache
 
 
