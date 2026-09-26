@@ -38,11 +38,18 @@ jobs:
           CHAT_TEST_JWT_SECRET_FILE: secrets/jwt_secret.txt
         run: |
           mkdir -p /tmp/kimgosu-data/{postgres,redis,uploads,scheduler}
+          sudo chown 10001:10001 /tmp/kimgosu-data/uploads /tmp/kimgosu-data/scheduler
           docker build -t "$BACKEND_IMAGE" .
           docker compose up -d --wait --wait-timeout 120
           python -m pip install 'websocket-client>=1,<2'
           python tests/chat_smoke.py
           python tests/chat_realtime.py
+      - name: Show service logs after test failure
+        if: failure()
+        env:
+          BACKEND_IMAGE: kimgosu-backend:ci
+          STORAGE_ROOT: /tmp/kimgosu-data
+        run: docker compose logs --tail=100 api migrate db
       - name: Stop test containers
         if: always()
         env:
