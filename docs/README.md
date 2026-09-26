@@ -4,11 +4,24 @@
 
 ## 읽는 순서
 
-1. [제품 기준선](planning/PRODUCT-BASELINE.md): 사용자 확정 요구, 화면 근거, 현재 구현 범위.
-2. [미결정 사항과 결정 기록](planning/DECISIONS.md): 기획의 빈칸과 이후 결정.
-3. [전체 API 초안](API-SPEC.md): 화면에서 도출한 **제안**. 구현 완료를 뜻하지 않는다.
-4. [채팅 API](CHAT-API.md): 현재 구현된 채팅 계약. 채팅 부분에서는 전체 API 초안보다 우선한다.
-5. [배포 문서](../DOCKER.md), [스토리지 배치](../STORAGE-LAYOUT.md): 운영·배포의 현행 문서.
+1. [제품 기준선](planning/PRODUCT-BASELINE.md)과 [미결정 사항·결정 기록](planning/DECISIONS.md).
+2. 아래 **8종 관리 산출물**에서 해당 기능의 현재 상태와 설계를 확인한다.
+3. 운영 절차는 [배포 문서](../DOCKER.md)와 [스토리지 배치](../STORAGE-LAYOUT.md)를 확인한다.
+
+## 8종 관리 산출물
+
+| 번호 | 산출물 | 기준 문서 | 관리 내용 |
+|---|---|---|---|
+| 1 | 요구사항정의서 | [REQUIREMENTS.md](planning/REQUIREMENTS.md) | 요구사항 ID, 근거, 상태, 관련 산출물 |
+| 2 | 프로그램 명세서 | [PROGRAM-SPEC.md](architecture/PROGRAM-SPEC.md) | 기능·모듈·처리·예외·구현 상태 |
+| 3 | 코드인스턴스 | [CODE-INSTANCES.md](architecture/CODE-INSTANCES.md) | 설계 요소와 실제 코드·실행 컨테이너의 대응 |
+| 4 | 테이블정의서 | [TABLE-DEFINITION.md](architecture/TABLE-DEFINITION.md) | 실제 DB 스키마, 키·제약·관계·마이그레이션 |
+| 5 | 인터페이스 정의서 | [INTERFACE-DEFINITION.md](architecture/INTERFACE-DEFINITION.md) | 앱/웹·백엔드·외부 시스템·비동기 경계 |
+| 6 | API정의서 | [API-DEFINITION.md](api/API-DEFINITION.md) | 구현/제안 API 구분 및 상세 명세 진입점 |
+| 7 | 화면설계서 | [SCREEN-DESIGN.md](planning/SCREEN-DESIGN.md) | 화면 ID, 역할, 흐름, 고수 화면 보완 상태 |
+| 8 | 서비스순서도 | [SERVICE-SEQUENCES.md](architecture/SERVICE-SEQUENCES.md) | 핵심 사용자·시스템 상호작용 순서 |
+
+`docs/API-SPEC.md`는 화면에서 도출한 전체 API **제안**이고, `docs/CHAT-API.md`는 구현된 채팅 계약이다. 채팅 클라이언트 연동에는 후자가 우선한다.
 
 ## 기록 규칙
 
@@ -16,6 +29,7 @@
 - 화면에서 읽은 내용은 화면 ID를, 구현 설명은 코드·마이그레이션·테스트를 근거로 적는다. 근거가 없으면 추정이라고 쓴다.
 - 결정이 내려지면 [결정 기록](planning/DECISIONS.md)에 날짜·결정·근거·영향을 남기고 관련 문서를 갱신한다. 이전 제안과 충돌하면 우선순위를 명시한다.
 - 기능을 구현하기 전 해당 도메인의 미결정 사항을 확인하고, 구현 후 API/설계 문서의 실제 상태를 갱신한다.
+- 기능·정책·DB·배포가 바뀌는 커밋마다 위 8종의 영향 여부를 확인하고, 영향받은 문서를 같은 변경에서 갱신한다. 영향이 없는 문서는 억지로 수정하지 않는다.
 - 새 산출물은 `docs/planning/`(요구사항·흐름·결정), `docs/architecture/`(구성·데이터·배포 설계), `docs/api/`(도메인별 계약)에 둔다. 기존 두 API 문서는 링크를 유지하기 위해 현재 위치에 둔다.
 
 ## 원본 자료
