@@ -8,16 +8,30 @@ import android.graphics.Path;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
+import android.net.Uri;
+import android.text.TextUtils;
+import android.util.Log;
+import android.window.OnBackInvokedDispatcher;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceError;
+import android.webkit.WebView;
+import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
 import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
+import android.widget.ProgressBar;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import android.widget.Toast;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayDeque;
 
 /** Lightweight, offline-first first screen. No login, backend call, or UI framework startup. */
 public final class MainActivity extends Activity {
@@ -30,14 +44,24 @@ public final class MainActivity extends Activity {
     private final Handler handler = new Handler(Looper.getMainLooper());
     private LinearLayout content;
     private LinearLayout dock;
+    // Legacy static home builder remains below until the WebView migration is verified.
     private ScrollView homeScroll;
+    private final WebView[] tabViews = new WebView[TABS.length];
+    private final ArrayDeque<Integer> tabHistory = new ArrayDeque<>();
+    private boolean mainVisible;
     private TestAccount activeTestAccount;
+    private AuthSession activeSession;
+    private int loginGeneration;
     private int selectedTab;
 
     @Override public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         getWindow().setStatusBarColor(PURPLE);
         getWindow().setNavigationBarColor(PURPLE);
+        if (Build.VERSION.SDK_INT >= 33) {
+            getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
+                    OnBackInvokedDispatcher.PRIORITY_DEFAULT, this::navigateBack);
+        }
         showSplash();
         handler.postDelayed(() -> {
             if (TestAccountGate.enabled()) showTestAccountGate();
@@ -47,6 +71,7 @@ public final class MainActivity extends Activity {
 
     @Override protected void onDestroy() {
         handler.removeCallbacksAndMessages(null);
+        destroyTabViews();
         super.onDestroy();
     }
 
@@ -89,6 +114,7 @@ public final class MainActivity extends Activity {
     }
 
     private void showSplash() {
+        mainVisible = false;
         FrameLayout frame = new FrameLayout(this);
         frame.setBackground(new GradientDrawable(GradientDrawable.Orientation.TL_BR,
                 new int[]{Color.rgb(119, 42, 240), PURPLE, Color.rgb(103, 27, 227)}));
@@ -110,17 +136,46 @@ public final class MainActivity extends Activity {
     }
 
     private void showTestAccountGate() {
+        mainVisible = false;
+        destroyTabViews();
+        activeSession = null;
+        activeTestAccount = null;
+        loginGeneration++;
         getWindow().setStatusBarColor(Color.rgb(248, 247, 251));
         getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
         getWindow().setNavigationBarColor(Color.rgb(248, 247, 251));
-        setContentView(TestAccountGate.create(this, account -> {
+        setContentView(TestAccountGate.create(this, this::loginAsTestAccount));
+    }
+
+    private void loginAsTestAccount(TestAccount account) {
+        int generation = ++loginGeneration;
+        LinearLayout pending = column();
+        pending.setGravity(Gravity.CENTER);
+        pending.setBackgroundColor(Color.rgb(248, 247, 251));
+        ProgressBar spinner = new ProgressBar(this);
+        pending.addView(spinner, new LinearLayout.LayoutParams(dp(36), dp(36)));
+        TextView message = text(account.label + " 로그인 중", 16, INK, true);
+        LinearLayout.LayoutParams messageParams = new LinearLayout.LayoutParams(-2, -2);
+        messageParams.topMargin = dp(20);
+        pending.addView(message, messageParams);
+        setContentView(pending);
+        TestLoginClient.login(account, (session, error) -> runOnUiThread(() -> {
+            if (isDestroyed() || generation != loginGeneration) return;
+            if (session == null) {
+                showTestAccountGate();
+                Toast.makeText(this, error == null ? "로그인에 실패했습니다" : error,
+                        Toast.LENGTH_LONG).show();
+                return;
+            }
+            activeSession = session;
             activeTestAccount = account;
-            homeScroll = null;
             showMain(0);
         }));
     }
 
     private void showMain(int tab) {
+        mainVisible = true;
+        tabHistory.clear();
         selectedTab = tab;
         getWindow().setStatusBarColor(Color.WHITE);
         getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
@@ -156,11 +211,7 @@ public final class MainActivity extends Activity {
             item.addView(label, lp);
             item.setContentDescription(TABS[i] + (i == selectedTab ? " 선택됨" : ""));
             item.setOnClickListener(v -> {
-                if (selectedTab != index) {
-                    selectedTab = index;
-                    renderContent();
-                    renderDock();
-                }
+                selectTab(index, true);
             });
             dock.addView(item, new LinearLayout.LayoutParams(0, -1, 1));
         }
@@ -168,12 +219,109 @@ public final class MainActivity extends Activity {
 
     private void renderContent() {
         content.removeAllViews();
-        if (selectedTab == 0) {
-            showHome();
-        } else {
-            // The remaining tabs have no approved screens yet. Keep switching instantaneous.
-            content.setBackgroundColor(Color.WHITE);
+        WebView page = tabViews[selectedTab];
+        if (page == null) {
+            page = new WebView(this);
+            page.setBackgroundColor(Color.WHITE);
+            if (selectedTab == 0 || selectedTab == 4) page.setLayerType(View.LAYER_TYPE_SOFTWARE, null);
+            page.getSettings().setJavaScriptEnabled(false);
+            page.getSettings().setDomStorageEnabled(false);
+            page.getSettings().setAllowFileAccess(true);
+            page.getSettings().setAllowContentAccess(false);
+            page.setWebViewClient(new WebViewClient() {
+                @Override public void onPageFinished(WebView view, String url) {
+                    Log.d("KimgosuWebView", "Loaded " + url + " title=" + view.getTitle());
+                }
+                @Override public void onReceivedError(WebView view, WebResourceRequest request,
+                                                      WebResourceError error) {
+                    Log.e("KimgosuWebView", "Load failed " + request.getUrl() + ": " + error.getDescription());
+                }
+                @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                    Uri uri = request.getUrl();
+                    if ("kimgosu".equals(uri.getScheme())) {
+                        if ("back".equals(uri.getHost())) navigateBack();
+                        else if ("reselect".equals(uri.getHost()) && TestAccountGate.enabled())
+                            showTestAccountGate();
+                        else if ("tab".equals(uri.getHost())) {
+                            try {
+                                int target = Integer.parseInt(uri.getPath().substring(1));
+                                if (target >= 0 && target < TABS.length) selectTab(target, true);
+                            } catch (RuntimeException ignored) { }
+                        }
+                        return true;
+                    }
+                    return !("file".equals(uri.getScheme())
+                            && uri.toString().startsWith("file:///android_asset/"));
+                }
+            });
+            tabViews[selectedTab] = page;
+            if (selectedTab != 0 && selectedTab != 4) page.loadUrl("file:///android_asset/" + new String[]{
+                    "home.html", "search.html", "register.html", "chat.html", "my.html"}[selectedTab]);
         }
+        content.addView(page, new LinearLayout.LayoutParams(-1, -1));
+        final WebView attachedPage = page;
+        if (selectedTab == 0 && page.getUrl() == null) page.post(() -> loadHomePage(attachedPage));
+        else if (selectedTab == 4 && page.getUrl() == null) page.post(() -> loadMyPage(attachedPage));
+    }
+
+    private void selectTab(int tab, boolean remember) {
+        if (!mainVisible || selectedTab == tab) return;
+        if (remember) tabHistory.push(selectedTab);
+        selectedTab = tab;
+        renderContent();
+        renderDock();
+    }
+
+    private void navigateBack() {
+        if (!mainVisible) {
+            finish();
+            return;
+        }
+        WebView current = tabViews[selectedTab];
+        if (current != null && current.canGoBack()) {
+            current.goBack();
+        } else if (!tabHistory.isEmpty()) {
+            selectTab(tabHistory.pop(), false);
+        } else if (selectedTab != 0) {
+            selectTab(0, false);
+        } else {
+            finish();
+        }
+    }
+
+    @Override public void onBackPressed() {
+        if (Build.VERSION.SDK_INT < 33) navigateBack();
+        else super.onBackPressed();
+    }
+
+    private void destroyTabViews() {
+        for (int i = 0; i < tabViews.length; i++) {
+            WebView page = tabViews[i];
+            if (page == null) continue;
+            if (page.getParent() instanceof ViewGroup) ((ViewGroup) page.getParent()).removeView(page);
+            page.destroy();
+            tabViews[i] = null;
+        }
+        tabHistory.clear();
+    }
+
+    private void loadMyPage(WebView page) {
+        try (InputStream file = getAssets().open("my.html")) {
+            String html = new String(file.readAllBytes(), StandardCharsets.UTF_8);
+            AuthSession session = activeSession;
+            html = html.replace("{{NAME}}", TextUtils.htmlEncode(session == null ? "게스트" : session.customerName))
+                    .replace("{{USER_ID}}", TextUtils.htmlEncode(session == null ? "로그인 전" : session.userId))
+                    .replace("{{BIRTH_DATE}}", TextUtils.htmlEncode(session == null ? "-" : session.birthDate))
+                    .replace("{{ADDRESS}}", TextUtils.htmlEncode(session == null ? "-" : session.homeAddress))
+                    .replace("{{MODE}}", session != null && session.expertEnabled ? "고수" : "일반");
+            page.loadDataWithBaseURL("file:///android_asset/my.html", html, "text/html", "UTF-8", null);
+        } catch (Exception error) {
+            page.loadUrl("file:///android_asset/my.html");
+        }
+    }
+
+    private void loadHomePage(WebView page) {
+        page.loadUrl("file:///android_asset/home.html");
     }
 
     private void showHome() {
@@ -195,7 +343,7 @@ public final class MainActivity extends Activity {
         TextView brand = text("김고수", 17, CORAL, true);
         header.addView(brand, new LinearLayout.LayoutParams(0, -2, 1));
         if (activeTestAccount != null) {
-            TextView selected = text(activeTestAccount.label, 11, PURPLE, true);
+            TextView selected = text(activeTestAccount.label + " ✓", 11, PURPLE, true);
             selected.setGravity(Gravity.CENTER);
             selected.setContentDescription("현재 " + activeTestAccount.label + ", 계정 다시 선택");
             selected.setOnClickListener(v -> showTestAccountGate());

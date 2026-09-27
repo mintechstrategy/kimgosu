@@ -127,3 +127,27 @@ sequenceDiagram
 ```
 
 제안 자격, 제안 데이터·수락, 거래 확정 및 리뷰 순서는 [미결정 사항](../planning/DECISIONS.md) Q03–Q05가 정해진 뒤 상세화한다.
+
+## 디버그 테스트 로그인 — 구현
+
+```mermaid
+sequenceDiagram
+    actor Tester as 테스터
+    participant App as Android T1
+    participant API as LAN FastAPI:23913
+    participant DB as 고객원장
+    Tester->>App: 일반/고수 합성 계정 선택
+    App->>API: POST /api/v1/auth/test-login {ci}
+    API->>DB: HMAC(CI) 고유 인덱스 조회
+    alt 처음 선택한 CI
+        API->>DB: test_ 접두어 사용자 ID 채번·프로필 등록
+    end
+    API-->>App: 1시간 JWT + 고객 프로필
+    App->>App: 홈 WebView 및 독바 표시
+```
+
+로그인 실패 시 T1으로 돌아간다. 동일 CI 재로그인은 기존 사용자 ID를 재사용한다. 앱의 마이 화면은 서버 응답의 이름·ID·생년월일·주소를 표시한다. 실제 Kakao/Naver 검증은 아직 없다.
+
+## 5개 WebView 내비게이션 — 구현
+
+탭을 처음 선택할 때 해당 WebView를 만들고, 탭 이동 시 파괴하지 않는다. 뒤로가기는 활성 WebView의 상세 방문 기록 → 직전 탭 → 홈 → 앱 종료 순서다. HTML 뒤로가기와 Android 시스템 뒤로가기는 같은 처리 함수를 호출한다.

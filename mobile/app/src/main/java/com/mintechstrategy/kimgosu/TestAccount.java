@@ -1,14 +1,12 @@
 package com.mintechstrategy.kimgosu;
 
-/** Local-only identity for navigating the debug APK. Not an authenticated server session. */
+/** Synthetic CI choice used only in the debug APK. The server allocates userId. */
 final class TestAccount {
-    final String userId;
     final String syntheticCi;
     final String label;
     final String mode;
 
-    TestAccount(String userId, String syntheticCi, String label, String mode) {
-        this.userId = userId;
+    TestAccount(String syntheticCi, String label, String mode) {
         this.syntheticCi = syntheticCi;
         this.label = label;
         this.mode = mode;

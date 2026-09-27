@@ -4,6 +4,7 @@ $deployDir = 'G:\docker\kimgosu'
 $requiredPaths = @(
     (Join-Path $deployDir 'secrets\db_password.txt'),
     (Join-Path $deployDir 'secrets\jwt_secret.txt'),
+    (Join-Path $deployDir 'secrets\ci_lookup_key.txt'),
     'G:\shared_storage\kimgosu\postgres',
     'G:\shared_storage\kimgosu\redis',
     'G:\shared_storage\kimgosu\uploads',

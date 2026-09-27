@@ -9,6 +9,7 @@ from sqlalchemy import create_engine, text
 
 from app.settings import database_url
 from app.chat.api import router as chat_router
+from app.accounts.api import router as account_router
 
 
 @asynccontextmanager
@@ -29,6 +30,7 @@ if origins:
     app.add_middleware(CORSMiddleware, allow_origins=origins, allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
                        allow_headers=["Authorization", "Content-Type"], allow_credentials=False)
 app.include_router(chat_router, prefix="/api/v1/chat", tags=["chat"])
+app.include_router(account_router, prefix="/api/v1", tags=["accounts"])
 
 
 @app.get("/health/live")

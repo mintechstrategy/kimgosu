@@ -2,16 +2,19 @@
 
 기준일: 2026-09-27. 모바일 앱과 향후 웹의 공통 백엔드 계약이다.
 
-현재 외부 **테스트용** 기준 주소는 `http://mt0205.synology.me:23912`이며 REST 경로는 이 주소 뒤에 붙인다. 채팅 WebSocket 테스트는 같은 호스트의 `ws://`를 사용한다. 현재 앱은 API 호출이 없고, 외부 주소의 실제 도달성은 포트포워딩 완료 후 검증한다. 실제 로그인·CI·토큰·개인정보를 전송하기 전 HTTPS/WSS 주소로 전환해야 한다.
+현재 외부 기준 주소 `http://mt0205.synology.me:23912`의 `/health/ready`는 200으로 확인했다. 같은 주소의 HTTPS는 TLS 연결에 실패한다. 외부 HTTP에서는 인증·고객 API를 Nginx가 404로 차단한다. 합성 계정용 디버그 APK는 LAN 전용 `http://192.168.0.213:23913` API에 접속한다. 실제 CI·토큰·개인정보를 외부에서 전송하기 전 HTTPS/WSS를 구성해야 한다.
 
 | 범위 | 상태 | 상세 계약 | 코드 |
 |---|---|---|---|
 | 채팅 subject·방·메시지·첨부·읽음·WebSocket | 구현 | [CHAT-API.md](../CHAT-API.md) | `app/chat/api.py` |
 | 헬스체크 `/health/live`, `/health/ready` | 구현 | [프로그램 명세서](../architecture/PROGRAM-SPEC.md) | `app/main.py` |
-| 인증·카탈로그·서비스·견적·제안·리뷰·알림 등 | 제안, 미구현 | [API-SPEC.md](../API-SPEC.md) | 없음 |
+| 디버그 테스트 로그인·고객 프로필 | 구현 | 아래 계약. 테스트 로그인은 `TEST_LOGIN_ENABLED=true`일 때만 동작하며 외부 프록시는 차단 | `app/accounts/api.py` |
+| 실제 OAuth·카탈로그·서비스·견적·제안·리뷰·알림 등 | 제안, 미구현 | [API-SPEC.md](../API-SPEC.md) | 없음 |
 
 주의: 초기 [API 초안](../API-SPEC.md)의 채팅 경로, 메시지 필드, WebSocket 방식은 현재 구현과 일부 다르다. 채팅 연동에는 [실제 채팅 API](../CHAT-API.md)를 사용한다. 향후 기능을 구현할 때 이 표의 상태를 갱신하고 초안과 실제 계약의 차이를 해소한다. 런타임 FastAPI `/openapi.json`은 구현된 REST 엔드포인트를 확인하는 보조 자료이며, WebSocket·업무 정책은 문서도 확인한다.
 
 API 요청·응답의 구분값은 [코드인스턴스](../architecture/CODE-INSTANCES.md)에서 그룹별로 관리한다. 제안 코드와 실제 응답 코드의 차이를 확인한 뒤 클라이언트에 적용한다.
 
-고객원장의 CI 조회와 사용자 ID 생성은 `app/accounts/identity.py`의 **내부 함수**로 구현했다. 제공자 토큰 검증, 카카오/네이버 로그인, 회원가입 및 JWT 발급 API는 아직 없다. 디버그 APK의 계정 선택은 로컬 UI 상태만 바꾸며 API나 DB에 테스트 CI를 전송하지 않는다. 향후 로그인 API에서는 제공자에서 검증한 CI만으로 `customers.ci_lookup_hash`를 조회하고 반환된 `user_id`를 세션/JWT `sub`로 사용한다.
+`POST /api/v1/auth/test-login`은 합성 CI 네 개 중 하나를 `{ "ci": "TEST-CI-KIMGOSU-CONSUMER-001" }`로 받는다. 기존 CI면 같은 `userId`를 찾고 신규면 `test_` 접두어 ID를 발급한다. 응답은 `accessToken`(HS256 JWT), `tokenType=Bearer`, `expiresIn=3600`, `customer` 객체다. 알 수 없는 CI는 401, 기능 비활성은 404다. 실제 제공자 토큰 검증용 API는 아니다.
+
+`GET /api/v1/customers/me`는 Bearer JWT의 `sub`에 대응하는 고객원장을 반환한다. `PATCH /api/v1/customers/me`는 `customerName`, `birthDate`, `homeAddress`, `phoneNumber`의 제공된 필드만 수정하고 같은 고객 객체를 반환한다. 고객 객체는 `userId`, 위 프로필 필드, `expertEnabled`, `createdAt`, `updatedAt`을 포함하며 원문 CI와 해시는 반환하지 않는다. 제공자 검증·카카오/네이버 실제 OAuth는 아직 구현하지 않았다. CI 조회와 사용자 ID 발급은 `app/accounts/identity.py`의 내부 함수가 담당한다.

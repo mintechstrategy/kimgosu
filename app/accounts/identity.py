@@ -38,16 +38,23 @@ def find_customer_by_ci(connection, verified_ci: str, lookup_secret: bytes) -> s
 
 
 def register_or_find_customer(connection, provider: str, verified_ci: str,
-                              lookup_secret: bytes) -> str:
+                              lookup_secret: bytes, *, customer_name: str | None = None,
+                              birth_date=None, home_address: str | None = None,
+                              phone_number: str | None = None,
+                              expert_enabled: bool = False) -> str:
     """Atomically bind first registration; same CI on another provider reuses PK."""
     digest = ci_lookup_hash(verified_ci, lookup_secret)
     candidate = new_user_id(provider)
     inserted = connection.execute(text("""
-        INSERT INTO customers (user_id, ci_lookup_hash)
-        VALUES (:user_id, :digest)
+        INSERT INTO customers (user_id, ci_lookup_hash, customer_name, birth_date,
+                               home_address, phone_number, expert_enabled)
+        VALUES (:user_id, :digest, :customer_name, :birth_date,
+                :home_address, :phone_number, :expert_enabled)
         ON CONFLICT (ci_lookup_hash) DO NOTHING
         RETURNING user_id
-    """), {"user_id": candidate, "digest": digest}).scalar_one_or_none()
+    """), {"user_id": candidate, "digest": digest, "customer_name": customer_name,
+           "birth_date": birth_date, "home_address": home_address,
+           "phone_number": phone_number, "expert_enabled": expert_enabled}).scalar_one_or_none()
     if inserted is not None:
         return inserted
     return connection.execute(text("""

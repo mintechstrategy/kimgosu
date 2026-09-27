@@ -14,6 +14,8 @@ x-backend: &backend
     DB_USER: ${POSTGRES_USER:-kimgosu}
     DB_PASSWORD_FILE: /run/secrets/db_password
     JWT_SECRET_FILE: /run/secrets/jwt_secret
+    CI_LOOKUP_KEY_FILE: /run/secrets/ci_lookup_key
+    TEST_LOGIN_ENABLED: ${TEST_LOGIN_ENABLED:-false}
     CELERY_BROKER_URL: redis://redis:6379/0
     CHAT_REDIS_URL: redis://redis:6379/1
     UPLOAD_DIR: /app/uploads
@@ -21,6 +23,7 @@ x-backend: &backend
   secrets:
     - db_password
     - jwt_secret
+    - ci_lookup_key
   networks:
     - backend
   logging:
@@ -53,6 +56,9 @@ services:
   api:
     <<: *backend
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
+    ports:
+      # Debug APK access on the LAN only. Never forward this port from the router.
+      - "${LAN_BIND_IP:-192.168.0.213}:${LAN_TEST_PORT:-23913}:8000"
     volumes:
       - type: bind
         source: "${STORAGE_ROOT:-G:/shared_storage/kimgosu}/uploads"
@@ -162,3 +168,5 @@ secrets:
     file: ./secrets/db_password.txt
   jwt_secret:
     file: ./secrets/jwt_secret.txt
+  ci_lookup_key:
+    file: ./secrets/ci_lookup_key.txt

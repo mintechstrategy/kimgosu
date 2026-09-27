@@ -1,8 +1,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET" />
     <application
         android:allowBackup="false"
         android:label="김고수"
         android:theme="@style/KimgosuTheme"
+        android:enableOnBackInvokedCallback="true"
         android:usesCleartextTraffic="false">
         <activity
             android:name=".MainActivity"

@@ -15,10 +15,10 @@ import java.util.function.Consumer;
 final class TestAccountGate {
     private static final int PURPLE = Color.rgb(111, 35, 239);
     private static final TestAccount[] ACCOUNTS = {
-        new TestAccount("test_11111111111141118111111111111111", "TEST-CI-KIMGOSU-CONSUMER-001", "일반 이용자 1", "일반"),
-        new TestAccount("test_22222222222242228222222222222222", "TEST-CI-KIMGOSU-CONSUMER-002", "일반 이용자 2", "일반"),
-        new TestAccount("test_33333333333343338333333333333333", "TEST-CI-KIMGOSU-EXPERT-001", "고수 사용자 1", "고수"),
-        new TestAccount("test_44444444444444448444444444444444", "TEST-CI-KIMGOSU-EXPERT-002", "고수 사용자 2", "고수")
+        new TestAccount("TEST-CI-KIMGOSU-CONSUMER-001", "일반 이용자 1", "일반"),
+        new TestAccount("TEST-CI-KIMGOSU-CONSUMER-002", "일반 이용자 2", "일반"),
+        new TestAccount("TEST-CI-KIMGOSU-EXPERT-001", "고수 사용자 1", "고수"),
+        new TestAccount("TEST-CI-KIMGOSU-EXPERT-002", "고수 사용자 2", "고수")
     };
 
     static boolean enabled() { return true; }
@@ -63,7 +63,7 @@ final class TestAccountGate {
             LinearLayout.LayoutParams nameParams = new LinearLayout.LayoutParams(-1, -2);
             nameParams.topMargin = 8 * density;
             card.addView(name, nameParams);
-            TextView id = label(activity, account.userId, 10, Color.rgb(137, 137, 145), false);
+            TextView id = label(activity, "서버에서 고객 ID를 조회·발급합니다", 10, Color.rgb(137, 137, 145), false);
             LinearLayout.LayoutParams idParams = new LinearLayout.LayoutParams(-1, -2);
             idParams.topMargin = 8 * density;
             card.addView(id, idParams);
@@ -74,7 +74,7 @@ final class TestAccountGate {
             root.addView(card, cardParams);
         }
 
-        TextView note = label(activity, "내장된 CI는 실제 개인정보가 아닌 테스트 전용 값입니다.\n이 선택은 서버 로그인 토큰을 발급하지 않습니다.",
+        TextView note = label(activity, "내장된 CI는 실제 개인정보가 아닌 테스트 전용 값입니다.\n선택하면 LAN 테스트 API에서 로그인 토큰을 발급합니다.",
                 11, Color.rgb(132, 132, 142), false);
         note.setGravity(Gravity.CENTER);
         note.setLineSpacing(3 * density, 1f);
