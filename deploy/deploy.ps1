@@ -7,7 +7,9 @@ $requiredPaths = @(
     'G:\shared_storage\kimgosu\postgres',
     'G:\shared_storage\kimgosu\redis',
     'G:\shared_storage\kimgosu\uploads',
-    'G:\shared_storage\kimgosu\scheduler'
+    'G:\shared_storage\kimgosu\scheduler',
+    'G:\shared_storage\kimgosu\caddy\data',
+    'G:\shared_storage\kimgosu\caddy\config'
 )
 foreach ($path in $requiredPaths) {
     if (-not (Test-Path -LiteralPath $path)) { throw "Required deployment path is missing: $path" }
@@ -28,6 +30,7 @@ try {
     New-Item -ItemType Directory -Force -Path (Join-Path $deployDir 'deploy') | Out-Null
     Copy-Item -LiteralPath './docker-compose.yml' -Destination (Join-Path $deployDir 'docker-compose.yml') -Force
     Copy-Item -LiteralPath './deploy/nginx.conf' -Destination (Join-Path $deployDir 'deploy\nginx.conf') -Force
+    Copy-Item -LiteralPath './deploy/Caddyfile' -Destination (Join-Path $deployDir 'deploy\Caddyfile') -Force
     Copy-Item -LiteralPath './DOCKER.md' -Destination (Join-Path $deployDir 'DOCKER.md') -Force
 
     $envPath = Join-Path $deployDir '.env'
@@ -48,6 +51,8 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Application containers failed.' }
         docker compose up -d --no-deps --force-recreate --wait proxy
         if ($LASTEXITCODE -ne 0) { throw 'Proxy failed.' }
+        docker compose up -d --no-deps --wait edge
+        if ($LASTEXITCODE -ne 0) { throw 'HTTPS edge failed.' }
         $status = Invoke-RestMethod -Uri 'http://127.0.0.1:8080/health/ready' -TimeoutSec 15
         if ($status.status -ne 'ready') { throw 'Readiness smoke test failed.' }
         Write-Host "Deployed $($env:BACKEND_IMAGE)"

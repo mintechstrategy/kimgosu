@@ -30,7 +30,7 @@ docker compose pull
 docker compose up -d --wait
 ```
 
-현재 접근 주소는 `http://localhost:8080`입니다. PC 로컬 접근만 허용하며 휴대폰 또는 인터넷 접근과 HTTPS는 별도 구성해야 합니다. DB와 Redis 포트는 호스트에 공개하지 않습니다.
+PC 내부 점검 주소는 `http://localhost:8080`입니다. 앱의 외부 API 주소는 `https://mt0205.synology.me:23912`입니다. Caddy `edge`가 PC의 23912에서 TLS를 종료하고 내부 Nginx `proxy`로 전달합니다. 공유기에서 **외부 TCP 23912 → 이 PC 23912**, **외부 TCP 80 → 이 PC 80**을 포워딩하고 Windows 방화벽도 두 포트를 허용해야 외부 연결 및 인증서 발급이 가능합니다. 80은 인증서 HTTP 검증에 사용하며 API는 HTTPS 23912로만 호출합니다. 8080은 `127.0.0.1`에만 바인딩하므로 포워딩하지 않습니다. DB·Redis·FastAPI 내부 포트도 공개하지 않습니다. DNS가 현재 공인 IP를 가리켜야 하며, 포워딩 완료 전에는 외부 HTTPS 연결을 성공으로 판단할 수 없습니다.
 
 ## 추후 CI/CD의 배포 순서
 
@@ -42,6 +42,7 @@ docker compose up -d --wait db redis
 docker compose run --rm migrate
 docker compose up -d --no-deps --wait api worker scheduler
 docker compose up -d --no-deps --wait proxy
+docker compose up -d --no-deps --wait edge
 ```
 
 실제 배포 스크립트는 각 명령의 종료 코드를 확인하고 실패 즉시 중단해야 합니다. API 교체에는 잠깐의 중단이 발생할 수 있습니다. worker와 scheduler는 현재 프로세스 시작 여부만 확인하므로 추후 작업 처리 smoke test도 추가해야 합니다.
@@ -58,6 +59,8 @@ PostgreSQL, Redis, 업로드, 스케줄러 상태는 `G:\shared_storage\kimgosu`
 | `redis` | `/data` | Redis AOF 데이터 |
 | `uploads` | `/app/uploads` | API와 worker가 공유하는 첨부 파일 |
 | `scheduler` | `/app/scheduler` | Celery Beat 상태 |
+| `caddy/data` | `/data` | HTTPS 인증서 및 갱신 상태 |
+| `caddy/config` | `/config` | Caddy 설정 상태 |
 
 컨테이너 교체 및 Compose 종료 후에도 이 폴더의 데이터는 유지됩니다. Docker 이미지와 컨테이너 임시 파일의 위치는 Docker Desktop 설정을 따릅니다. 비밀값은 기존 프로젝트의 `secrets` 폴더에 두며 공유 데이터 폴더로 옮기지 않습니다.
 
