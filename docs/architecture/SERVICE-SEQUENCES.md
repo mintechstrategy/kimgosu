@@ -4,7 +4,7 @@
 
 ## 전체 서비스 화면 흐름 — 제공된 순서도 근거, 앱 미구현
 
-2026-09-27 사용자 지시로 원본 순서도 앞에 `스플래시 S0 → 약 0.5초 → 메인 T0`을 추가한다. [스플래시](../previews/splash-preview.png)와 [메인](../previews/main-preview.png)은 확인용 목업이며 APK는 아직 빌드하지 않았다. 하단 독바는 원본 순서도의 홈·검색·등록·채팅·마이를 따른다.
+2026-09-27 사용자 지시로 원본 순서도 앞에 `스플래시 S0 → 앱 내 500ms → 메인 T0/A1`을 추가했다. Android 디버그 APK에서 [스플래시](../previews/android-splash-view.png)와 [홈](../previews/android-home.png)을 확인했다. OS 콜드 스타트 시간은 500ms에 포함되지 않는다. 하단 독바는 원본 순서도의 홈·검색·등록·채팅·마이를 따른다. 홈 외의 탭과 상세 이동은 이번 APK에서 아직 연결하지 않았다.
 
 ```mermaid
 flowchart LR

@@ -4,7 +4,7 @@
 
 | 경계 | 방향·방식 | 인증/데이터 | 상태 |
 |---|---|---|---|
-| 모바일 앱 ↔ FastAPI | HTTPS JSON REST; 실시간 수신 WebSocket | Bearer JWT, 방 티켓 | 서버 구현, 앱 미구현 |
+| 모바일 앱 ↔ FastAPI | 향후 HTTPS JSON REST; 실시간 수신 WebSocket | Bearer JWT, 방 티켓 | Android 첫 화면만 구현. 현재 API 요청 없음; 채팅 서버 계약은 구현 |
 | 향후 웹 ↔ FastAPI | 동일 REST·WebSocket 계약 | Bearer JWT, 허용 Origin 설정 | 서버 계약 구현, 웹 미구현 |
 | Nginx ↔ FastAPI | Docker 내부 HTTP·WebSocket 프록시 | 외부 로컬 포트 8080 기본 | 구현 |
 | FastAPI ↔ PostgreSQL | SQLAlchemy/SQL | 채팅·마이그레이션 영속 데이터 | 구현 |

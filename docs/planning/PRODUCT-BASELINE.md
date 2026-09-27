@@ -27,6 +27,7 @@
 
 - 구현됨: FastAPI 채팅 API, 서비스 독립 `chat_subjects` 관계, 2인 채팅, 메시지·첨부·읽음, WebSocket/Redis 이벤트, JWT 참여자 검사. [채팅 계약](../CHAT-API.md) 및 `app/chat/`, `migrations/versions/0002_chat.py`, `0003_chat_attachments.py` 참조.
 - 구현됨: Docker Compose 배포 구성과 GitHub Actions 기반 CI/CD 및 로컬 배포 에이전트. 현행 배포 절차는 [DOCKER.md](../../DOCKER.md) 참조.
+- 구현됨: Android 디버그 앱의 브랜드 스플래시, 정적 A1 홈, 5개 탭 독바. 간편회원가입과 홈 데이터/API 연동은 이번 범위에서 제외. [Android 빌드 문서](../../mobile/README.md) 참조.
 - 미구현: 회원가입·인증 발급, 카탈로그, 서비스, 견적, 제안, 알림, 거래·리뷰 등 전체 [API 초안](../API-SPEC.md)의 나머지 업무 기능.
 - 주의: API 초안의 채팅 경로·메시지 필드·WebSocket 방식에는 초기 제안이 남아 있다. 실제 클라이언트 연동은 [채팅 API](../CHAT-API.md)의 구현 계약을 기준으로 한다.
 
