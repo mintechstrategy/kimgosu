@@ -16,4 +16,6 @@ $env:ANDROID_HOME = 'C:\Users\crazy\AppData\Local\Android\Sdk'
 .\gradlew.bat assembleDebug
 ```
 
-출력은 `app/build/outputs/apk/debug/app-debug.apk`, 사용자용 복사본은 `dist/kimgosu-v0.3.0-test-debug.apk`다. 개발용 디버그 서명 APK이며 배포용 릴리스 서명은 아직 구성하지 않았다. 패키지 ID는 `com.mintechstrategy.kimgosu`, 최소 Android API 26이다. 화면 근거와 캡처는 [화면설계서](../docs/planning/SCREEN-DESIGN.md)를 본다.
+출력은 `app/build/outputs/apk/debug/app-debug.apk`, 사용자용 복사본은 `dist/kimgosu-v0.4.0-test-debug.apk`다. 개발용 디버그 서명 APK이며 배포용 릴리스 서명은 아직 구성하지 않았다. 패키지 ID는 `com.mintechstrategy.kimgosu`, 최소 Android API 26이다. 화면 근거와 캡처는 [화면설계서](../docs/planning/SCREEN-DESIGN.md)를 본다.
+
+0.4 홈은 분야 코드를 서버에서 조회하되 번들 목록으로 즉시 표시합니다. 기타 없이 정사각형 카드 한 줄을 좌우로 넘겨 볼 수 있습니다. 좌상단 지역명을 누르면 제공된 위치 선택 화면의 배치로 시·도/시·군·구와 비대면 여부를 선택하며, 완료 시 홈으로 돌아옵니다. 선택값은 기기에 저장됩니다. 현재 서비스 결과 필터와 관리자 웹 편집은 후속 작업입니다.

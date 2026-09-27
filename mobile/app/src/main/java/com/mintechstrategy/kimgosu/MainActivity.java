@@ -1,6 +1,8 @@
 package com.mintechstrategy.kimgosu;
 
 import android.app.Activity;
+import android.content.Context;
+import android.content.res.ColorStateList;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
@@ -23,6 +25,7 @@ import android.webkit.WebResourceError;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
+import android.widget.CheckBox;
 import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
@@ -32,6 +35,9 @@ import android.widget.Toast;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.Set;
 
 /** Lightweight, offline-first first screen. No login, backend call, or UI framework startup. */
 public final class MainActivity extends Activity {
@@ -53,6 +59,11 @@ public final class MainActivity extends Activity {
     private AuthSession activeSession;
     private int loginGeneration;
     private int selectedTab;
+    private String categoryJson;
+    private boolean regionPickerVisible;
+    private String pendingProvince = "서울";
+    private Set<String> pendingRegions = new HashSet<>();
+    private boolean includeRemote = true;
 
     @Override public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -63,6 +74,16 @@ public final class MainActivity extends Activity {
                     OnBackInvokedDispatcher.PRIORITY_DEFAULT, this::navigateBack);
         }
         showSplash();
+        CatalogClient.fetch(json -> runOnUiThread(() -> {
+            categoryJson = json;
+            WebView home = tabViews[0];
+            if (home != null && selectedTab == 0 && !regionPickerVisible
+                    && home.getUrl() != null && home.getUrl().endsWith("home.html")) {
+                int scroll = home.getScrollY();
+                loadHomePage(home);
+                home.postDelayed(() -> home.scrollTo(0, scroll), 120);
+            }
+        }));
         handler.postDelayed(() -> {
             if (TestAccountGate.enabled()) showTestAccountGate();
             else showMain(0);
@@ -219,6 +240,11 @@ public final class MainActivity extends Activity {
 
     private void renderContent() {
         content.removeAllViews();
+        if (regionPickerVisible) {
+            renderRegionPicker();
+            return;
+        }
+        if (selectedTab == 0) renderHomeHeader();
         WebView page = tabViews[selectedTab];
         if (page == null) {
             page = new WebView(this);
@@ -231,6 +257,7 @@ public final class MainActivity extends Activity {
             page.setWebViewClient(new WebViewClient() {
                 @Override public void onPageFinished(WebView view, String url) {
                     Log.d("KimgosuWebView", "Loaded " + url + " title=" + view.getTitle());
+                    if (url.endsWith("/home.html")) view.clearHistory();
                 }
                 @Override public void onReceivedError(WebView view, WebResourceRequest request,
                                                       WebResourceError error) {
@@ -258,7 +285,9 @@ public final class MainActivity extends Activity {
             if (selectedTab != 0 && selectedTab != 4) page.loadUrl("file:///android_asset/" + new String[]{
                     "home.html", "search.html", "register.html", "chat.html", "my.html"}[selectedTab]);
         }
-        content.addView(page, new LinearLayout.LayoutParams(-1, -1));
+        content.addView(page, selectedTab == 0
+                ? new LinearLayout.LayoutParams(-1, 0, 1)
+                : new LinearLayout.LayoutParams(-1, -1));
         final WebView attachedPage = page;
         if (selectedTab == 0 && page.getUrl() == null) page.post(() -> loadHomePage(attachedPage));
         else if (selectedTab == 4 && page.getUrl() == null) page.post(() -> loadMyPage(attachedPage));
@@ -266,6 +295,7 @@ public final class MainActivity extends Activity {
 
     private void selectTab(int tab, boolean remember) {
         if (!mainVisible || selectedTab == tab) return;
+        regionPickerVisible = false;
         if (remember) tabHistory.push(selectedTab);
         selectedTab = tab;
         renderContent();
@@ -275,6 +305,11 @@ public final class MainActivity extends Activity {
     private void navigateBack() {
         if (!mainVisible) {
             finish();
+            return;
+        }
+        if (regionPickerVisible) {
+            regionPickerVisible = false;
+            renderContent();
             return;
         }
         WebView current = tabViews[selectedTab];
@@ -305,6 +340,187 @@ public final class MainActivity extends Activity {
         tabHistory.clear();
     }
 
+    private void renderHomeHeader() {
+        LinearLayout header = row();
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        pad(header, 18, 2, 18, 2);
+        LinearLayout regionTrigger = row();
+        regionTrigger.setGravity(Gravity.CENTER_VERTICAL);
+        TextView region = text(getPreferences(Context.MODE_PRIVATE)
+                .getString("home_region_name", "지역 선택"), 27, INK, true);
+        regionTrigger.addView(region);
+        View chevron = new View(this) {
+            private final Paint line = new Paint(Paint.ANTI_ALIAS_FLAG);
+            @Override protected void onDraw(Canvas canvas) {
+                super.onDraw(canvas);
+                line.setColor(INK);
+                line.setStyle(Paint.Style.STROKE);
+                line.setStrokeWidth(dp(2.5f));
+                line.setStrokeCap(Paint.Cap.ROUND);
+                line.setStrokeJoin(Paint.Join.ROUND);
+                Path path = new Path();
+                path.moveTo(dp(3), dp(10));
+                path.lineTo(dp(12), dp(19));
+                path.lineTo(dp(21), dp(10));
+                canvas.drawPath(path, line);
+            }
+        };
+        LinearLayout.LayoutParams arrowParams = new LinearLayout.LayoutParams(dp(25), dp(27));
+        arrowParams.leftMargin = dp(10);
+        regionTrigger.addView(chevron, arrowParams);
+        regionTrigger.setContentDescription("지역 선택 화면 열기");
+        regionTrigger.setOnClickListener(v -> {
+            pendingRegions = new HashSet<>(getPreferences(Context.MODE_PRIVATE)
+                    .getStringSet("home_regions", new HashSet<>()));
+            includeRemote = getPreferences(Context.MODE_PRIVATE).getBoolean("include_remote", true);
+            regionPickerVisible = true;
+            renderContent();
+        });
+        header.addView(regionTrigger, new LinearLayout.LayoutParams(0, -2, 1));
+        if (TestAccountGate.enabled()) {
+            TextView account = text("계정 변경", 12, Color.rgb(37, 99, 235), true);
+            pad(account, 9, 8, 9, 8);
+            account.setOnClickListener(v -> showTestAccountGate());
+            header.addView(account);
+        }
+        TextView bell = text("♧", 23, INK, false);
+        LinearLayout.LayoutParams bellParams = new LinearLayout.LayoutParams(-2, -2);
+        bellParams.leftMargin = dp(9);
+        header.addView(bell, bellParams);
+        content.addView(header, new LinearLayout.LayoutParams(-1, dp(54)));
+    }
+
+    private static final String[] PROVINCES = {"서울", "경기", "인천", "강원", "충남", "충북",
+            "대전", "세종", "전남", "전북", "광주", "경남", "경북", "대구", "부산", "울산", "제주"};
+
+    private String[] districtsFor(String province) {
+        switch (province) {
+            case "서울": return new String[]{"전체", "강남구", "강동구", "강북구", "강서구", "관악구",
+                    "광진구", "구로구", "금천구", "노원구", "도봉구", "동대문구", "동작구", "마포구",
+                    "서대문구", "서초구", "성동구", "성북구", "송파구", "양천구", "영등포구", "용산구",
+                    "은평구", "종로구", "중구", "중랑구"};
+            case "경기": return new String[]{"전체", "고양시", "과천시", "광명시", "구리시", "군포시",
+                    "김포시", "남양주시", "부천시", "성남시", "수원시", "시흥시", "안산시", "안양시",
+                    "양주시", "오산시", "용인시", "의정부시", "이천시", "파주시", "평택시", "하남시", "화성시"};
+            case "인천": return new String[]{"전체", "강화군", "계양구", "남동구", "동구", "미추홀구",
+                    "부평구", "서구", "연수구", "옹진군", "중구"};
+            case "부산": return new String[]{"전체", "강서구", "금정구", "기장군", "남구", "동구",
+                    "동래구", "부산진구", "북구", "사상구", "사하구", "서구", "수영구", "연제구", "영도구", "중구", "해운대구"};
+            default: return new String[]{"전체"};
+        }
+    }
+
+    private void renderRegionPicker() {
+        LinearLayout screen = column();
+        screen.setBackgroundColor(Color.WHITE);
+
+        LinearLayout toolbar = row();
+        toolbar.setGravity(Gravity.CENTER_VERTICAL);
+        pad(toolbar, 18, 6, 18, 6);
+        TextView brand = text("김고수", 15, Color.rgb(190, 92, 51), true);
+        toolbar.addView(brand, new LinearLayout.LayoutParams(0, -2, 1));
+        toolbar.addView(text("♧", 20, INK, false));
+        screen.addView(toolbar, new LinearLayout.LayoutParams(-1, dp(48)));
+        View separator = new View(this);
+        separator.setBackgroundColor(Color.rgb(236, 236, 236));
+        screen.addView(separator, new LinearLayout.LayoutParams(-1, dp(1)));
+
+        TextView prompt = text("어느 지역의 서비스를 찾으시나요?", 14, INK, true);
+        pad(prompt, 22, 17, 15, 10);
+        screen.addView(prompt);
+        CheckBox remote = new CheckBox(this);
+        remote.setText("비대면 진행 포함");
+        remote.setTextSize(13);
+        remote.setTextColor(INK);
+        remote.setButtonTintList(ColorStateList.valueOf(Color.BLACK));
+        remote.setChecked(includeRemote);
+        remote.setOnCheckedChangeListener((button, checked) -> includeRemote = checked);
+        pad(remote, 20, 0, 12, 8);
+        screen.addView(remote);
+
+        LinearLayout columns = row();
+        columns.setBackgroundColor(Color.WHITE);
+        ScrollView provinceScroll = new ScrollView(this);
+        LinearLayout provinceList = column();
+        for (String province : PROVINCES) {
+            TextView item = text(province, 13, INK, province.equals(pendingProvince));
+            pad(item, 22, 11, 3, 11);
+            item.setBackgroundColor(province.equals(pendingProvince)
+                    ? Color.rgb(248, 248, 248) : Color.WHITE);
+            item.setOnClickListener(v -> {
+                pendingProvince = province;
+                renderContent();
+            });
+            provinceList.addView(item);
+        }
+        provinceScroll.addView(provinceList);
+        columns.addView(provinceScroll, new LinearLayout.LayoutParams(dp(90), -1));
+        View divider = new View(this);
+        divider.setBackgroundColor(Color.rgb(241, 241, 241));
+        columns.addView(divider, new LinearLayout.LayoutParams(dp(1), -1));
+
+        ScrollView districtScroll = new ScrollView(this);
+        LinearLayout districtList = column();
+        ArrayList<CheckBox> options = new ArrayList<>();
+        for (String district : districtsFor(pendingProvince)) {
+            String key = pendingProvince + "/" + district;
+            CheckBox option = new CheckBox(this);
+            option.setText(district.equals("전체") ? pendingProvince + " 전체" : district);
+            option.setTextSize(13);
+            option.setTextColor(INK);
+            option.setButtonTintList(ColorStateList.valueOf(Color.BLACK));
+            option.setChecked(pendingRegions.contains(key));
+            pad(option, 14, 6, 12, 6);
+            option.setOnClickListener(v -> {
+                if (option.isChecked()) {
+                    if (district.equals("전체"))
+                        pendingRegions.removeIf(value -> value.startsWith(pendingProvince + "/"));
+                    else pendingRegions.remove(pendingProvince + "/전체");
+                    pendingRegions.add(key);
+                } else pendingRegions.remove(key);
+                for (CheckBox other : options) {
+                    String otherDistrict = other.getText().toString();
+                    if (otherDistrict.equals(pendingProvince + " 전체")) otherDistrict = "전체";
+                    other.setChecked(pendingRegions.contains(pendingProvince + "/" + otherDistrict));
+                }
+            });
+            options.add(option);
+            districtList.addView(option);
+        }
+        districtScroll.addView(districtList);
+        columns.addView(districtScroll, new LinearLayout.LayoutParams(0, -1, 1));
+        screen.addView(columns, new LinearLayout.LayoutParams(-1, 0, 1));
+
+        TextView apply = text("검색 하기", 15, Color.BLACK, true);
+        apply.setGravity(Gravity.CENTER);
+        apply.setBackgroundColor(Color.rgb(220, 220, 220));
+        apply.setOnClickListener(v -> {
+            if (pendingRegions.isEmpty() && !includeRemote) {
+                Toast.makeText(this, "지역을 한 곳 이상 선택하세요", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            ArrayList<String> chosen = new ArrayList<>(pendingRegions);
+            chosen.sort(String::compareTo);
+            String label;
+            if (chosen.isEmpty()) label = "비대면";
+            else {
+                String first = chosen.get(0);
+                label = first.substring(first.indexOf('/') + 1);
+                if (label.equals("전체")) label = first.substring(0, first.indexOf('/')) + " 전체";
+                if (chosen.size() > 1) label += " 외 " + (chosen.size() - 1) + "곳";
+            }
+            getPreferences(Context.MODE_PRIVATE).edit()
+                    .putStringSet("home_regions", new HashSet<>(pendingRegions))
+                    .putString("home_region_name", label)
+                    .putBoolean("include_remote", includeRemote)
+                    .apply();
+            regionPickerVisible = false;
+            renderContent();
+        });
+        screen.addView(apply, new LinearLayout.LayoutParams(-1, dp(54)));
+        content.addView(screen, new LinearLayout.LayoutParams(-1, -1));
+    }
+
     private void loadMyPage(WebView page) {
         try (InputStream file = getAssets().open("my.html")) {
             String html = new String(file.readAllBytes(), StandardCharsets.UTF_8);
@@ -321,7 +537,20 @@ public final class MainActivity extends Activity {
     }
 
     private void loadHomePage(WebView page) {
-        page.loadUrl("file:///android_asset/home.html");
+        try (InputStream file = getAssets().open("home.html")) {
+            String html = new String(file.readAllBytes(), StandardCharsets.UTF_8);
+            String json = categoryJson;
+            if (json == null) {
+                try (InputStream fallback = getAssets().open("categories-default.json")) {
+                    json = new String(fallback.readAllBytes(), StandardCharsets.UTF_8);
+                }
+            }
+            html = html.replace("{{CATEGORIES}}", HomeCategories.render(json));
+            page.loadDataWithBaseURL("file:///android_asset/home.html", html, "text/html", "UTF-8", null);
+        } catch (Exception error) {
+            Log.e("KimgosuWebView", "Home catalog render failed", error);
+            page.loadUrl("file:///android_asset/home.html");
+        }
     }
 
     private void showHome() {

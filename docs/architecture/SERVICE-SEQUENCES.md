@@ -151,3 +151,23 @@ sequenceDiagram
 ## 5개 WebView 내비게이션 — 구현
 
 탭을 처음 선택할 때 해당 WebView를 만들고, 탭 이동 시 파괴하지 않는다. 뒤로가기는 활성 WebView의 상세 방문 기록 → 직전 탭 → 홈 → 앱 종료 순서다. HTML 뒤로가기와 Android 시스템 뒤로가기는 같은 처리 함수를 호출한다.
+
+## 홈 분야 코드·지역 선택 — 구현 범위
+
+```mermaid
+sequenceDiagram
+    participant App as Android 홈
+    participant API as 카탈로그 API
+    participant DB as service_categories
+    participant Region as 위치 선택 A2
+    App->>App: 번들 초기 분야 코드 즉시 표시
+    App->>API: GET /api/v1/catalog/home-categories
+    API->>DB: 노출 코드 순서 조회
+    API-->>App: 코드·명칭·순서·아이콘
+    App->>App: C영역 가로 카드 갱신
+    App->>Region: 상단 지역명·꺾쇠 클릭
+    Region->>Region: 시·도/시·군·구/비대면 선택
+    Region-->>App: 검색 하기, 선택값 기기 저장·직전 홈 복귀
+```
+
+지역 선택은 현재 홈 표시와 기기 저장까지다. 서비스 목록/검색 API에 지역 필터를 전달하는 업무 기능은 후속 작업이다. Android 뒤로가기로 A2를 닫으면 변경을 저장하지 않는다.

@@ -22,6 +22,8 @@
 | `HEALTH_STATUS` | `/health/ready`의 `status` | `not_ready` | DB 또는 Redis 준비 실패, HTTP 503 | `app/main.py` |
 | `CUSTOMER_ID_PREFIX` | `customers.user_id` | `kakao`, `naver` | 신규 가입을 처음 처리한 간편인증 제공자 | `app/accounts/identity.py`. 형식은 `접두어_32자리hex`; 다른 제공자 추가 가능 |
 | `CUSTOMER_ID_PREFIX` | `customers.user_id`, 테스트 로그인 API 응답 `customer.userId` | `test` | 실제 제공자 인증이 없는 합성 계정. 서버가 `test_32자리hex`로 채번 | `app/accounts/identity.py`, `app/accounts/api.py`; 릴리스 APK에는 합성 CI가 없음 |
+| `HOME_CATEGORY` | `service_categories.code`, 카탈로그 API `code` | `design_development`, `video_editing`, `translation`, `legal`, `cleaning_interior`, `pets`, `hair_beauty` | 홈 분야 C영역의 디자인/개발, 영상편집, 번역, 법률, 청소/인테리어, 반려, 헤어/미용 | `0006_service_categories.py`; `기타`는 초기 코드에서 제외 |
+| `CATEGORY_ICON_KEY` | `service_categories.icon_key`, 카탈로그 API `iconKey` | `pencil`, `video`, `language`, `scales`, `broom`, `paw`, `scissors` | 앱의 직관적인 분야 아이콘 선택 | `HomeCategories.java`; 알 수 없는 값은 일반 아이콘으로 표시 |
 
 `CHAT_SUBJECT_TYPE`은 자유 형식 문자열이지만, 서비스 연동 시 의미가 바뀌면 기존 방의 연결 대상 해석이 달라진다. 따라서 실제로 쓰기 시작한 값은 이 문서에 추가하고 재사용·폐기 정책을 기록한다. 현재 제품 서비스/견적 도메인은 미구현이라 운영용 subject type을 확정하지 않았다.
 

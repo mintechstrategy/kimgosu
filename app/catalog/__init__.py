@@ -1,0 +1,1 @@
+"""Public catalog code tables."""

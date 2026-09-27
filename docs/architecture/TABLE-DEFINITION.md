@@ -1,10 +1,11 @@
 # 테이블정의서
 
-기준일: 2026-09-27. 실제 스키마의 기준은 Alembic `0002_chat`, `0003_chat_attachments`, `0004_customer_identity`, `0005_customer_profile`이다. `0001_bootstrap`은 테이블을 만들지 않는다. 서비스·견적 테이블은 아직 없다.
+기준일: 2026-09-27. 실제 스키마의 기준은 Alembic `0002_chat`, `0003_chat_attachments`, `0004_customer_identity`, `0005_customer_profile`, `0006_service_categories`다. `0001_bootstrap`은 테이블을 만들지 않는다. 서비스·견적 업무 테이블은 아직 없다.
 
 | 테이블 | 주요 컬럼(형식) | 키·관계·제약 | 용도 |
 |---|---|---|---|
 | `customers` | `user_id varchar(80)`, `ci_lookup_hash char(64)`, `customer_name varchar(100)`, `birth_date date`, `home_address varchar(500)`, `phone_number varchar(30)`, `expert_enabled bool`, `created_at`, `updated_at timestamptz` | PK `user_id`; **unique index** `uq_customers_ci_lookup_hash`; 사용자 ID·해시·이름 형식 검사 | 고객원장. CI 조회로 사용자 ID 찾기. CI 원문 미저장. 기존 행의 새 프로필 컬럼은 nullable |
+| `service_categories` | `code varchar(40)`, `display_name varchar(80)`, `display_order integer`, `icon_key varchar(40)`, `is_visible boolean`, `updated_at timestamptz` | PK `code`; UQ `display_order`; 코드 형식, 명칭 비어 있지 않음, 순서 양수 검사 | 홈 분야 C영역의 관리 코드. `기타` 없이 7개 초기값. 관리자 변경 시 이 테이블에서 명칭·순서·노출·아이콘 관리 |
 | `chat_subjects` | `id uuid`, `subject_type varchar(80)`, `subject_id uuid`, `owner_user_id varchar(80)`, `active bool`, `created_at timestamptz` | PK `id`; UQ `(subject_type, subject_id)`; type 형식 검사 | 미래의 모든 서비스 리소스를 채팅에 연결 |
 | `chat_rooms` | `id uuid`, `subject_id uuid`, `initiated_by varchar(80)`, `created_at`, `last_message_at` | PK `id`; FK subject RESTRICT; UQ `(subject_id, initiated_by)` | 대상·발신자별 방 |
 | `chat_participants` | `room_id uuid`, `user_id varchar(80)`, `joined_at`, `last_read_message_id uuid` | PK `(room_id,user_id)`; FK room CASCADE, 읽음 메시지 SET NULL | 참여자·읽음 위치 |

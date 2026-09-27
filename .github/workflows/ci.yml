@@ -50,6 +50,7 @@ jobs:
           python tests/chat_realtime.py
           docker compose exec -T api python tests/customer_identity.py
           python tests/account_api_smoke.py
+          python tests/catalog_smoke.py
       - name: Show service logs after test failure
         if: failure()
         env:

@@ -16,6 +16,9 @@
 | Android 5개 WebView 내비게이션 | 탭별 WebView를 지연 생성·재사용; 페이지 내 기록 → 이전 탭 → 홈 → 종료 순서. 앱 링크·Android 시스템 뒤로가기가 같은 함수 사용 | 원격 URL 차단. 일부 에뮬레이터에서 홈/마이의 소프트웨어 렌더링 필요 | 구현 | `MainActivity.java`, `mobile/app/src/main/assets/` |
 | 임시 테스트 계정 선택 | 디버그 APK에서 S0 → T1 → 서버 `test-login` → A1. 4개 합성 CI를 전송하고 서버가 고객 ID·JWT 발급. 홈 상단에서 재선택 | LAN 테스트 포트 전용. 릴리스 APK는 T1과 합성 CI 제외 | 구현 | `mobile/app/src/debug/java/.../TestAccountGate.java`, `TestLoginClient.java` |
 | 고객 식별·프로필 | 합성 CI로 HMAC-SHA256 조회값을 만들고 `customers.ci_lookup_hash` 인덱스에서 조회. 신규 시 `test_무작위32자리hex` ID. 고객 이름·생년월일·주소·전화번호·고수 여부 관리, JWT 발급 및 내 프로필 조회·수정 | 실제 제공자 토큰/CI 진위 검증은 미구현 | 테스트 로그인/API 구현 | `app/accounts/identity.py`, `app/accounts/api.py`, `0005_customer_profile.py` |
+| 홈 분야 코드 | DB `service_categories`에서 `is_visible=true` 항목을 `display_order`, `code`순 반환. 명칭·순서·아이콘을 데이터로 관리 | 관리자 쓰기 API/권한은 미구현 | 읽기 API·초기 코드 구현 | `app/catalog/api.py`, `0006_service_categories.py` |
+| Android 홈 C영역 | 앱 번들 코드로 즉시 표시한 뒤 카탈로그 API 응답을 적용. 정사각형 카드 1행 가로 스와이프, 코드별 SVG 아이콘. `기타` 미노출 | API 실패 시 번들 코드 유지, JavaScript 비활성 | 구현 | `HomeCategories.java`, `home.html`, `app.css` |
+| Android 지역 선택 | 홈 좌상단 지역명·꺾쇠 클릭 → 첨부 설계와 같은 시·도/시·군·구 체크 목록. 비대면 포함 기본 체크, 검색 하기 클릭 → 선택값 기기 저장 및 직전 홈 복귀 | 한 곳 이상 또는 비대면 선택 필요. 지역별 서비스 필터 API는 후속 | 구현 | `MainActivity.java` |
 | 회원/서비스/견적/제안/리뷰 | 화면 기반 업무 기능 | 정책 결정 필요 | 미구현 | [API 초안](../API-SPEC.md) |
 
 각 프로그램의 상세 요청·응답은 [API정의서](../api/API-DEFINITION.md), 영속 데이터는 [테이블정의서](TABLE-DEFINITION.md)를 따른다.

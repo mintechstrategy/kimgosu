@@ -10,6 +10,7 @@ from sqlalchemy import create_engine, text
 from app.settings import database_url
 from app.chat.api import router as chat_router
 from app.accounts.api import router as account_router
+from app.catalog.api import router as catalog_router
 
 
 @asynccontextmanager
@@ -31,6 +32,7 @@ if origins:
                        allow_headers=["Authorization", "Content-Type"], allow_credentials=False)
 app.include_router(chat_router, prefix="/api/v1/chat", tags=["chat"])
 app.include_router(account_router, prefix="/api/v1", tags=["accounts"])
+app.include_router(catalog_router, prefix="/api/v1/catalog", tags=["catalog"])
 
 
 @app.get("/health/live")

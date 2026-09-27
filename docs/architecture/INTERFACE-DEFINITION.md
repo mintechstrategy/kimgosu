@@ -5,6 +5,8 @@
 | 경계 | 방향·방식 | 인증/데이터 | 상태 |
 |---|---|---|---|
 | 디버그 모바일 앱 ↔ FastAPI | LAN `http://192.168.0.213:23913`, JSON REST | 합성 CI 4개만 서버 테스트 로그인 허용. 실제 CI 전송 없음 | 구현·에뮬레이터 검증. 공유기에서 23913 포워딩 금지 |
+| Android 홈 ↔ 카탈로그 API | 디버그는 LAN 23913, 릴리스는 HTTPS 23912의 `GET /api/v1/catalog/home-categories`. 최초 표시에는 번들 코드 사용 | 공개 코드 데이터만 전달. 릴리스는 HTTP로 강등하지 않음. 현행 HTTPS 미구성 시 번들 코드 유지 | 구현 |
+| 홈 지역 선택 ↔ Android 저장소 | 기기 내부 SharedPreferences에 선택 시·도/시·군·구 및 비대면 포함 여부 저장 | 서버 지역 검색·계정 동기화는 미구현 | 구현 |
 | 향후 웹 ↔ FastAPI | 동일 REST·WebSocket 계약 | Bearer JWT, 허용 Origin 설정 | 서버 계약 구현, 웹 미구현 |
 | 공유기 ↔ Nginx ↔ FastAPI | 외부 HTTP 23912 → PC `192.168.0.213:23912` → Docker 내부 HTTP·WebSocket. 로컬 점검은 `127.0.0.1:8080` | 인증/고객 API는 공개 Nginx에서 404. DB/Redis/8080은 외부 미공개 | 외부 HTTP 200 확인, HTTPS TLS 실패 확인 |
 | FastAPI ↔ PostgreSQL | SQLAlchemy/SQL | 채팅·마이그레이션 영속 데이터 | 구현 |

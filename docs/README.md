@@ -23,7 +23,7 @@
 
 `docs/API-SPEC.md`는 화면에서 도출한 전체 API **제안**이고, `docs/CHAT-API.md`는 구현된 채팅 계약이다. 채팅 클라이언트 연동에는 후자가 우선한다.
 
-모바일 0.3 **Android 디버그 실행 캡처**: [테스트 계정 선택](previews/android-login-gate-v0.3.png), [로그인 후 홈](previews/android-login-home-v0.3.png), [마이 고객정보](previews/android-my-v0.3.png). 이전 캡처와 [스플래시 시안](previews/splash-preview.png)·[빈 메인 시안](previews/main-preview.png)은 과거 검토 자료다. Android 빌드 방법은 [mobile/README.md](../mobile/README.md)를 따른다.
+모바일 최신 **Android 디버그 실행 캡처**: [테스트 계정 선택](previews/android-login-gate-v0.3.png), [홈 분야·지역 드롭다운](previews/android-home-categories-v0.4.png), [지역 선택](previews/android-region-picker-v0.4.png), [마이 고객정보](previews/android-my-v0.3.png). 이전 캡처와 [스플래시 시안](previews/splash-preview.png)·[빈 메인 시안](previews/main-preview.png)은 과거 검토 자료다. Android 빌드 방법은 [mobile/README.md](../mobile/README.md)를 따른다.
 
 앱 화면의 **시각 디자인 기준**은 사용자가 제공한 [새 메인 화면 이미지](previews/home-design-reference.png)다. 기존 화면설계서는 desc와 기능 흐름을 참고한다. 0.3 홈 WebView에 새 기준을 적용했다.
 
