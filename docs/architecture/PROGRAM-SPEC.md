@@ -12,6 +12,7 @@
 | WebSocket | 일회용 티켓 검증 후 메시지/읽음 이벤트 전달 | 티켓 만료·재사용·Origin 검사 | 구현 | `app/chat/api.py` |
 | DB 마이그레이션 | 기동 전 Alembic upgrade | 실패 시 API 기동 차단 | 구현 | `migrations/versions/` |
 | Android 첫 화면 | Android 시스템 스플래시 후 보라색 브랜드 스플래시 500ms, 디버그에서 T1을 거쳐 정적 A1 홈과 5개 탭 독바. 탭 전환 시 홈 View 재사용 | 시작 시 인증/네트워크 없음. 홈 외 탭 본문은 미구현 | 구현 | `mobile/app/src/main/java/com/mintechstrategy/kimgosu/MainActivity.java` |
+| Android 5개 WebView 내비게이션 | 홈·검색·등록·채팅·마이 각 탭에 독립 WebView를 두고 탭별 페이지 상태·방문 기록을 보존. 앱 내 뒤로가기와 시스템 뒤로가기를 단일 처리 경로에 연결 | 다음 빌드에서 뒤로가기 우선순위, 탭 복귀, 홈 종료 및 재시작 시 상태를 검증. 현재 APK 미적용 | 다음 빌드 예정 | R-015, [서비스순서도](SERVICE-SEQUENCES.md) |
 | 임시 테스트 계정 선택 | 디버그 APK에서 S0 → T1 → A1. 4개 합성 CI/ID 중 하나를 로컬에서 선택; 홈 상단에서 재선택 | 서버 인증 토큰 없음. 릴리스 APK는 T1을 건너뛰고 합성 CI 코드도 제외 | 구현 | `mobile/app/src/debug/java/.../TestAccountGate.java`, 릴리스 stub |
 | 고객 식별 | 검증된 CI로 HMAC-SHA256 조회값을 만들고 `customers.ci_lookup_hash` 인덱스에서 `user_id` 조회. 신규 가입 시 `제공자_무작위32자리hex` ID 발급, 동일 CI는 기존 PK 재사용 | 제공자 토큰/CI 진위 검증과 JWT 발급은 아직 미구현 | 내부 함수 구현 | `app/accounts/identity.py` |
 | 회원/서비스/견적/제안/리뷰 | 화면 기반 업무 기능 | 정책 결정 필요 | 미구현 | [API 초안](../API-SPEC.md) |
