@@ -1,7 +1,0 @@
-{
-    auto_https disable_redirects
-}
-
-{$API_DOMAIN} {
-    reverse_proxy proxy:80
-}

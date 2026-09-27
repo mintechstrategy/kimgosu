@@ -34,6 +34,7 @@
 | 2026-09-27 | D05 | 원문 CI 대신 서버 전용 키로 만든 HMAC-SHA256 조회값에 고유 인덱스를 두어 동일 CI를 한 고객 ID로 연결한다. | 개인정보를 원문으로 저장하지 않으면서 조회 요건 충족하기 위한 구현 결정 | [테이블정의서](../architecture/TABLE-DEFINITION.md) |
 | 2026-09-27 | D06 | 다음 앱 빌드에서 홈·검색·등록·채팅·마이를 각각 독립 WebView로 구성하고, 앱 내부 뒤로가기와 Android 시스템 뒤로가기를 동일한 라우터에 연결한다. 현재 APK의 네이티브 화면은 아직 변경하지 않는다. | 사용자 추가 지시 | [요구사항 R-015](REQUIREMENTS.md), [화면설계서](SCREEN-DESIGN.md), [서비스순서도](../architecture/SERVICE-SEQUENCES.md) |
 | 2026-09-27 | D07 | 향후 앱 디자인·색상톤·UI/UX의 시각 기준은 사용자가 제공한 새 메인 화면 이미지로 한다. 기존 화면설계서는 기능 설명(desc)과 흐름에만 사용하고, 시각 표현은 새 기준에 맞춰 설계한다. | 사용자 추가 지시 | [참조 이미지](../previews/home-design-reference.png), [화면설계서](SCREEN-DESIGN.md) |
-| 2026-09-27 | D08 | 외부 API 주소는 `https://mt0205.synology.me:23912`로 확정한다. Docker 앞단 Caddy의 HTTPS 포트를 호스트 TCP 23912에 연결하고 인증서 발급용 TCP 80을 받는다. 기존 8080은 PC 로컬 점검용으로 유지한다. | 사용자 도메인·포트 재확인; 외부 API 통신에 TLS 필요 | [인터페이스 정의서](../architecture/INTERFACE-DEFINITION.md), [배포 문서](../../DOCKER.md) |
+| 2026-09-27 | D08 | 외부 API에 Caddy HTTPS 23912를 사용하려던 결정. **D09로 대체**한다. | 당시 도메인·포트 확인 후의 설계 | [인터페이스 정의서](../architecture/INTERFACE-DEFINITION.md) |
+| 2026-09-27 | D09 | 사용자가 지정한 현재 연결 방식은 공유기 TCP 23912 → `192.168.0.213:23912`, 테스트 주소는 `http://mt0205.synology.me:23912`다. PC Nginx가 LAN HTTP 23912를 직접 받으며 Caddy는 사용하지 않는다. 실제 인증·개인정보 트래픽 전에 HTTPS를 별도 구성한다. | 사용자 HTTP 주소·포워딩 지시. NAS가 80번을 사용해 PC Caddy 인증서 발급 경로를 쓸 수 없음 | [배포 문서](../../DOCKER.md), [API정의서](../api/API-DEFINITION.md) |
 
-새 결정은 `D09`부터 추가한다. 결정 후 관련 미결정 행을 `해결: Dxx`로 표시하거나 제거하고, 제품 기준선과 API/구현 문서를 함께 갱신한다.
+새 결정은 `D10`부터 추가한다. 결정 후 관련 미결정 행을 `해결: Dxx`로 표시하거나 제거하고, 제품 기준선과 API/구현 문서를 함께 갱신한다.

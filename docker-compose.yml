@@ -30,38 +30,13 @@ x-backend: &backend
       max-file: "3"
 
 services:
-  edge:
-    image: caddy:2.11.4-alpine
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "${HTTPS_PORT:-23912}:443"
-    environment:
-      API_DOMAIN: ${API_DOMAIN:-mt0205.synology.me}
-    volumes:
-      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - type: bind
-        source: "${STORAGE_ROOT:-G:/shared_storage/kimgosu}/caddy/data"
-        target: /data
-        bind:
-          create_host_path: false
-      - type: bind
-        source: "${STORAGE_ROOT:-G:/shared_storage/kimgosu}/caddy/config"
-        target: /config
-        bind:
-          create_host_path: false
-    depends_on:
-      proxy:
-        condition: service_started
-    networks:
-      - backend
-
   proxy:
     image: nginx:1.28-alpine
     restart: unless-stopped
     ports:
-      # Local readiness/debug access; public clients use edge on HTTPS 443.
+      # Local readiness/debug access and Synology NAS reverse-proxy upstream.
       - "127.0.0.1:${HTTP_PORT:-8080}:80"
+      - "${LAN_BIND_IP:-192.168.0.213}:${LAN_HTTP_PORT:-23912}:80"
     volumes:
       - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
