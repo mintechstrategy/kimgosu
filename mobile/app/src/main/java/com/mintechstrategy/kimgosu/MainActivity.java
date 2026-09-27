@@ -222,7 +222,7 @@ public final class MainActivity extends Activity {
             final int index = i;
             LinearLayout item = column();
             item.setGravity(Gravity.CENTER);
-            int color = i == selectedTab ? INK : MUTED;
+            int color = i == selectedTab ? Color.rgb(37, 99, 235) : INK;
             Icon icon = new Icon(this, i, color);
             item.addView(icon, new LinearLayout.LayoutParams(dp(25), dp(25)));
             TextView label = text(TABS[i], 11, color, i == selectedTab);
@@ -250,14 +250,15 @@ public final class MainActivity extends Activity {
             page = new WebView(this);
             page.setBackgroundColor(Color.WHITE);
             if (selectedTab == 0 || selectedTab == 4) page.setLayerType(View.LAYER_TYPE_SOFTWARE, null);
-            page.getSettings().setJavaScriptEnabled(false);
+            page.getSettings().setJavaScriptEnabled(true);
             page.getSettings().setDomStorageEnabled(false);
             page.getSettings().setAllowFileAccess(true);
             page.getSettings().setAllowContentAccess(false);
+            page.addJavascriptInterface(new ApiBridge(this, page, activeSession), "KimgosuNative");
             page.setWebViewClient(new WebViewClient() {
                 @Override public void onPageFinished(WebView view, String url) {
                     Log.d("KimgosuWebView", "Loaded " + url + " title=" + view.getTitle());
-                    if (url.endsWith("/home.html")) view.clearHistory();
+                    if (url.endsWith("/home.html") || url.endsWith("/expert.html")) view.clearHistory();
                 }
                 @Override public void onReceivedError(WebView view, WebResourceRequest request,
                                                       WebResourceError error) {
@@ -298,6 +299,30 @@ public final class MainActivity extends Activity {
         regionPickerVisible = false;
         if (remember) tabHistory.push(selectedTab);
         selectedTab = tab;
+        renderContent();
+        renderDock();
+        WebView current = tabViews[tab];
+        if (current != null) current.evaluateJavascript(
+                "window.dispatchEvent(new Event('kimgosu-tab-visible'))", null);
+    }
+
+    void switchMode(boolean expert) {
+        if (activeSession == null || !activeSession.expertEnabled) return;
+        getPreferences(Context.MODE_PRIVATE).edit().putBoolean("expert_mode", expert).apply();
+        WebView home = tabViews[0];
+        if (home != null) {
+            if (home.getParent() instanceof ViewGroup) ((ViewGroup) home.getParent()).removeView(home);
+            home.destroy();
+            tabViews[0] = null;
+        }
+        WebView my = tabViews[4];
+        if (my != null) {
+            if (my.getParent() instanceof ViewGroup) ((ViewGroup) my.getParent()).removeView(my);
+            my.destroy();
+            tabViews[4] = null;
+        }
+        selectedTab = 0;
+        tabHistory.clear();
         renderContent();
         renderDock();
     }
@@ -383,8 +408,9 @@ public final class MainActivity extends Activity {
             account.setOnClickListener(v -> showTestAccountGate());
             header.addView(account);
         }
-        TextView bell = text("♧", 23, INK, false);
-        LinearLayout.LayoutParams bellParams = new LinearLayout.LayoutParams(-2, -2);
+        Icon bell = new Icon(this, 15, INK);
+        bell.setContentDescription("알림");
+        LinearLayout.LayoutParams bellParams = new LinearLayout.LayoutParams(dp(27), dp(27));
         bellParams.leftMargin = dp(9);
         header.addView(bell, bellParams);
         content.addView(header, new LinearLayout.LayoutParams(-1, dp(54)));
@@ -537,6 +563,11 @@ public final class MainActivity extends Activity {
     }
 
     private void loadHomePage(WebView page) {
+        if (activeSession != null && activeSession.expertEnabled &&
+                getPreferences(Context.MODE_PRIVATE).getBoolean("expert_mode", false)) {
+            page.loadUrl("file:///android_asset/expert.html");
+            return;
+        }
         try (InputStream file = getAssets().open("home.html")) {
             String html = new String(file.readAllBytes(), StandardCharsets.UTF_8);
             String json = categoryJson;

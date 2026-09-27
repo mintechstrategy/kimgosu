@@ -1,6 +1,6 @@
 # 김고수 Docker 구성
 
-FastAPI 상태 확인 API, Celery worker/beat, Alembic 초기 마이그레이션과 Dockerfile을 포함합니다. 실제 김고수 업무 기능은 아직 구현하지 않았습니다. 로컬 이미지 `kimgosu-backend:local`로 실행을 검증했습니다.
+FastAPI 업무·독립 채팅 API, Celery worker/beat, Alembic 마이그레이션과 Dockerfile을 포함합니다. 로컬 PC 운영 DB는 `0008_completion_reviews`까지 적용했다. 현재 API는 로컬 빌드 이미지로 실행 중이며 다음 GitHub 배포가 기존 원격 이미지를 다시 배포하지 않도록 소스·이미지 버전을 일치시켜야 한다.
 
 ## 준비
 
@@ -30,7 +30,7 @@ docker compose pull
 docker compose up -d --wait
 ```
 
-PC 내부 점검 주소는 `http://localhost:8080`입니다. 외부 API 주소 `http://mt0205.synology.me:23912`는 공유기에서 **외부 TCP 23912 → 192.168.0.213:23912**로 직접 포워딩됩니다. `/health/ready`의 외부 HTTP 200을 확인했지만 HTTPS 연결은 TLS 오류로 실패합니다. PC Nginx는 23912와 로컬 전용 8080을 수신합니다. 공개 `/api/v1/auth/`, `/api/v1/customers/` 경로는 404로 차단합니다. 실제 개인정보·토큰의 외부 송수신 전에 HTTPS를 구성해야 합니다.
+PC 내부 점검 주소는 `http://localhost:8080`입니다. 외부 API 주소 `http://mt0205.synology.me:23912`는 공유기에서 **외부 TCP 23912 → 192.168.0.213:23912**로 직접 포워딩됩니다. `/health/ready`의 외부 HTTP 200을 확인했지만 HTTPS 연결은 TLS 오류로 실패합니다. PC Nginx는 23912와 로컬 전용 8080을 수신합니다. TLS 구성이 완료되기 전 공개 HTTP의 모든 `/api/v1/` 경로를 404로 차단합니다. 실제 개인정보·토큰의 외부 송수신 전에 HTTPS를 구성해야 합니다.
 
 디버그 APK의 **합성 계정 전용** 테스트 로그인은 `http://192.168.0.213:23913`으로 FastAPI에 직접 접속합니다. 이 포트는 공유기에 포워딩하지 않습니다. 배포 `.env`에 `LAN_TEST_PORT=23913`, `TEST_LOGIN_ENABLED=true`를 설정하고 `G:\docker\kimgosu\secrets\ci_lookup_key.txt`에 지속 보관할 무작위 키를 둡니다. `db_password.txt`, `jwt_secret.txt`와 함께 Compose secret으로 마운트합니다. 키를 바꾸면 기존 CI 해시 조회가 끊기므로 백업·교체 절차 없이 교체하지 않습니다. 디버그 로그인 API는 실사용 간편인증이 아닙니다.
 

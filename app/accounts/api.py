@@ -16,12 +16,26 @@ from app.chat.auth import identity
 router = APIRouter()
 
 # These values are synthetic. Never accept a caller-supplied user_id or profile.
-TEST_ACCOUNTS = {
-    "TEST-CI-KIMGOSU-CONSUMER-001": ("테스트 일반 1", date(1991, 1, 15), "테스트 주소 1", False),
-    "TEST-CI-KIMGOSU-CONSUMER-002": ("테스트 일반 2", date(1992, 2, 16), "테스트 주소 2", False),
-    "TEST-CI-KIMGOSU-EXPERT-001": ("테스트 고수 1", date(1987, 3, 17), "테스트 주소 3", True),
-    "TEST-CI-KIMGOSU-EXPERT-002": ("테스트 고수 2", date(1988, 4, 18), "테스트 주소 4", True),
-}
+def test_profile(ci: str):
+    """Fixed synthetic identities; arbitrary caller-supplied CIs never enroll."""
+    parts = ci.split("-")
+    if len(parts) != 5 or parts[:3] != ["TEST", "CI", "KIMGOSU"]:
+        return None
+    role, number = parts[3:]
+    if role not in {"CONSUMER", "EXPERT"} or len(number) != 3 or any(ch not in "0123456789" for ch in number):
+        return None
+    index = int(number)
+    if not 1 <= index <= 50:
+        return None
+    expert = role == "EXPERT"
+    name = f"테스트 {'고수' if expert else '일반'} {index}"
+    if index <= 2:
+        birth = (date(1987, 3, 17), date(1988, 4, 18))[index - 1] if expert else (
+            date(1991, 1, 15), date(1992, 2, 16))[index - 1]
+    else:
+        birth = date(1987 if expert else 1991, 1 + (index - 1) % 12, 1 + (index - 1) % 28)
+    address = "서울특별시 영등포구" if expert else "서울특별시 강남구"
+    return name, birth, address, expert
 
 
 class CustomerResponse(BaseModel):
@@ -81,7 +95,7 @@ def _jwt(user_id: str) -> str:
 def test_login(payload: TestLoginRequest, request: Request):
     if os.getenv("TEST_LOGIN_ENABLED") != "true":
         raise HTTPException(404, "Not found")
-    profile = TEST_ACCOUNTS.get(payload.ci)
+    profile = test_profile(payload.ci)
     if profile is None:
         raise HTTPException(401, "Unknown test identity")
     ci_secret = Path(os.environ["CI_LOOKUP_KEY_FILE"]).read_bytes().strip()

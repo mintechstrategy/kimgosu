@@ -10,8 +10,21 @@ android {
         applicationId 'com.mintechstrategy.kimgosu'
         minSdk 26
         targetSdk 34
-        versionCode 4
-        versionName '0.4.0-test'
+        versionCode 5
+        versionName '0.5.0-test'
+    }
+
+    buildFeatures { buildConfig true }
+
+    buildTypes {
+        debug {
+            buildConfigField 'String', 'API_BASE_URL',
+                    "\"${project.findProperty('debugApiBase') ?: 'http://192.168.0.213:23913'}\""
+        }
+        release {
+            buildConfigField 'String', 'API_BASE_URL',
+                    "\"${project.findProperty('releaseApiBase') ?: 'https://mt0205.synology.me:23912'}\""
+        }
     }
 
     compileOptions {

@@ -11,6 +11,8 @@ from app.settings import database_url
 from app.chat.api import router as chat_router
 from app.accounts.api import router as account_router
 from app.catalog.api import router as catalog_router
+from app.marketplace.api import router as marketplace_router
+from app.marketplace.reviews import router as review_router
 
 
 @asynccontextmanager
@@ -33,6 +35,8 @@ if origins:
 app.include_router(chat_router, prefix="/api/v1/chat", tags=["chat"])
 app.include_router(account_router, prefix="/api/v1", tags=["accounts"])
 app.include_router(catalog_router, prefix="/api/v1/catalog", tags=["catalog"])
+app.include_router(marketplace_router, prefix="/api/v1", tags=["marketplace"])
+app.include_router(review_router, prefix="/api/v1", tags=["reviews"])
 
 
 @app.get("/health/live")

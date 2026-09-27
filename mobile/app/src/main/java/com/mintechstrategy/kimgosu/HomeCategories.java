@@ -16,17 +16,23 @@ final class HomeCategories {
         for (int i = 0; i < data.length(); i++) items.add(data.getJSONObject(i));
         items.sort(Comparator.comparingInt(item -> item.optInt("displayOrder", Integer.MAX_VALUE)));
         StringBuilder html = new StringBuilder();
+        int visibleIndex = 0;
         for (JSONObject item : items) {
             String code = item.getString("code");
             if (!code.matches("[a-z][a-z0-9_]*")) continue;
             String icon = item.optString("iconKey", "");
+            int slot = visibleIndex % 8;
+            int row = slot < 4 ? 1 : 2;
+            int column = (visibleIndex / 8) * 4 + (slot % 4) + 1;
             html.append("<a class=\"category-card ").append(tone(icon))
-                    .append("\" href=\"detail.html?category=").append(code)
+                    .append("\" style=\"grid-row:").append(row).append(";grid-column:").append(column)
+                    .append("\" href=\"listing.html?categoryCode=").append(code)
                     .append("\" aria-label=\"").append(TextUtils.htmlEncode(item.getString("displayName")))
                     .append("\"><span class=\"category-icon\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\">")
                     .append(paths(icon)).append("</svg></span><span class=\"category-name\">")
                     .append(TextUtils.htmlEncode(item.getString("displayName")))
                     .append("</span></a>");
+            visibleIndex++;
         }
         return html.toString();
     }

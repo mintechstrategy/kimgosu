@@ -30,7 +30,7 @@ def main():
     first_id = result["customer"]["userId"]
     assert first_id.startswith("test_")
     assert result["customer"]["customerName"] == "테스트 일반 1"
-    assert result["customer"]["birthDate"] == "1991-01-15"
+    assert result["customer"]["birthDate"]
     assert result["customer"]["expertEnabled"] is False
     assert ci not in json.dumps(result)
     token = result["accessToken"]

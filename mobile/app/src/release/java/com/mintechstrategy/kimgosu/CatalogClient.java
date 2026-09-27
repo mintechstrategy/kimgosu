@@ -17,7 +17,7 @@ final class CatalogClient {
             HttpURLConnection connection = null;
             try {
                 connection = (HttpURLConnection) new URL(
-                        "https://mt0205.synology.me:23912/api/v1/catalog/home-categories").openConnection();
+                        ApiEndpoint.BASE + "/api/v1/catalog/home-categories").openConnection();
                 connection.setConnectTimeout(1800);
                 connection.setReadTimeout(1800);
                 try (InputStream stream = connection.getInputStream()) {

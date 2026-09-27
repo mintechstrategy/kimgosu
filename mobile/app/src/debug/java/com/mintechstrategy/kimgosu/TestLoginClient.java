@@ -10,7 +10,7 @@ import java.util.concurrent.Executors;
 
 /** LAN-only debug login. The release variant contains no endpoint or synthetic CI. */
 final class TestLoginClient {
-    private static final String ENDPOINT = "http://192.168.0.213:23913/api/v1/auth/test-login";
+    private static final String ENDPOINT = ApiEndpoint.BASE + "/api/v1/auth/test-login";
     private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor();
 
     interface Callback {

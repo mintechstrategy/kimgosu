@@ -164,10 +164,60 @@ sequenceDiagram
     App->>API: GET /api/v1/catalog/home-categories
     API->>DB: 노출 코드 순서 조회
     API-->>App: 코드·명칭·순서·아이콘
-    App->>App: C영역 가로 카드 갱신
+    App->>App: C영역 2행 가로 카드 갱신
     App->>Region: 상단 지역명·꺾쇠 클릭
     Region->>Region: 시·도/시·군·구/비대면 선택
     Region-->>App: 검색 하기, 선택값 기기 저장·직전 홈 복귀
 ```
 
-지역 선택은 현재 홈 표시와 기기 저장까지다. 서비스 목록/검색 API에 지역 필터를 전달하는 업무 기능은 후속 작업이다. Android 뒤로가기로 A2를 닫으면 변경을 저장하지 않는다.
+지역 선택은 기기에 저장되고 서비스/견적 목록 API의 `regions`, `includeRemote` 필터로 전달된다. Android 뒤로가기로 A2를 닫으면 변경을 저장하지 않는다.
+
+C영역의 2행 좌우 스와이프는 R-022에 따라 빌드·에뮬레이터 홈 화면에서 확인했다. 카테고리 API의 응답 순서와 값은 변경하지 않는다.
+
+## 서비스·견적·채팅 연결 — 격리 테스트 통과
+
+```mermaid
+sequenceDiagram
+    actor Consumer as 일반 이용자
+    actor Expert as 고수
+    participant API as 서비스/견적 API
+    participant DB as 업무 DB
+    participant Chat as 독립 채팅 도메인
+    Consumer->>API: 견적 등록
+    API->>DB: quote_requests 생성
+    Expert->>API: 같은 분야 서비스 등록·제안
+    API->>DB: 소유권·분야·접수 상태 검사
+    API->>Chat: quote_request subject·방/참여자 생성 또는 재사용
+    API-->>Expert: proposalId, chatRoomId
+    Expert->>Chat: 메시지 전송
+    Chat-->>Consumer: 방 목록·메시지 조회
+    Consumer->>API: 서비스 문의하기
+    API->>Chat: service subject·방/참여자 생성 또는 재사용
+```
+
+작성자 본인 문의, 다른 분야 서비스로 제안, 마감 견적 제안은 거부한다. 두 사용자 역할 화면은 하나의 Android 앱 안에서 전환한다. 결제·정산은 이번 범위에서 제외했다.
+
+## 강남구 일반인 ↔ 영등포구 고수 검색·협상·리뷰
+
+```mermaid
+sequenceDiagram
+    actor Expert as 영등포구 고수
+    actor Consumer as 강남구 일반인
+    participant API as 업무 API
+    participant Chat as 독립 채팅 API
+    Expert->>API: 비대면 포트폴리오 서비스 등록
+    Consumer->>API: 분야·검색어·선택 지역으로 검색
+    API-->>Consumer: 서비스 목록·상세
+    Consumer->>API: 서비스 문의
+    API->>Chat: service subject와 2인 방 생성
+    Consumer->>Chat: 희망 가격 질문
+    Expert->>Chat: 확인·시작 가격 답변
+    Consumer->>Chat: 역제안
+    Expert->>Chat: 조정 가격 답변
+    Consumer->>Chat: 거래 완료 확인
+    Expert->>Chat: 거래 완료 확인
+    Chat-->>Consumer: 양측 완료 상태
+    Consumer->>Chat: 상대방 리뷰 1회
+```
+
+서비스·견적은 작성자가 언제든 수정·논리 삭제할 수 있다. 삭제 뒤 공개 목록·상세에서는 사라지지만 기존 채팅방·메시지·완료 확인·리뷰는 보존한다. 2026-09-27~28 실행한 1,000회 교차 지역 시나리오 결과는 [테스트 보고서](../test-results/cross-district-1000-20260927.md)를 따른다.

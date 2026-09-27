@@ -23,9 +23,11 @@
 
 `docs/API-SPEC.md`는 화면에서 도출한 전체 API **제안**이고, `docs/CHAT-API.md`는 구현된 채팅 계약이다. 채팅 클라이언트 연동에는 후자가 우선한다.
 
-모바일 최신 **Android 디버그 실행 캡처**: [테스트 계정 선택](previews/android-login-gate-v0.3.png), [홈 분야·지역 드롭다운](previews/android-home-categories-v0.4.png), [지역 선택](previews/android-region-picker-v0.4.png), [마이 고객정보](previews/android-my-v0.3.png). 이전 캡처와 [스플래시 시안](previews/splash-preview.png)·[빈 메인 시안](previews/main-preview.png)은 과거 검토 자료다. Android 빌드 방법은 [mobile/README.md](../mobile/README.md)를 따른다.
+추가 가이드: [카카오·네이버 간편인증](architecture/SOCIAL-LOGIN-GUIDE.md), [AWS 이전 기준](architecture/AWS-MIGRATION.md). 실행 검증: [강남구 200회](test-results/gangnam-200-20260927.md), [강남구 일반·영등포구 고수 1,000회](test-results/cross-district-1000-20260927.md).
 
-앱 화면의 **시각 디자인 기준**은 사용자가 제공한 [새 메인 화면 이미지](previews/home-design-reference.png)다. 기존 화면설계서는 desc와 기능 흐름을 참고한다. 0.3 홈 WebView에 새 기준을 적용했다.
+모바일 **마지막 빌드의 Android 디버그 실행 캡처**: [테스트 계정 선택](previews/android-login-gate-v0.3.png), [홈 분야·지역 드롭다운](previews/android-home-categories-v0.4.png), [지역 선택](previews/android-region-picker-v0.4.png), [마이 고객정보](previews/android-my-v0.3.png). 홈 C영역 4열×2행과 홈 디자인 변경의 최신 실행 모습은 [홈 상단](previews/android-home-fixed-v0.4.png), [스크롤 후 카드](previews/android-home-fixed-scrolled-v0.4.png)에서 확인한다. 이전 캡처와 [스플래시 시안](previews/splash-preview.png)·[빈 메인 시안](previews/main-preview.png)은 과거 검토 자료다. Android 빌드 방법은 [mobile/README.md](../mobile/README.md)를 따른다.
+
+앱 화면의 **시각 디자인 기준**은 사용자가 제공한 [새 메인 화면 이미지](previews/home-design-reference.png)다. 기존 화면설계서는 desc와 기능 흐름을 참고한다. 홈 전체를 원본에 더 가깝게 맞춘 소스 수정은 디버그 APK 빌드·에뮬레이터 화면 검증 완료이며, 원본 PNG는 변경 없이 앱 자산으로 사용한다.
 
 ## 기록 규칙
 
