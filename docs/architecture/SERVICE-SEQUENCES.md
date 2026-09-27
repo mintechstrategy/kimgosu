@@ -2,9 +2,22 @@
 
 기준일: 2026-09-27. 사용자가 제공한 `서비스순서도.png`의 **화면 이동 흐름**을 먼저 기록하고, 아래에 시스템 상호작용을 분리한다. 화면 간 화살표는 구현 완료나 업무 규칙 확정을 뜻하지 않는다.
 
-## 전체 서비스 화면 흐름 — 제공된 순서도 근거, 앱 미구현
+## 전체 서비스 화면 흐름 — 제공된 순서도 근거, 일부 구현
 
-2026-09-27 사용자 지시로 원본 순서도 앞에 `스플래시 S0 → 앱 내 500ms → 메인 T0/A1`을 추가했다. Android 디버그 APK에서 [스플래시](../previews/android-splash-view.png)와 [홈](../previews/android-home.png)을 확인했다. OS 콜드 스타트 시간은 500ms에 포함되지 않는다. 하단 독바는 원본 순서도의 홈·검색·등록·채팅·마이를 따른다. 홈 외의 탭과 상세 이동은 이번 APK에서 아직 연결하지 않았다.
+2026-09-27 사용자 지시로 원본 순서도 앞에 `스플래시 S0 → 앱 내 500ms → 디버그 전용 T1 테스트 계정 선택 → 메인 T0/A1`을 추가했다. 릴리스 빌드는 T1을 건너뛴다. Android 디버그 APK에서 [스플래시](../previews/android-splash-view.png), [계정 선택](../previews/android-test-account.png), [홈](../previews/android-test-expert-home.png)을 확인했다. OS 콜드 스타트 시간은 500ms에 포함되지 않는다. 하단 독바는 원본 순서도의 홈·검색·등록·채팅·마이를 따른다. 홈 외의 탭과 상세 이동은 이번 APK에서 아직 연결하지 않았다.
+
+```mermaid
+sequenceDiagram
+    participant Person as 테스트 담당자
+    participant APK as 디버그 APK
+    participant Home as A1 홈
+    Person->>APK: 앱 시작
+    APK->>APK: 스플래시 약 500ms
+    APK-->>Person: T1 일반 2명/고수 2명 선택
+    Person->>APK: 합성 테스트 계정 선택
+    APK->>Home: 로컬 신원 설정 후 홈 표시
+    Note over APK,Home: 서버 로그인/JWT/CI 전송 없음
+```
 
 ```mermaid
 flowchart LR

@@ -23,7 +23,7 @@
 
 `docs/API-SPEC.md`는 화면에서 도출한 전체 API **제안**이고, `docs/CHAT-API.md`는 구현된 채팅 계약이다. 채팅 클라이언트 연동에는 후자가 우선한다.
 
-모바일 첫 화면의 **현재 Android 실행 캡처**: [스플래시](previews/android-splash-view.png), [홈](previews/android-home.png). 이전 [스플래시](previews/splash-preview.png)·[빈 메인](previews/main-preview.png)은 검토용 시안이다. Android 빌드 방법은 [mobile/README.md](../mobile/README.md)를 따른다.
+모바일 첫 화면의 **현재 Android 디버그 실행 캡처**: [스플래시](previews/android-splash-view.png), [테스트 계정 선택](previews/android-test-account.png), [선택 후 홈](previews/android-test-expert-home.png). 이전 [스플래시](previews/splash-preview.png)·[빈 메인](previews/main-preview.png)은 검토용 시안이다. Android 빌드 방법은 [mobile/README.md](../mobile/README.md)를 따른다.
 
 ## 기록 규칙
 

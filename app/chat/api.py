@@ -24,7 +24,7 @@ router = APIRouter()
 class SubjectCreate(BaseModel):
     subjectType: str = Field(pattern=r"^[a-z][a-z0-9_]{1,79}$")
     subjectId: UUID
-    ownerUserId: UUID
+    ownerUserId: str = Field(min_length=1, max_length=80, pattern=r"^[a-z0-9_-]+$")
 
 
 class RoomCreate(BaseModel):
@@ -45,7 +45,7 @@ def db(request: Request):
     return request.app.state.db
 
 
-def room_for_user(connection, room_id: UUID, user_id: UUID):
+def room_for_user(connection, room_id: UUID, user_id: str):
     row = connection.execute(text("""
         SELECT r.id, r.subject_id, s.subject_type, s.subject_id AS external_subject_id,
                s.owner_user_id, r.created_at, r.last_message_at, p.last_read_message_id
@@ -424,7 +424,7 @@ async def room_events(websocket: WebSocket, room_id: UUID, ticket: str):
         return
     def verify_room():
         with websocket.app.state.db.connect() as connection:
-            room_for_user(connection, room_id, UUID(claims["userId"]))
+            room_for_user(connection, room_id, claims["userId"])
 
     try:
         await run_in_threadpool(verify_room)

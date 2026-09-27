@@ -5,6 +5,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt && useradd --uid 10001 --create-home appuser
 COPY app ./app
 COPY migrations ./migrations
+COPY tests/customer_identity.py ./tests/customer_identity.py
 COPY alembic.ini .
 RUN mkdir -p /app/uploads /app/scheduler && chown -R appuser:appuser /app
 USER appuser

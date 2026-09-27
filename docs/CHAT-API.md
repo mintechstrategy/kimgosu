@@ -20,7 +20,7 @@
 
 ## 인증
 
-REST: `Authorization: Bearer <JWT>`. 검증 항목은 HS256 서명, `iss=kimgosu`, `aud=kimgosu-api`, `sub=UUID`, `iat`, `exp`. 현재 회원 가입/토큰 발급 API는 없으므로 실제 사용자 연결 시 인증 서비스가 이 계약으로 토큰을 발급해야 한다. `POST /subjects`는 추가로 `scope`에 `chat:subjects:write`가 필요하다. 테스트용 임의 사용자 ID를 받는 공개 API는 제공하지 않는다.
+REST: `Authorization: Bearer <JWT>`. 검증 항목은 HS256 서명, `iss=kimgosu`, `aud=kimgosu-api`, `sub=사용자ID 문자열`, `iat`, `exp`. 새 고객 ID는 `kakao_<32자리hex>` 또는 `naver_<32자리hex>`처럼 제공자 접두어를 쓰며, 기존 채팅의 UUID `sub`도 이행 기간에 허용한다. 현재 회원 가입/토큰 발급 API는 없으므로 실제 사용자 연결 시 인증 서비스가 이 계약으로 토큰을 발급해야 한다. `POST /subjects`는 추가로 `scope`에 `chat:subjects:write`가 필요하다. 디버그 APK의 임시 계정 선택은 실제 JWT를 발급하지 않는다.
 
 브라우저 WebSocket 연결은 먼저 Bearer 인증으로 `/rooms/{id}/ws-ticket`을 호출한다. 받은 티켓은 30초 유효하며 Redis에서 한 번만 사용할 수 있다. 웹의 허용 Origin은 `FRONTEND_ORIGINS`에 정확한 주소를 쉼표로 구분해 설정한다. 모바일의 Origin 없는 연결도 허용한다.
 

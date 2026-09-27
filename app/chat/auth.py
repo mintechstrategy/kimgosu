@@ -1,6 +1,6 @@
 import os
+import re
 from pathlib import Path
-from uuid import UUID
 
 import jwt
 from fastapi import Depends, HTTPException
@@ -8,6 +8,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 
 bearer = HTTPBearer(auto_error=False)
+USER_ID = re.compile(r"^(?:[a-z][a-z0-9]*_[0-9a-f]{32}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$")
 
 
 def identity(credentials: HTTPAuthorizationCredentials | None = Depends(bearer)) -> dict:
@@ -23,7 +24,9 @@ def identity(credentials: HTTPAuthorizationCredentials | None = Depends(bearer))
             issuer="kimgosu",
             options={"require": ["sub", "exp", "iat", "iss", "aud"]},
         )
-        user_id = UUID(claims["sub"])
+        user_id = claims["sub"]
+        if not isinstance(user_id, str) or not USER_ID.fullmatch(user_id):
+            raise ValueError("Invalid user ID")
     except (jwt.PyJWTError, ValueError, KeyError):
         raise HTTPException(401, "Invalid access token", headers={"WWW-Authenticate": "Bearer"}) from None
     return {"user_id": user_id, "scopes": set(claims.get("scope", "").split())}

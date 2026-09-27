@@ -118,6 +118,18 @@ def main():
     ticket = call("POST", f"/rooms/{room['id']}/ws-ticket", owner_token)
     assert ticket["ticket"] and ticket["expiresInSeconds"] == 30
     call("POST", f"/rooms/{room['id']}/ws-ticket", stranger_token, expected=404)
+    # Customer ledger IDs use provider-prefixed strings; legacy UUID chat users remain readable.
+    prefixed_owner = f"kakao_{uuid4().hex}"
+    prefixed_visitor = f"naver_{uuid4().hex}"
+    prefixed_subject = call("POST", "/subjects", writer, {"subjectType": "future_service",
+        "subjectId": str(uuid4()), "ownerUserId": prefixed_owner}, 201)
+    prefixed_room = call("POST", "/rooms", token(prefixed_visitor),
+                         {"subjectId": prefixed_subject["id"]}, 201)
+    prefixed_message = call("POST", f"/rooms/{prefixed_room['id']}/messages",
+                            token(prefixed_visitor),
+                            {"clientMessageId": str(uuid4()), "text": "prefixed identity"}, 201)
+    assert prefixed_message["senderUserId"] == prefixed_visitor
+    assert call("GET", f"/rooms/{prefixed_room['id']}", token(prefixed_owner))["participantIds"]
     call("GET", "/rooms", expected=401)
     print("PASS: subjects, rooms, access control, messages, private attachments, read state, tickets")
 

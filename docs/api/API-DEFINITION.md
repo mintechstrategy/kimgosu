@@ -11,3 +11,5 @@
 주의: 초기 [API 초안](../API-SPEC.md)의 채팅 경로, 메시지 필드, WebSocket 방식은 현재 구현과 일부 다르다. 채팅 연동에는 [실제 채팅 API](../CHAT-API.md)를 사용한다. 향후 기능을 구현할 때 이 표의 상태를 갱신하고 초안과 실제 계약의 차이를 해소한다. 런타임 FastAPI `/openapi.json`은 구현된 REST 엔드포인트를 확인하는 보조 자료이며, WebSocket·업무 정책은 문서도 확인한다.
 
 API 요청·응답의 구분값은 [코드인스턴스](../architecture/CODE-INSTANCES.md)에서 그룹별로 관리한다. 제안 코드와 실제 응답 코드의 차이를 확인한 뒤 클라이언트에 적용한다.
+
+고객원장의 CI 조회와 사용자 ID 생성은 `app/accounts/identity.py`의 **내부 함수**로 구현했다. 제공자 토큰 검증, 카카오/네이버 로그인, 회원가입 및 JWT 발급 API는 아직 없다. 디버그 APK의 계정 선택은 로컬 UI 상태만 바꾸며 API나 DB에 테스트 CI를 전송하지 않는다. 향후 로그인 API에서는 제공자에서 검증한 CI만으로 `customers.ci_lookup_hash`를 조회하고 반환된 `user_id`를 세션/JWT `sub`로 사용한다.

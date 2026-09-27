@@ -31,6 +31,7 @@ public final class MainActivity extends Activity {
     private LinearLayout content;
     private LinearLayout dock;
     private ScrollView homeScroll;
+    private TestAccount activeTestAccount;
     private int selectedTab;
 
     @Override public void onCreate(Bundle savedInstanceState) {
@@ -38,7 +39,10 @@ public final class MainActivity extends Activity {
         getWindow().setStatusBarColor(PURPLE);
         getWindow().setNavigationBarColor(PURPLE);
         showSplash();
-        handler.postDelayed(() -> showMain(0), 500);
+        handler.postDelayed(() -> {
+            if (TestAccountGate.enabled()) showTestAccountGate();
+            else showMain(0);
+        }, 500);
     }
 
     @Override protected void onDestroy() {
@@ -103,6 +107,17 @@ public final class MainActivity extends Activity {
         centered.rightMargin = dp(16);
         frame.addView(title, centered);
         setContentView(frame);
+    }
+
+    private void showTestAccountGate() {
+        getWindow().setStatusBarColor(Color.rgb(248, 247, 251));
+        getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
+        getWindow().setNavigationBarColor(Color.rgb(248, 247, 251));
+        setContentView(TestAccountGate.create(this, account -> {
+            activeTestAccount = account;
+            homeScroll = null;
+            showMain(0);
+        }));
     }
 
     private void showMain(int tab) {
@@ -179,6 +194,15 @@ public final class MainActivity extends Activity {
         pad(header, 18, 15, 18, 13);
         TextView brand = text("김고수", 17, CORAL, true);
         header.addView(brand, new LinearLayout.LayoutParams(0, -2, 1));
+        if (activeTestAccount != null) {
+            TextView selected = text(activeTestAccount.label, 11, PURPLE, true);
+            selected.setGravity(Gravity.CENTER);
+            selected.setContentDescription("현재 " + activeTestAccount.label + ", 계정 다시 선택");
+            selected.setOnClickListener(v -> showTestAccountGate());
+            LinearLayout.LayoutParams sp = new LinearLayout.LayoutParams(-2, dp(25));
+            sp.rightMargin = dp(14);
+            header.addView(selected, sp);
+        }
         Icon bell = new Icon(this, 15, INK);
         bell.setContentDescription("알림");
         header.addView(bell, new LinearLayout.LayoutParams(dp(25), dp(25)));

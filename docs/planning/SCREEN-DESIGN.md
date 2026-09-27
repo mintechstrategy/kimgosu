@@ -4,7 +4,8 @@
 
 | 화면 ID | 화면/흐름 | 이용자 | 상태 | 연결 요구사항 |
 |---|---|---|---|---|
-| S0 | 스플래시: 보라색 배경, 흰색 `김고수`와 `우리동네 잘하는 사람은 다 여기`; 앱 스플래시 500ms 후 홈 | 양측 | Android 구현, [에뮬레이터 캡처](../previews/android-splash-view.png) | R-012 |
+| S0 | 스플래시: 보라색 배경, 흰색 `김고수`와 `우리동네 잘하는 사람은 다 여기`; 앱 스플래시 500ms 후 디버그는 T1, 릴리스는 홈 | 양측 | Android 구현, [에뮬레이터 캡처](../previews/android-splash-view.png) | R-012, R-013 |
+| T1 | **디버그 전용 임시 계정 선택:** 일반 2명·고수 2명 중 선택 → A1. 홈 상단의 선택 계정 표시를 눌러 다시 선택 가능 | 테스트 | Android 구현, [선택 화면](../previews/android-test-account.png)·[고수 선택 후 홈](../previews/android-test-expert-home.png)·[일반 이용자로 재선택](../previews/android-test-reselected-home.png) | R-013 |
 | T0 | 메인 셸: 홈·검색·등록·채팅·마이 하단 독바 | 양측 | Android 구현. 홈 외 탭은 빈 본문 | R-012 |
 | A1 | 홈: 카테고리·최근 등록·비대면 인기·최근 검색 서비스 | 일반 중심 | 정적 Android 화면 구현, [에뮬레이터 캡처](../previews/android-home.png). 데이터/이동 미연결 | R-004, R-012 |
 | A2 | 위치 설정: 대면 서비스의 지역 리스트 | 일반 중심 | 순서도 근거, 앱 미구현 | R-004 |
@@ -28,3 +29,5 @@ G 계열은 **제안된 관리용 화면 ID**이며 원본에 존재한다고 �
 원본 순서도에서 `F4`가 두 화면에 중복된다. 이 문서는 추적을 위해 `F4(알림)`과 `F4(찜)`으로 임시 구분한다. 구현용 고유 화면 ID와 B2 이후 이동, 로그인 완료 후 원래 탭/동작 복귀 방식은 [미결정 사항](DECISIONS.md)에 남긴다. 전체 화살표는 [서비스순서도](../architecture/SERVICE-SEQUENCES.md)를 참조한다.
 
 S0/T0는 2026-09-27 사용자의 새 지시에 따른 **추가 화면**이며 원본 `.fig`의 화면 ID가 아니다. 스플래시의 새 문구·배치는 2026-09-27 첨부 이미지 `codex-clipboard-3c10d51d-6d84-4710-a90d-caf8b0ac73e8.png`를, 홈은 같은 턴에 제공된 A1 캡처 3장을 따른다. 간편회원가입 버튼은 사용자가 이번 구현에서 제외하라고 지시해 넣지 않았다. 이전 [스플래시 시안](../previews/splash-preview.png)과 [빈 메인 시안](../previews/main-preview.png)은 과거 검토용이며 현재 구현 화면은 위 에뮬레이터 캡처를 기준으로 한다.
+
+T1은 원본 화면설계서의 일부가 아니다. `mobile/app/src/debug/java/.../TestAccountGate.java` 한 곳에 4개 테스트 ID·합성 CI와 UI를 모았고, 릴리스 빌드에는 이 값들이 포함되지 않는다. 임시 화면이 필요 없어지면 `TestAccountGate.enabled()`를 `false`로 바꾸면 진입을 건너뛴다. 이 선택은 로컬 UI 테스트 신원이며 실제 서버 JWT 로그인은 아니다.

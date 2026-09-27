@@ -20,6 +20,8 @@
 | `HEALTH_STATUS` | `/health/live`, `/health/ready`의 `status` | `ok` | 프로세스 생존 | `app/main.py` |
 | `HEALTH_STATUS` | `/health/ready`의 `status` | `ready` | DB·Redis 사용 가능 | `app/main.py` |
 | `HEALTH_STATUS` | `/health/ready`의 `status` | `not_ready` | DB 또는 Redis 준비 실패, HTTP 503 | `app/main.py` |
+| `CUSTOMER_ID_PREFIX` | `customers.user_id` | `kakao`, `naver` | 신규 가입을 처음 처리한 간편인증 제공자 | `app/accounts/identity.py`. 형식은 `접두어_32자리hex`; 다른 제공자 추가 가능 |
+| `CUSTOMER_ID_PREFIX` | 디버그 APK의 로컬 테스트 ID | `test` | 실제 제공자 인증이 없는 합성 계정 | `mobile/app/src/debug/java/.../TestAccountGate.java`; 릴리스 APK에는 없음 |
 
 `CHAT_SUBJECT_TYPE`은 자유 형식 문자열이지만, 서비스 연동 시 의미가 바뀌면 기존 방의 연결 대상 해석이 달라진다. 따라서 실제로 쓰기 시작한 값은 이 문서에 추가하고 재사용·폐기 정책을 기록한다. 현재 제품 서비스/견적 도메인은 미구현이라 운영용 subject type을 확정하지 않았다.
 
@@ -34,3 +36,5 @@
 | `API_ERROR_CODE` | 공통 오류 응답 `code` | `VALIDATION_ERROR`, `UNAUTHENTICATED`, `FORBIDDEN`, `NOT_FOUND`, `CONFLICT`, `RATE_LIMITED`, `BLOCKED_CONTENT` | 오류 유형 | [API 초안](../API-SPEC.md). 현재 채팅 구현은 FastAPI 기본 오류 응답을 사용하므로 이 코드 문자열을 반환하지 않음 |
 
 이 표는 업무 정책을 확정한 후 실제 컬럼·API 필드와 1:1로 대조해 확장한다. `closingDays=3/7/14`는 견적 입력 규칙 후보로 [API 초안](../API-SPEC.md)에 있으나 상태 코드 그룹은 아니다.
+
+사용자 ID의 접두어는 **가입 시점 제공자 표시**이며 이후 동일 CI로 다른 제공자를 이용해도 PK를 바꾸지 않는다. 소비자/고수는 이 접두어로 구분하지 않는다. `TEST_ACCOUNT_MODE`의 `일반`·`고수`는 현재 디버그 UI에만 쓰는 표시값이며 DB/API 코드가 아니다.

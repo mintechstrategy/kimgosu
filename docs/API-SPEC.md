@@ -8,7 +8,7 @@
 
 - 기본 경로 `/api/v1`, JSON UTF-8, 시간은 ISO 8601 UTC, 금액은 원 단위 정수.
 - 사용자 계정 하나로 일반·고수 UI를 사용한다. `activeMode`는 앱 표시 상태이며 서버 권한 근거가 아니다. 서비스 작성자, 견적 작성자, 채팅 참여자를 요청마다 검사한다.
-- 목록은 `limit`(기본 20, 최대 50)과 `cursor`를 사용하고 `{items, nextCursor}`를 반환한다. 모든 ID는 서버 발급 UUID로 제안한다.
+- 목록은 `limit`(기본 20, 최대 50)과 `cursor`를 사용하고 `{items, nextCursor}`를 반환한다. 서비스·견적·방 등의 리소스 ID는 UUID로 제안한다. **고객 `userId`는 제공자 접두어가 붙은 문자열 PK**이며 UUID 제안에서 제외한다.
 - 로그인 필요 API는 `Authorization: Bearer <accessToken>`을 사용한다. 미로그인 검색·상세 조회는 허용한다.
 - 쓰기 요청 중 재시도가 가능한 생성 API는 `Idempotency-Key`를 받는다. 같은 키의 중복 요청은 기존 결과를 반환한다.
 - 공통 오류 형식: `{code, message, details?, requestId}`. 기본 오류는 `400 VALIDATION_ERROR`, `401 UNAUTHENTICATED`, `403 FORBIDDEN`, `404 NOT_FOUND`, `409 CONFLICT`, `429 RATE_LIMITED`. 화면에서 비속어 검사가 지정된 입력은 `422 BLOCKED_CONTENT`를 사용한다.
