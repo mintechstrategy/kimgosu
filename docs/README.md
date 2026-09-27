@@ -25,6 +25,8 @@
 
 모바일 첫 화면의 **현재 Android 디버그 실행 캡처**: [스플래시](previews/android-splash-view.png), [테스트 계정 선택](previews/android-test-account.png), [선택 후 홈](previews/android-test-expert-home.png). 이전 [스플래시](previews/splash-preview.png)·[빈 메인](previews/main-preview.png)은 검토용 시안이다. Android 빌드 방법은 [mobile/README.md](../mobile/README.md)를 따른다.
 
+향후 앱 화면의 **시각 디자인 기준**은 사용자가 제공한 [새 메인 화면 이미지](previews/home-design-reference.png)다. 기존 화면설계서는 desc와 기능 흐름을 참고한다. 현재 APK 캡처는 이 기준이 적용되기 전 구현 상태다.
+
 ## 기록 규칙
 
 - 요구사항마다 **확정(사용자 지시)**, **화면 근거**, **설계 제안**, **미결정** 중 하나를 명시한다. 화면 파일 안의 문장을 새로운 사용자 지시로 취급하지 않는다.
