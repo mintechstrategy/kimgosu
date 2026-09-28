@@ -364,7 +364,37 @@
     }catch(ex){showError(ex.message)}
   }
 
-  function renderSupport() {root.innerHTML=header('고객센터',true)+`<h1 class="lead">무엇을 도와드릴까요?</h1><p class="sub">서비스 이용 중 도움이 필요하면 아래 연락처로 문의해 주세요.</p><div class="card"><strong>김고수 고객센터</strong><p class="card-sub">앱 기능과 계정 관련 문의를 준비 중입니다.</p></div>`}
+  async function renderSupport() {
+    root.innerHTML=header('고객센터',true)+`<h1 class="lead">무엇을 도와드릴까요?</h1>
+      <p class="sub">앱 이용 중 겪은 문제를 남겨주세요. 접수 내역은 작성한 계정에서만 볼 수 있습니다.</p>
+      <form id="supportForm" class="card">
+        <div class="form-group"><label for="supportTitle">문의 제목</label><input id="supportTitle" required minlength="2" maxlength="120" placeholder="어떤 도움이 필요하세요?"></div>
+        <div class="form-group"><label for="supportBody">문의 내용</label><textarea id="supportBody" required minlength="10" maxlength="4000" placeholder="발생한 상황을 자세히 적어 주세요"></textarea></div>
+        <button class="primary wide" type="submit">문의 접수하기</button></form>
+      <h2 class="section-title">나의 문의</h2><div id="supportHistory">${empty('불러오는 중','잠시만 기다려 주세요.')}</div>`;
+    const history=root.querySelector('#supportHistory');
+    let items=[],cursor=null;
+    async function load(more=false) {
+      try {const result=await api.request('GET','/api/v1/support/tickets'+
+        (more&&cursor?'?cursor='+encodeURIComponent(cursor):''));
+        items=more?items.concat(result.items):result.items;cursor=result.nextCursor;
+        history.innerHTML=items.length?items.map(item=>`<article class="card">
+          <span class="pill">접수됨</span><div class="card-title" style="margin-top:9px">${e(item.title)}</div>
+          <p class="card-sub">${e(item.body)}</p></article>`).join(''):
+          empty('접수한 문의가 없습니다','궁금한 점이 생기면 위에서 문의를 남겨주세요.');
+        if(cursor){history.insertAdjacentHTML('beforeend','<button id="supportMore" class="outline wide" type="button">이전 문의 더 보기</button>');
+          history.querySelector('#supportMore').onclick=()=>load(true)}
+      }catch(ex){history.innerHTML=error(ex.message)}
+    }
+    root.querySelector('#supportForm').onsubmit=async event=>{
+      event.preventDefault();const form=event.currentTarget,button=form.querySelector('button');button.disabled=true;
+      try {await api.request('POST','/api/v1/support/tickets',{
+        title:form.querySelector('#supportTitle').value.trim(),body:form.querySelector('#supportBody').value.trim()});
+        form.reset();await load();
+      }catch(ex){showError(ex.message)}finally{button.disabled=false}
+    };
+    await load();
+  }
 
   async function start(){
     if (!root)return;
@@ -383,7 +413,7 @@
       case 'activity':await renderActivity();break;
       case 'received':await renderReceived();break;
       case 'favorites':await renderFavorites();break;
-      case 'support':renderSupport();break;
+      case 'support':await renderSupport();break;
     }
   }
   start().catch(ex=>{root.innerHTML=error(ex.message)});

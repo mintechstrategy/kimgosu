@@ -1,6 +1,6 @@
 # 테이블정의서
 
-기준일: 2026-09-28. 실제 스키마의 기준은 Alembic `0002_chat`~`0008_completion_reviews`다. `0001_bootstrap`은 테이블을 만들지 않는다. 운영 DB는 `0008`까지 적용했다.
+기준일: 2026-09-29. 실제 스키마의 기준은 Alembic `0002_chat`~`0010_support_tickets`다. `0001_bootstrap`은 테이블을 만들지 않는다. `0010`은 배포 전까지 운영 DB 적용 여부를 별도로 확인한다.
 
 | 테이블 | 주요 컬럼(형식) | 키·관계·제약 | 용도 |
 |---|---|---|---|
@@ -17,6 +17,7 @@
 | `chat_attachments` | `id uuid`, `room_id uuid`, `uploader_user_id varchar(80)`, `message_id uuid nullable`, `filename varchar(255)`, `content_type varchar(255)`, `byte_size bigint`, `created_at` | PK `id`; FK room CASCADE, message SET NULL, 참가자 FK; 크기 1–104857600 byte | 비공개 파일 메타데이터 |
 | `chat_completion_confirmations` | `room_id uuid`, `user_id varchar(80)`, `confirmed_at timestamptz` | PK `(room_id,user_id)`; 동일 복합키로 `chat_participants` FK RESTRICT | 일반/고수 구분 없이 모든 2인 채팅방의 거래 완료 확인. 양측 행이 있을 때 완료 |
 | `reviews` | `id uuid`, `room_id uuid`, `reviewer_user_id`, `target_user_id varchar(80)`, `rating smallint`, `body text`, `created_at timestamptz` | PK `id`; UQ `(room_id,reviewer_user_id)`; 방·양측 참가자 FK; 자신 리뷰 금지; 점수 1–5, 본문 10–1000자; 대상·시각 인덱스 | 양측 완료 확인 후 방당 각 참가자 1회 리뷰. 서비스 종류와 무관 |
+| `support_tickets` | `id uuid`, `requester_user_id varchar(80)`, `title varchar(120)`, `body text`, `status varchar(20)`, `created_at timestamptz` | PK `id`; 고객 FK RESTRICT; 요청자·시각·ID 인덱스; 제목 2–120자·본문 10–4000자; 현재 상태 `open` | 일반/고수 고객센터 접수. 목록·상세는 요청자 본인만 조회 |
 
 `customers.user_id`가 고객원장의 PK다. `ci_lookup_hash`는 서버 전용 비밀키로 검증된 CI에 HMAC-SHA256을 적용한 64자리 값이며, 고유 인덱스로 CI를 빠르게 역조회한다. 원문 CI는 DB에 저장하지 않는다. 비밀키는 Compose secret `secrets/ci_lookup_key.txt`에서 읽는다. 키 교체·재계산 절차와 제공자 CI 제공 조건은 실제 간편인증 연동 전에 결정해야 한다. `0005`는 기존 행을 유지하기 위해 새 프로필 값을 nullable로 추가하고 `expert_enabled`의 기본값을 `false`로 한다.
 

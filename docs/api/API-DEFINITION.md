@@ -54,3 +54,7 @@ API 요청·응답의 구분값은 [코드인스턴스](../architecture/CODE-INS
 | GET | `/chat/rooms/{id}/reviews` | 해당 방 참가자만 리뷰 목록 조회 |
 
 완료·리뷰는 채팅 `subject_type`과 무관하다. 미래 서비스도 2인 채팅방을 연결하면 같은 API를 사용한다. 완료 확인/리뷰는 현재 결제·정산이나 가격 확정과 연결되지 않는다.
+
+## 고객센터 접수
+
+`POST /api/v1/support/tickets`는 Bearer JWT 필수이며 `{title: 2..120자, body: 10..4000자}`를 받아 `201`과 `{id,title,body,status:"open",createdAt}`을 반환한다. 공백 제거 뒤 길이를 다시 검사한다. `GET /api/v1/support/tickets?limit=20&cursor={마지막 문의 ID}`는 본인 문의만 최근순으로 `{items,nextCursor}`를 반환하며 페이지당 최대 50개다. 타인의 커서를 사용하면 404다. `GET /api/v1/support/tickets/{id}`는 본인 상세만 반환하고 타인의 ID는 404다. 운영자 답변·상태 변경 API는 아직 없다.
