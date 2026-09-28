@@ -1,0 +1,12 @@
+{
+  "executedAt": "2026-09-28T10:39:33.126984+00:00",
+  "scenarioId": "IT-309",
+  "title": "[TEST IT-309] 긴 채팅 검증 20260928T103932Z",
+  "consumerUserId": "test_cc780edefdf84b168bd0966eebdf2b64",
+  "expertUserId": "test_9c4a7993bf3342cfb444343ec9e9450d",
+  "serviceId": "0f270ad6-5295-473e-bdb2-a78efdbc36be",
+  "roomId": "46037eb5-e984-4954-964a-d9c1ff71e2e8",
+  "messageCount": 55,
+  "firstPageCount": 50,
+  "olderPageCount": 5
+}

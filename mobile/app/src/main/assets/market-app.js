@@ -197,10 +197,24 @@
   function uid() {return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c => {
     const r=Math.floor(Math.random()*16);return (c==='x'?r:(r&3|8)).toString(16)})}
   async function renderRoom() {
-    const id=params.get('id');root.innerHTML=header('대화방',true)+`<div class="bubble-list" id="messages"></div>
+    const id=params.get('id');root.innerHTML=header('대화방',true)+`<button id="olderMessages" class="outline wide" hidden>이전 대화 보기</button><div class="bubble-list" id="messages"></div>
       <div id="completion" class="completion"></div>
       <form class="send-bar" id="send"><input name="message" maxlength="4000" placeholder="메시지를 입력하세요"><button>전송</button></form>`;
-    const box=root.querySelector('#messages');let last=null;let completionStamp=null;
+    const box=root.querySelector('#messages');const older=root.querySelector('#olderMessages');
+    let last=null, olderCursor=null, messages=[], completionStamp=null;
+    api.request('GET',`/api/v1/chat/rooms/${encodeURIComponent(id)}`).then(room=>{
+      root.querySelector('.page-head strong').textContent=room.displayTitle || '대화방';
+    }).catch(()=>{});
+    function mergeMessages(items) {
+      const byId=new Map(messages.map(item=>[item.id,item]));
+      items.forEach(item=>byId.set(item.id,item));
+      messages=[...byId.values()].sort((a,b)=>a.createdAt.localeCompare(b.createdAt)||a.id.localeCompare(b.id));
+    }
+    function paintMessages() {
+      box.innerHTML=messages.length?messages.map(x=>`<div class="bubble ${x.senderUserId===me.userId?'mine':''}">${e(x.text)}</div>`).join(''):
+        empty('새 대화입니다','첫 메시지를 보내보세요.');
+      older.hidden=!olderCursor;
+    }
     async function refreshCompletion(){try{
       const state=await api.request('GET',`/api/v1/chat/rooms/${id}/completion`);
       const stamp=JSON.stringify([state.myConfirmed,state.counterpartConfirmed,state.completed,state.myReviewed]);
@@ -214,21 +228,46 @@
       panel.querySelector('#reviewForm')?.addEventListener('submit',async event=>{
         event.preventDefault();const form=event.target;
         try{await api.request('POST',`/api/v1/chat/rooms/${id}/reviews`,{rating:Number(form.elements.namedItem('rating').value),body:form.elements.namedItem('body').value});await refreshCompletion()}catch(ex){showError(ex.message)}});
-    }catch(ex){root.querySelector('#completion').innerHTML=error(ex.message)}}
-    async function refresh(){try{const data=await api.request('GET',`/api/v1/chat/rooms/${encodeURIComponent(id)}/messages?limit=50`);
+    }catch(ex){completionStamp=null;root.querySelector('#completion').innerHTML=error(ex.message)}}
+    async function refresh(){try{const nearBottom=document.documentElement.scrollHeight-window.scrollY-window.innerHeight<120;
+      const data=await api.request('GET',`/api/v1/chat/rooms/${encodeURIComponent(id)}/messages?limit=50`);
       const stamp=data.items.map(x=>x.id).join(',');if(stamp===last)return;last=stamp;
-      box.innerHTML=data.items.length?data.items.map(x=>`<div class="bubble ${x.senderUserId===me.userId?'mine':''}">${e(x.text)}</div>`).join(''):
-        empty('새 대화입니다','첫 메시지를 보내보세요.');window.scrollTo(0,document.body.scrollHeight);
+      mergeMessages(data.items);
+      if(!olderCursor && data.nextCursor)olderCursor=data.nextCursor;
+      paintMessages();if(nearBottom)window.scrollTo(0,document.body.scrollHeight);
       if(data.items.length) api.request('POST',`/api/v1/chat/rooms/${id}/read`,
         {throughMessageId:data.items[data.items.length-1].id}).catch(()=>{});
-    }catch(ex){box.innerHTML=error(ex.message)}}
+    }catch(ex){last=null;box.innerHTML=error(ex.message)}}
+    older.onclick=async()=>{
+      if(!olderCursor)return;
+      older.disabled=true;
+      const previousHeight=document.documentElement.scrollHeight, previousScroll=window.scrollY;
+      try {
+        const data=await api.request('GET',`/api/v1/chat/rooms/${encodeURIComponent(id)}/messages?limit=50&before=${encodeURIComponent(olderCursor)}`);
+        mergeMessages(data.items);olderCursor=data.nextCursor;paintMessages();
+        window.scrollTo(0,previousScroll+document.documentElement.scrollHeight-previousHeight);
+      } catch(ex) {showError(ex.message)}
+      finally {older.disabled=false}
+    };
     root.querySelector('#send').onsubmit=async event=>{event.preventDefault();const form=event.target;
       const value=form.elements.namedItem('message').value.trim();if(!value)return;
       try{await api.request('POST',`/api/v1/chat/rooms/${id}/messages`,{clientMessageId:uid(),text:value});form.reset();await refresh()}
       catch(ex){showError(ex.message)}};
-    await refresh();await refreshCompletion();const timer=setInterval(()=>{
-      refresh();refreshCompletion();
-    },5000);window.addEventListener('pagehide',()=>clearInterval(timer),{once:true});
+    await refresh();await refreshCompletion();
+    let timer=null, refreshing=false;
+    async function tick() {
+      if(refreshing)return;
+      if(window.KimgosuNative && !window.KimgosuNative.isPageVisible())return;
+      refreshing=true;
+      try {await Promise.all([refresh(),refreshCompletion()])}
+      finally {refreshing=false}
+    }
+    function startPolling() {if(timer)return;tick();timer=setInterval(tick,5000)}
+    function stopPolling() {if(timer)clearInterval(timer);timer=null}
+    window.addEventListener('kimgosu-tab-hidden',stopPolling);
+    window.addEventListener('kimgosu-tab-visible',startPolling);
+    window.addEventListener('pagehide',stopPolling,{once:true});
+    startPolling();
   }
 
   function renderMy() {

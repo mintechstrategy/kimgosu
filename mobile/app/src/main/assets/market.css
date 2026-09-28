@@ -1,4 +1,5 @@
 :root{--ink:#11223d;--muted:#728196;--blue:#2868ee;--line:#e8eef5;--pale:#e9f2ff;--mint:#e4faf7;--shadow:0 7px 22px rgba(23,49,86,.07)}
+[hidden]{display:none!important}
 *{box-sizing:border-box}html,body{margin:0;min-height:100%;background:#fff;color:var(--ink);font-family:Roboto,"Noto Sans KR",sans-serif}body{padding:18px 18px 32px}a{color:inherit;text-decoration:none}button,input,textarea,select{font:inherit}button{cursor:pointer}h1,h2,h3,p{margin:0}
 .page-head{display:flex;align-items:center;justify-content:space-between;min-height:40px;margin-bottom:24px}.page-head h1{font-size:24px;letter-spacing:-.8px}.back-link{color:var(--blue);font-size:15px;font-weight:700}.head-action{color:var(--blue);font-weight:700;font-size:13px}
 .lead{font-size:26px;line-height:1.28;letter-spacing:-1px;margin:4px 0 10px}.sub{font-size:14px;line-height:1.55;color:var(--muted);margin-bottom:22px}.section-title{font-size:19px;margin:28px 0 14px;letter-spacing:-.5px}

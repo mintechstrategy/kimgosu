@@ -21,7 +21,7 @@
 | Android 지역 선택 | 홈 좌상단 지역명·꺾쇠 클릭 → 시·도/시·군·구 체크 목록. 선택값 기기 저장 및 직전 홈 복귀. 목록 API에는 선택 지역·비대면 포함 여부 전달 | 지역 목록은 앱 내장 일부 지역, 전국 마스터는 후속 | 구현 | `MainActivity.java`, `ApiBridge.java`, `market-app.js` |
 | 서비스·견적·제안·찜 API | 고수 서비스 작성/수정/숨김/논리 삭제, 견적 작성/수정/마감/논리 삭제, 분야·지역 검색, 찜, 같은 분야 서비스로 제안, 문의·제안 채팅 연결 | 작성자·고수 자격·같은 분야·중복 제안 검사 | 운영 PC 배포·1,000회 시나리오 통과 | `app/marketplace/api.py`, `0007_marketplace.py`, `0008_completion_reviews.py` |
 | 양측 완료·리뷰 API | 독립 2인 채팅방 참가자 각각 완료 확인. 양측 확인 뒤 상대방에 방당 1회 평점·본문 작성 | 미완료 409, 비참여 404, 중복 409 | API smoke 통과 | `app/marketplace/reviews.py`, `0008_completion_reviews.py` |
-| Android 업무 화면 | 검색·목록·상세, 견적/서비스 등록·수정, 받은/보낸 제안, 커서 기반 채팅 목록 더 보기·대화, 마이·찜, 일반/고수 홈 전환 | 로컬 asset WebView, Java HTTP 어댑터가 JWT 첨부. API 오류는 화면에 표시 | Android 빌드·검색 화면 확인, 전체 경로 실기기 검증 전 | `market-app.js`, `market.css`, `ApiBridge.java`, `expert.html` 등 |
+| Android 업무 화면 | 검색·목록·상세, 견적/서비스 등록·수정, 받은/보낸 제안, 커서 기반 채팅방 목록·이전 메시지 더 보기, 마이·찜, 일반/고수 홈 전환 | 로컬 asset WebView, Java HTTP 어댑터가 JWT 첨부. 숨은 채팅 탭의 주기 API 호출은 중단. API 오류는 화면에 표시 | Android 빌드·검색 화면 확인, 전체 경로 실기기 검증 전 | `market-app.js`, `market.css`, `ApiBridge.java`, `expert.html` 등 |
 | 알림·고객센터 접수·실제 OAuth | 화면 기반 후속 업무 기능 | 제공자 키·정책 결정 필요 | 미구현 | [API 초안](../API-SPEC.md), [간편인증 가이드](SOCIAL-LOGIN-GUIDE.md) |
 
 각 프로그램의 상세 요청·응답은 [API정의서](../api/API-DEFINITION.md), 영속 데이터는 [테이블정의서](TABLE-DEFINITION.md)를 따른다.

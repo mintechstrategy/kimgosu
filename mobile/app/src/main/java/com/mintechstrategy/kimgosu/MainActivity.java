@@ -54,13 +54,13 @@ public final class MainActivity extends Activity {
     private ScrollView homeScroll;
     private final WebView[] tabViews = new WebView[TABS.length];
     private final ArrayDeque<Integer> tabHistory = new ArrayDeque<>();
-    private boolean mainVisible;
+    private volatile boolean mainVisible;
     private TestAccount activeTestAccount;
     private AuthSession activeSession;
     private int loginGeneration;
-    private int selectedTab;
+    private volatile int selectedTab;
     private String categoryJson;
-    private boolean regionPickerVisible;
+    private volatile boolean regionPickerVisible;
     private String pendingProvince = "서울";
     private Set<String> pendingRegions = new HashSet<>();
     private boolean includeRemote = true;
@@ -259,7 +259,7 @@ public final class MainActivity extends Activity {
             page.getSettings().setAllowFileAccessFromFileURLs(false);
             page.getSettings().setAllowUniversalAccessFromFileURLs(false);
             page.getSettings().setAllowContentAccess(false);
-            page.addJavascriptInterface(new ApiBridge(this, page, activeSession), "KimgosuNative");
+            page.addJavascriptInterface(new ApiBridge(this, page, selectedTab, activeSession), "KimgosuNative");
             page.setWebViewClient(new WebViewClient() {
                 @Override public void onPageFinished(WebView view, String url) {
                     Log.d("KimgosuWebView", "Loaded " + url + " title=" + view.getTitle());
@@ -301,6 +301,9 @@ public final class MainActivity extends Activity {
 
     private void selectTab(int tab, boolean remember) {
         if (!mainVisible || selectedTab == tab) return;
+        WebView previous = tabViews[selectedTab];
+        if (previous != null) previous.evaluateJavascript(
+                "window.dispatchEvent(new Event('kimgosu-tab-hidden'))", null);
         regionPickerVisible = false;
         if (remember) tabHistory.push(selectedTab);
         selectedTab = tab;
@@ -330,6 +333,10 @@ public final class MainActivity extends Activity {
         tabHistory.clear();
         renderContent();
         renderDock();
+    }
+
+    boolean isTabVisible(int tab) {
+        return mainVisible && !regionPickerVisible && selectedTab == tab;
     }
 
     private void navigateBack() {
