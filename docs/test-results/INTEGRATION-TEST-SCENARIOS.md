@@ -59,6 +59,7 @@
 | IT-310 | 대화방을 열어 둔 채 다른 독바 탭으로 이동·복귀 | 숨은 채팅 화면은 API를 주기 호출하지 않고 복귀 시 갱신 재개 | R-012, R-015 | 앱 코드·빌드 확인, 네트워크 호출 계측 미실행 |
 | IT-311 | 메시지 없는 방을 열어 대화 상단을 확인 | 이전 대화 버튼은 보이지 않고 빈 대화 안내만 보임 | R-007 | [에뮬레이터 실행 화면](../previews/android-room-empty-v0.5.png) 확인 통과 |
 | IT-312 | 일시적 네트워크 실패 후 채팅 API가 다시 응답 | 오류 상태가 다음 갱신에 정상 메시지·완료 상태로 복구 | R-007 | 복구 코드 수정, 실패 주입 재현 테스트 미실행 |
+| IT-313 | 긴 서비스 제목으로 채팅방 진입 | 뒤로가기 버튼은 한 줄·터치 가능 상태, 제목은 최대 두 줄로 표시 | R-016, R-027 | [에뮬레이터 화면](../previews/android-room-long-title-v0.5.png) 확인 통과 |
 
 ## AOS·배포·운영
 
@@ -67,7 +68,7 @@
 | IT-401 | 앱 기동, 홈·검색·등록·채팅·마이 탭 왕복 | 스플래시 약 0.5초, 탭별 WebView 상태 유지, 사용자 디자인 이미지 표시 | R-012, R-015, R-016 | 에뮬레이터 홈·채팅 목록 확인; 전체 탭 실기기 미실행 |
 | IT-402 | 상세에서 앱 내 뒤로가기와 Android 시스템 뒤로가기 | 동일 규칙: 페이지 → 이전 탭 → 홈 → 종료 | R-015 | 에뮬레이터 기본 경로 확인; 제스처 실기기 미실행 |
 | IT-403 | 두 휴대폰 A 일반/B 고수로 등록→문의→협상→완료→리뷰 | 메시지/완료 상태가 양쪽에 반영 | R-023~R-025 | [수동 절차](TWO-PHONE-TEST-PLAN.md), 사용자 실기기 실행 대기 |
-| IT-404 | `main` push → Actions → GHCR → PC 배포 에이전트 | 검증 성공 커밋의 API·worker·scheduler 이미지 자동 교체, DB 유지 | R-010 | [Actions run 36358905536](https://github.com/mintechstrategy/kimgosu/actions/runs/36358905536), 배포 SHA `18910b5` 성공 |
+| IT-404 | `main` push → Actions → GHCR → PC 배포 에이전트 | 검증 성공 커밋의 API·worker·scheduler 이미지 자동 교체, DB 유지 | R-010 | [Actions run 36411785492](https://github.com/mintechstrategy/kimgosu/actions/runs/36411785492) 성공; 배포 확인은 실행 기록 기준 |
 | IT-405 | 외부 HTTP 23912의 `/api/v1/` 요청 | TLS 준비 전 공개 인증/API가 404, LAN 23913 테스트 API는 동작 | R-017, R-028 | Nginx 확인 통과; TLS/WSS 구성 전 |
 
 ## 실행 기록
@@ -76,8 +77,9 @@
 |---|---|---|---|---|
 | 2026-09-27 | PC 운영 DB | IT-101~102, 201~205 일부 | 강남구 일반/고수 100회씩, 800메시지 | [200회 결과](gangnam-200-20260927.md) |
 | 2026-09-27~28 | PC 운영 DB | IT-201~205, 207~208 | 각 500회, 6,000메시지, 비정상 10종 | [1,000회 결과](cross-district-1000-20260927.md) |
-| 2026-09-28 | 분리 Compose DB, 소스 0009 | IT-301~308의 API 범위 및 마켓플레이스 | `chat_smoke.py`, `chat_realtime.py`, `marketplace_smoke.py` 통과; 21방 페이지·양측 리뷰 확인 | 로컬 실행 로그·스크립트; CI 재실행 예정 |
+| 2026-09-28 | 분리 Compose DB, 소스 0009 | IT-301~308의 API 범위 및 마켓플레이스 | `chat_smoke.py`, `chat_realtime.py`, `marketplace_smoke.py` 통과; 21방 페이지·양측 리뷰 확인 | [Actions run 36411785492](https://github.com/mintechstrategy/kimgosu/actions/runs/36411785492) 성공 |
 | 2026-09-28 | Android 0.5.0 에뮬레이터 | IT-001, 401 일부 | 계정 선택·일반 로그인·홈 사진·채팅 목록 표시 | [홈 캡처](../previews/android-account-1-home-v0.5.png) |
 | 2026-09-28 | 운영 DB·Android 0.5.0 에뮬레이터 | IT-309 일부 | 55개 영속 메시지, API 50+5 분리, 방 제목/최근 메시지 앱 표시 | [55개 실행값](chat-long-history-latest.json) |
+| 2026-09-28 | Android 0.5.0 에뮬레이터 | IT-313 | 긴 방 제목 두 줄, 뒤로가기 한 줄, 과거 메시지와 입력창 표시 | [화면 캡처](../previews/android-room-long-title-v0.5.png) |
 
 미실행 항목은 실패가 아니다. 실제 두 휴대폰 결과는 기종/Android 버전/네트워크/계정 번호/실행 시각/실제 결과를 이 표에 추가한다.
