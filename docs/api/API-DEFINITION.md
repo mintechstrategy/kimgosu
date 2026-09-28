@@ -58,3 +58,7 @@ API 요청·응답의 구분값은 [코드인스턴스](../architecture/CODE-INS
 ## 고객센터 접수
 
 `POST /api/v1/support/tickets`는 Bearer JWT 필수이며 `{title: 2..120자, body: 10..4000자}`를 받아 `201`과 `{id,title,body,status:"open",createdAt}`을 반환한다. 공백 제거 뒤 길이를 다시 검사한다. `GET /api/v1/support/tickets?limit=20&cursor={마지막 문의 ID}`는 본인 문의만 최근순으로 `{items,nextCursor}`를 반환하며 페이지당 최대 50개다. 타인의 커서를 사용하면 404다. `GET /api/v1/support/tickets/{id}`는 본인 상세만 반환하고 타인의 ID는 404다. 운영자 답변·상태 변경 API는 아직 없다.
+
+## 앱 내 알림
+
+`GET /api/v1/notifications?limit=20&cursor={마지막 알림 ID}`는 본인에게 온 알림만 `{items,nextCursor,unreadCount}`로 반환한다. 항목은 `id,eventType,roomId,title,body,createdAt,readAt`이며 `roomId`로 해당 채팅방을 연다. `POST /api/v1/notifications/{id}/read`는 본인 알림만 읽음 시각을 기록하고 같은 항목을 반환한다. 타인의 ID·커서는 404다. 네 사건 `chat.message`, `proposal.created`, `review.created`, `service.inquiry`는 원래 업무가 저장되는 DB 트랜잭션에서 함께 기록하며, `(recipient,eventType,sourceId)` 고유 제약으로 재시도 중복을 막는다. OS 푸시·수신 설정 API는 아직 없다.

@@ -311,6 +311,7 @@
       ${me.expertEnabled?'<a class="list-row" href="activity.html?section=services"><strong>나의 서비스</strong><span>›</span></a><a class="list-row" href="activity.html?section=proposals"><strong>보낸 제안</strong><span>›</span></a>':''}
       <a class="list-row" href="favorites.html"><strong>찜한 서비스</strong><span>›</span></a>
       <a class="list-row" href="kimgosu://tab/3"><strong>채팅</strong><span>›</span></a>
+      <a class="list-row" href="notifications.html"><strong>알림</strong><span>›</span></a>
       <h2 class="section-title">고객정보</h2><div class="card"><div class="card-sub">사용자 ID · ${e(me.userId||'-')}</div></div>
       <a class="list-row" href="support.html"><strong>고객센터</strong><span>›</span></a>
       ${window.KimgosuNative?'<a class="list-row" href="kimgosu://reselect"><strong>테스트 계정 변경</strong><span>›</span></a>':''}`;
@@ -396,6 +397,30 @@
     await load();
   }
 
+  async function renderNotifications() {
+    root.innerHTML=header('알림',true)+`<h1 class="lead">새 소식</h1><p class="sub">채팅·제안·리뷰·서비스 문의를 확인하세요.</p><div id="notificationList"></div>`;
+    const list=root.querySelector('#notificationList');let items=[],cursor=null;
+    async function load(more=false) {
+      try {const result=await api.request('GET','/api/v1/notifications'+
+        (more&&cursor?'?cursor='+encodeURIComponent(cursor):''));
+        items=more?items.concat(result.items):result.items;cursor=result.nextCursor;
+        list.innerHTML=items.length?items.map(item=>`<button class="card notification-item" type="button" data-id="${e(item.id)}" data-room="${e(item.roomId||'')}">
+          <span class="pill ${item.readAt?'':'mint'}">${item.readAt?'읽음':'새 알림'}</span>
+          <div class="card-title" style="margin-top:9px">${e(item.title)}</div><p class="card-sub">${e(item.body)}</p></button>`).join(''):
+          empty('아직 알림이 없습니다','새로운 활동이 생기면 이곳에 표시됩니다.');
+        list.querySelectorAll('[data-id]').forEach(button=>button.onclick=async()=>{
+          try {await api.request('POST','/api/v1/notifications/'+encodeURIComponent(button.dataset.id)+'/read',{});
+            if(button.dataset.room)location.href=link('room.html',{id:button.dataset.room});
+            else await load();
+          }catch(ex){showError(ex.message)}
+        });
+        if(cursor){list.insertAdjacentHTML('beforeend','<button id="notificationMore" class="outline wide" type="button">이전 알림 더 보기</button>');
+          list.querySelector('#notificationMore').onclick=()=>load(true)}
+      }catch(ex){list.innerHTML=error(ex.message)}
+    }
+    await load();
+  }
+
   async function start(){
     if (!root)return;
     if (['search','listing','editor','detail','proposal'].includes(page)) await loadCategories();
@@ -414,6 +439,7 @@
       case 'received':await renderReceived();break;
       case 'favorites':await renderFavorites();break;
       case 'support':await renderSupport();break;
+      case 'notifications':await renderNotifications();break;
     }
   }
   start().catch(ex=>{root.innerHTML=error(ex.message)});

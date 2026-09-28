@@ -14,6 +14,7 @@ from app.catalog.api import router as catalog_router
 from app.marketplace.api import router as marketplace_router
 from app.marketplace.reviews import router as review_router
 from app.support.api import router as support_router
+from app.notifications.api import router as notification_router
 
 
 @asynccontextmanager
@@ -39,6 +40,7 @@ app.include_router(catalog_router, prefix="/api/v1/catalog", tags=["catalog"])
 app.include_router(marketplace_router, prefix="/api/v1", tags=["marketplace"])
 app.include_router(review_router, prefix="/api/v1", tags=["reviews"])
 app.include_router(support_router, prefix="/api/v1", tags=["support"])
+app.include_router(notification_router, prefix="/api/v1", tags=["notifications"])
 
 
 @app.get("/health/live")

@@ -52,6 +52,7 @@ public final class MainActivity extends Activity {
     private final Handler handler = new Handler(Looper.getMainLooper());
     private LinearLayout content;
     private LinearLayout dock;
+    private View homeHeader;
     // Legacy static home builder remains below until the WebView migration is verified.
     private ScrollView homeScroll;
     private final WebView[] tabViews = new WebView[TABS.length];
@@ -256,6 +257,7 @@ public final class MainActivity extends Activity {
 
     private void renderContent() {
         content.removeAllViews();
+        homeHeader = null;
         if (regionPickerVisible) {
             renderRegionPicker();
             return;
@@ -279,6 +281,8 @@ public final class MainActivity extends Activity {
             page.setWebViewClient(new WebViewClient() {
                 @Override public void onPageFinished(WebView view, String url) {
                     Log.d("KimgosuWebView", "Loaded " + url + " title=" + view.getTitle());
+                    if (view == tabViews[0] && homeHeader != null)
+                        homeHeader.setVisibility(url.endsWith("notifications.html") ? View.GONE : View.VISIBLE);
                     if (url.endsWith("/home.html") || url.endsWith("/expert.html")) view.clearHistory();
                 }
                 @Override public void onReceivedError(WebView view, WebResourceRequest request,
@@ -310,6 +314,8 @@ public final class MainActivity extends Activity {
         content.addView(page, selectedTab == 0
                 ? new LinearLayout.LayoutParams(-1, 0, 1)
                 : new LinearLayout.LayoutParams(-1, -1));
+        if (selectedTab == 0 && homeHeader != null && page.getUrl() != null
+                && page.getUrl().endsWith("notifications.html")) homeHeader.setVisibility(View.GONE);
         page.setAlpha(0.92f);
         page.animate().alpha(1f).setDuration(120).start();
         final WebView attachedPage = page;
@@ -498,9 +504,14 @@ public final class MainActivity extends Activity {
         }
         Icon bell = new Icon(this, 15, INK);
         bell.setContentDescription("알림");
+        bell.setOnClickListener(v -> {
+            WebView home = tabViews[0];
+            if (home != null) home.loadUrl("file:///android_asset/notifications.html");
+        });
         LinearLayout.LayoutParams bellParams = new LinearLayout.LayoutParams(dp(27), dp(27));
         bellParams.leftMargin = dp(9);
         header.addView(bell, bellParams);
+        homeHeader = header;
         content.addView(header, new LinearLayout.LayoutParams(-1, dp(54)));
     }
 

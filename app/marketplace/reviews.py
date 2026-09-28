@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import text
 
 from app.chat.auth import identity
+from app.notifications.api import notify
 
 router = APIRouter()
 
@@ -80,6 +81,9 @@ def create_review(room_id: UUID, body: ReviewWrite, request: Request,
                "target": target, "rating": body.rating, "body": body.body.strip()}).mappings().first()
         if row is None:
             raise HTTPException(409, "Review already submitted")
+        notify(connection, recipient=target, actor=principal["user_id"],
+               event_type="review.created", source_id=row["id"], room_id=room_id,
+               title="새 리뷰", body=body.body.strip())
         return {"id": str(row["id"]), "roomId": str(room_id),
                 "reviewerUserId": principal["user_id"], "targetUserId": target,
                 "rating": body.rating, "body": body.body.strip(), "createdAt": row["created_at"]}

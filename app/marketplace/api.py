@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import text
 
 from app.chat.auth import identity
+from app.notifications.api import notify
 
 router = APIRouter()
 
@@ -226,6 +227,9 @@ def inquire(service_id: UUID, request: Request, principal: dict = Depends(identi
             raise HTTPException(409, "Service is not active")
         room_id = _open_room(connection, "service", service_id,
                              service["owner_user_id"], principal["user_id"], service["title"])
+        notify(connection, recipient=service["owner_user_id"], actor=principal["user_id"],
+               event_type="service.inquiry", source_id=room_id, room_id=room_id,
+               title="새 서비스 문의", body=service["title"])
         return {"chatRoomId": str(room_id)}
 
 
@@ -376,6 +380,9 @@ def propose(quote_id: UUID, body: ProposalWrite, request: Request,
             VALUES (:id,:quote,:expert,:service,:room)
         """), {"id": proposal_id, "quote": quote_id, "expert": principal["user_id"],
                "service": body.serviceId, "room": room_id})
+        notify(connection, recipient=quote["owner_user_id"], actor=principal["user_id"],
+               event_type="proposal.created", source_id=proposal_id, room_id=room_id,
+               title="새 견적 제안", body=quote["title"])
         # Opening messages use the independent chat API after this transaction.
         return {"proposalId": str(proposal_id), "chatRoomId": str(room_id), "created": True}
 

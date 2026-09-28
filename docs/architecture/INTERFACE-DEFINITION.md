@@ -13,6 +13,7 @@
 | 향후 웹 ↔ FastAPI | 동일 REST·WebSocket 계약 | Bearer JWT, 허용 Origin 설정 | 서버 계약 구현, 웹 미구현 |
 | 향후 iOS ↔ 공통 API | AOS와 같은 REST/채팅 계약, 화면 동작·오류 시나리오를 기능별로 대응 | 플랫폼별 UI 코드는 분리. 기능 페어링 후 변경은 AOS/iOS를 함께 수정·검증 | iOS 소스 미착수, R-034 적용 준비 |
 | AOS·향후 웹 ↔ 고객센터 API | Bearer JWT로 `POST/GET /api/v1/support/tickets`, `GET /api/v1/support/tickets/{id}` | 조회는 서버에서 JWT 사용자 ID로 제한. 관리 답변은 별도 관리자 계약 필요 | AOS 접수·내역 구현, 웹 후속 |
+| AOS·향후 웹 ↔ 알림 API | Bearer JWT로 `GET /api/v1/notifications`, `POST /api/v1/notifications/{id}/read`; `roomId`로 채팅 이동 | 알림 생성은 채팅/마켓 API 내부 트랜잭션, 수신자별 조회·읽음 제한. OS 푸시 제공자 연동은 별도 경계 | AOS 앱 내 알림 구현·실행 확인 중 |
 | 공유기 ↔ Nginx ↔ FastAPI | 외부 HTTP 23912 → PC `192.168.0.213:23912` → Docker 내부 HTTP·WebSocket. 로컬 점검은 `127.0.0.1:8080` | TLS 미구성 중 모든 공개 `/api/v1/` 요청은 Nginx에서 404. DB/Redis/8080은 외부 미공개 | 외부 HTTP 200 확인, HTTPS TLS 실패 확인 |
 | FastAPI ↔ PostgreSQL | SQLAlchemy/SQL | 채팅·마이그레이션 영속 데이터 | 구현 |
 | FastAPI/worker ↔ Redis | 이벤트 pub/sub 및 Celery broker | 실시간 통지·비동기 작업 | 구현 |

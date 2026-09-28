@@ -15,6 +15,7 @@ from sqlalchemy import text
 from starlette.concurrency import run_in_threadpool
 
 from app.chat.auth import identity, require_subject_writer
+from app.notifications.api import notify
 
 
 logger = logging.getLogger(__name__)
@@ -349,6 +350,14 @@ async def send_message(room_id: UUID, body: MessageCreate, request: Request,
                 WHERE id = :room_id
                 """), {"created_at": row["created_at"], "room_id": room_id})
                 files = attachment_map(connection, [row["id"]])[row["id"]]
+                recipients = connection.execute(text("""
+                    SELECT user_id FROM chat_participants
+                    WHERE room_id=:room AND user_id<>:sender
+                """), {"room": room_id, "sender": principal["user_id"]}).scalars().all()
+                for recipient in recipients:
+                    notify(connection, recipient=recipient, actor=principal["user_id"],
+                           event_type="chat.message", source_id=row["id"], room_id=room_id,
+                           title="새 채팅", body=message_text or "첨부파일이 도착했습니다")
             return serialize_message(row, files), created
 
     result, created = await run_in_threadpool(persist)

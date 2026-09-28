@@ -22,6 +22,7 @@
 | 서비스·견적·제안·찜 API | 고수 서비스 작성/수정/숨김/논리 삭제, 견적 작성/수정/마감/논리 삭제, 분야·지역 검색, 찜, 같은 분야 서비스로 제안, 문의·제안 채팅 연결 | 작성자·고수 자격·같은 분야·중복 제안 검사 | 운영 PC 배포·1,000회 시나리오 통과 | `app/marketplace/api.py`, `0007_marketplace.py`, `0008_completion_reviews.py` |
 | 접근권한 회귀 관문 | 서비스·견적·고객원장·채팅·리뷰를 서로 다른 JWT 계정으로 교차 호출하고 원본 불변 확인 | 비작성자 변경 403, 비참가 대화 비노출, 무토큰 401. CI 실패 시 이미지 발행 차단 | LAN 4계정 검증 통과, CI 연결 | `tests/authorization_matrix.py`, `.github/workflows/ci.yml` |
 | 고객센터 접수 | 일반·고수 JWT 계정의 문의 제목·본문 저장, 본인 목록·상세 조회, AOS 마이→고객센터에서 작성·확인 | 무토큰 401, 타인 상세 404, 공백·길이 위반 422. 운영자 답변 미구현 | 구현, 격리 환경/Android 검증 진행 | `app/support/api.py`, `0010_support_tickets.py`, `market-app.js` |
+| 앱 내 알림 | 새 채팅·제안·리뷰·서비스 문의의 DB 이벤트를 원 업무 트랜잭션과 함께 저장, 수신자 목록·읽음·커서 페이지 제공. AOS 홈 종/마이에서 열기 | 타인 읽음·커서 404, 재시도 중복 방지. OS 푸시·수신 설정 후속 | API 4종 사건 격리 DB 통과, Android 화면 검증 중 | `app/notifications/api.py`, `0011_notifications.py`, `market-app.js` |
 | 양측 완료·리뷰 API | 독립 2인 채팅방 참가자 각각 완료 확인. 양측 확인 뒤 상대방에 방당 1회 평점·본문 작성 | 미완료 409, 비참여 404, 중복 409 | API smoke 통과 | `app/marketplace/reviews.py`, `0008_completion_reviews.py` |
 | Android 업무 화면 | 검색·목록·상세, 견적/서비스 등록·수정, 받은/보낸 제안, 커서 기반 채팅방 목록·이전 메시지 더 보기, 마이·찜, 일반/고수 홈 전환. 채팅 사진·문서 선택, 대기 파일 제거, 메시지 연결, 권한 있는 저장 | 로컬 asset WebView, Java HTTP 어댑터가 JWT 첨부. 숨은 채팅 탭의 주기 API 호출은 중단. 시스템 문서 선택/저장 창으로 파일 접근 | Android 빌드·문서 첨부 전송 에뮬레이터 확인, 두 휴대폰 검증 전 | `market-app.js`, `market.css`, `ApiBridge.java`, `MainActivity.java`, `expert.html` 등 |
 | 알림·고객센터 접수·실제 OAuth | 화면 기반 후속 업무 기능 | 제공자 키·정책 결정 필요 | 미구현 | [API 초안](../API-SPEC.md), [간편인증 가이드](SOCIAL-LOGIN-GUIDE.md) |

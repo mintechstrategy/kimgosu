@@ -26,3 +26,4 @@ body{animation:screen-in .14s ease-out both}@keyframes screen-in{from{opacity:.8
 a,button{transition:transform .13s ease,background-color .13s ease,box-shadow .13s ease}a:active,button:active{transform:scale(.975)}
 button:focus-visible,a:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 @media(prefers-reduced-motion:reduce){body{animation:none}a,button{transition:none}}
+.notification-item{display:block;width:100%;text-align:left;font:inherit;cursor:pointer}

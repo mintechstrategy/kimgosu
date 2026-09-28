@@ -87,6 +87,11 @@
 | IT-604 | 제목 한글 조합문자·이모지, 본문 4000자 경계, 연속 두 번 제출 | 유효 길이만 접수, 초과는 422, UI 중복 탭 방지. 서버 멱등성 정책은 별도 검토 | 시나리오 등록, 미실행 |
 | IT-605 | 접수 직후 계정 변경 후 이전 WebView의 목록 재접근 | 이전 계정 문의가 새 계정에 노출되지 않음 | 시나리오 등록, Android 실행 전 |
 | IT-606 | 문의 목록이 한 페이지를 초과하고 다른 계정 커서로 다음 페이지 요청 | `nextCursor`로 중복 없이 이어지고, 타인 커서는 404 | 격리 DB 20+건·교차 계정 커서 `tests/support_smoke.py` 통과 |
+| IT-607 | 일반→고수 서비스 문의 후 메시지, 고수→일반 견적 제안, 일반→고수 리뷰 | 수신자에게 네 사건 알림이 각각 생성 | 격리 DB `tests/notifications_smoke.py` 통과 |
+| IT-608 | 같은 문의방 재호출·같은 제안 재요청·같은 채팅 clientMessageId 재전송 | 알림이 중복되지 않음 | 격리 DB `tests/notifications_smoke.py` 통과 |
+| IT-609 | 타인 알림 ID 읽음 처리·타인 커서 조회·무토큰 목록 | 404·404·401, 읽음 상태와 본문 비노출 | 격리 DB `tests/notifications_smoke.py` 통과 |
+| IT-610 | 알림을 열어 읽음 처리 후 다시 호출 | `readAt` 유지, 방으로 이동 | API 멱등 통과, AOS 방 이동 검증 전 |
+| IT-611 | 20건 초과 알림 목록·읽는 중 새 알림 도착·계정 전환 | 커서 페이지 중복 없음, 타 계정 노출 없음, 읽던 위치 유지 | 시나리오 등록, 미실행 |
 
 ## AOS·배포·운영
 
@@ -112,5 +117,7 @@
 | 2026-09-29 | Android 0.5.0 에뮬레이터 | IT-314 일부, IT-315 일부, IT-406 일부 | 문서·사진 시스템 선택, 문서 1건 메시지 전송 및 첨부 표시, 글꼴·홈 이미지 조정 | [문서 전송](../previews/android-document-sent-v0.5.png), [홈](../previews/android-home-ui-review-v0.5.png) |
 | 2026-09-29 | LAN 23913 운영 API·합성 계정 4개 | IT-501~505 | 타인 서비스/견적 변경 12종 거부, 비참가 방·완료·리뷰 접근 거부, 무토큰 변경 거부, `/me` 계정 격리 확인. 생성한 테스트 글 2건은 논리 삭제 | `python tests/authorization_matrix.py` PASS |
 | 2026-09-29 | 분리 Compose DB·API 18087, 합성 계정 4개 | IT-601~603, IT-606, IT-501~505 재검증 | 고객센터 일반/고수 접수·계정 격리·공백 입력 거부·20+건 커서와 기존 권한 회귀 모두 통과. 분리 DB 보존 | `python tests/support_smoke.py`, `python tests/authorization_matrix.py` PASS |
+| 2026-09-29 | Android 에뮬레이터·PC LAN 23913 | IT-601 일부 | 마이→고객센터 화면 정상 표시, 문의 `Android_support_check` 접수 후 본인 내역 표시 | [접수 화면](../previews/android-support-submitted-v0.5.png) |
+| 2026-09-29 | 분리 Compose DB·API 18087, 합성 계정 3개 | IT-607~610 API 범위, IT-601/501 재검증 | 네 사건 알림·재시도 중복·읽음·타인 접근 차단 및 기존 회귀 모두 통과 | `python tests/notifications_smoke.py`, `python tests/support_smoke.py`, `python tests/authorization_matrix.py` PASS |
 
 미실행 항목은 실패가 아니다. 실제 두 휴대폰 결과는 기종/Android 버전/네트워크/계정 번호/실행 시각/실제 결과를 이 표에 추가한다.

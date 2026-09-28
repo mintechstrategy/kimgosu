@@ -29,6 +29,7 @@
 | `QUOTE_REQUEST_STATUS` | `quote_requests.status`, 목록 API `status` | `open`, `closed`, `deleted` | 제안 접수 중, 작성자 마감, 작성자 삭제 | `0007_marketplace.py`, `0008_completion_reviews.py`; 마감 후 제안 거부, 삭제는 논리 삭제 |
 | `REVIEW_RATING` | `reviews.rating`, 리뷰 API `rating` | 정수 `1`–`5` | 양측 완료 확인 뒤 상대방에게 남기는 평점 | `0008_completion_reviews.py`, `app/marketplace/reviews.py` |
 | `SUPPORT_TICKET_STATUS` | `support_tickets.status`, 고객센터 API `status` | `open` | 고객센터 문의가 접수된 상태. 운영자 처리 상태는 관리자 정책 확정 후 확장 | `0010_support_tickets.py`, `app/support/api.py` |
+| `NOTIFICATION_EVENT_TYPE` | `notifications.event_type`, 알림 API `eventType` | `chat.message`, `proposal.created`, `review.created`, `service.inquiry` | 새 채팅, 견적 제안, 리뷰, 서비스 문의 | `0011_notifications.py`, `app/notifications/api.py`; 사용자 D27 확정 |
 
 `CHAT_SUBJECT_TYPE`은 자유 형식 문자열이지만, 서비스 연동 시 의미가 바뀌면 기존 방의 연결 대상 해석이 달라진다. 새 도메인이 추가되면 이 문서에 값과 소유 서비스를 기록한다.
 
