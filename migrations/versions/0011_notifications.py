@@ -12,8 +12,8 @@ def upgrade():
     op.execute("""
         CREATE TABLE notifications (
             id uuid PRIMARY KEY,
-            recipient_user_id varchar(80) NOT NULL REFERENCES customers(user_id) ON DELETE RESTRICT,
-            actor_user_id varchar(80) NOT NULL REFERENCES customers(user_id) ON DELETE RESTRICT,
+            recipient_user_id varchar(80) NOT NULL,
+            actor_user_id varchar(80) NOT NULL,
             event_type varchar(40) NOT NULL CHECK (event_type IN
                 ('chat.message', 'proposal.created', 'review.created', 'service.inquiry')),
             source_id uuid NOT NULL,

@@ -92,6 +92,7 @@
 | IT-609 | 타인 알림 ID 읽음 처리·타인 커서 조회·무토큰 목록 | 404·404·401, 읽음 상태와 본문 비노출 | 격리 DB `tests/notifications_smoke.py` 통과 |
 | IT-610 | 알림을 열어 읽음 처리 후 다시 호출 | `readAt` 유지, 방으로 이동 | API 멱등 통과, AOS 방 이동 검증 전 |
 | IT-611 | 20건 초과 알림 목록·읽는 중 새 알림 도착·계정 전환 | 커서 페이지 중복 없음, 타 계정 노출 없음, 읽던 위치 유지 | 시나리오 등록, 미실행 |
+| IT-612 | 고객원장 FK가 없는 독립 채팅 참가자 UUID 계정이 메시지 송신 | 메시지·알림 저장이 원자적으로 성공하고 채팅 도메인 재사용성을 유지 | CI 첫 실행에서 알림 고객 FK 결함 발견·수정, 새 분리 DB `tests/chat_smoke.py`와 `tests/notifications_smoke.py` 통과 |
 
 ## AOS·배포·운영
 
@@ -119,5 +120,6 @@
 | 2026-09-29 | 분리 Compose DB·API 18087, 합성 계정 4개 | IT-601~603, IT-606, IT-501~505 재검증 | 고객센터 일반/고수 접수·계정 격리·공백 입력 거부·20+건 커서와 기존 권한 회귀 모두 통과. 분리 DB 보존 | `python tests/support_smoke.py`, `python tests/authorization_matrix.py` PASS |
 | 2026-09-29 | Android 에뮬레이터·PC LAN 23913 | IT-601 일부 | 마이→고객센터 화면 정상 표시, 문의 `Android_support_check` 접수 후 본인 내역 표시 | [접수 화면](../previews/android-support-submitted-v0.5.png) |
 | 2026-09-29 | 분리 Compose DB·API 18087, 합성 계정 3개 | IT-607~610 API 범위, IT-601/501 재검증 | 네 사건 알림·재시도 중복·읽음·타인 접근 차단 및 기존 회귀 모두 통과 | `python tests/notifications_smoke.py`, `python tests/support_smoke.py`, `python tests/authorization_matrix.py` PASS |
+| 2026-09-29 | GitHub Actions 첫 알림 CI·새 분리 DB 18093 | IT-612 | 고객원장 FK가 독립 채팅 메시지를 막는 결함을 CI가 검출. FK 제거 후 기존 채팅과 네 사건 알림 테스트 모두 통과 | 실패 [Actions run 36492447075](https://github.com/mintechstrategy/kimgosu/actions/runs/36492447075), 로컬 `chat_smoke.py`·`notifications_smoke.py` PASS |
 
 미실행 항목은 실패가 아니다. 실제 두 휴대폰 결과는 기종/Android 버전/네트워크/계정 번호/실행 시각/실제 결과를 이 표에 추가한다.
