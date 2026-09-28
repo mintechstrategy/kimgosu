@@ -25,6 +25,7 @@ class SubjectCreate(BaseModel):
     subjectType: str = Field(pattern=r"^[a-z][a-z0-9_]{1,79}$")
     subjectId: UUID
     ownerUserId: str = Field(min_length=1, max_length=80, pattern=r"^[a-z0-9_-]+$")
+    displayTitle: str | None = Field(default=None, min_length=1, max_length=120)
 
 
 class RoomCreate(BaseModel):
@@ -48,7 +49,7 @@ def db(request: Request):
 def room_for_user(connection, room_id: UUID, user_id: str):
     row = connection.execute(text("""
         SELECT r.id, r.subject_id, s.subject_type, s.subject_id AS external_subject_id,
-               s.owner_user_id, r.created_at, r.last_message_at, p.last_read_message_id
+               s.owner_user_id, s.display_title, r.created_at, r.last_message_at, p.last_read_message_id
         FROM chat_rooms r
         JOIN chat_subjects s ON s.id = r.subject_id
         JOIN chat_participants p ON p.room_id = r.id
@@ -99,17 +100,20 @@ def register_subject(body: SubjectCreate, request: Request, principal: dict = De
     subject_id = uuid4()
     with db(request).begin() as connection:
         row = connection.execute(text("""
-            INSERT INTO chat_subjects (id, subject_type, subject_id, owner_user_id)
-            VALUES (:id, :type, :external_id, :owner)
+            INSERT INTO chat_subjects (id, subject_type, subject_id, owner_user_id, display_title)
+            VALUES (:id, :type, :external_id, :owner, :title)
             ON CONFLICT (subject_type, subject_id) DO UPDATE
-              SET owner_user_id = chat_subjects.owner_user_id
-            RETURNING id, subject_type, subject_id, owner_user_id
+              SET owner_user_id = chat_subjects.owner_user_id,
+                  display_title = COALESCE(EXCLUDED.display_title, chat_subjects.display_title)
+            RETURNING id, subject_type, subject_id, owner_user_id, display_title
         """), {"id": subject_id, "type": body.subjectType,
-                "external_id": body.subjectId, "owner": body.ownerUserId}).mappings().one()
+                "external_id": body.subjectId, "owner": body.ownerUserId,
+                "title": body.displayTitle}).mappings().one()
         if row["owner_user_id"] != body.ownerUserId:
             raise HTTPException(409, "Chat subject is owned by another user")
     return {"id": str(row["id"]), "subjectType": row["subject_type"],
-            "subjectId": str(row["subject_id"]), "ownerUserId": str(row["owner_user_id"])}
+            "subjectId": str(row["subject_id"]), "ownerUserId": str(row["owner_user_id"]),
+            "displayTitle": row["display_title"]}
 
 
 @router.post("/rooms", status_code=201)
@@ -161,6 +165,7 @@ def list_rooms(request: Request, limit: int = Query(20, ge=1, le=50), cursor: UU
             cursor_values = {"cursor_time": current["sort_time"], "cursor_id": current["id"]}
         rows = connection.execute(text(f"""
             SELECT r.id, r.subject_id, s.subject_type, s.subject_id AS external_subject_id,
+                   s.display_title,
                    r.created_at, r.last_message_at, p.last_read_message_id,
                    (SELECT count(*) FROM chat_messages m
                     LEFT JOIN chat_messages last_read ON last_read.id = p.last_read_message_id
@@ -180,6 +185,7 @@ def list_rooms(request: Request, limit: int = Query(20, ge=1, le=50), cursor: UU
     return {"items": [
         {"id": str(r["id"]), "subjectId": str(r["subject_id"]),
          "subjectType": r["subject_type"], "externalSubjectId": str(r["external_subject_id"]),
+         "displayTitle": r["display_title"],
          "lastMessageAt": r["last_message_at"], "unreadCount": r["unread_count"]}
         for r in rows
     ], "nextCursor": str(rows[-1]["id"]) if has_more else None}
@@ -194,6 +200,7 @@ def get_room(room_id: UUID, request: Request, principal: dict = Depends(identity
         """), {"room_id": room_id}).scalars().all()
     return {"id": str(row["id"]), "subjectId": str(row["subject_id"]),
             "subjectType": row["subject_type"],
+            "displayTitle": row["display_title"],
             "externalSubjectId": str(row["external_subject_id"]),
             "participantIds": [str(x) for x in participants],
             "lastReadMessageId": str(row["last_read_message_id"]) if row["last_read_message_id"] else None}

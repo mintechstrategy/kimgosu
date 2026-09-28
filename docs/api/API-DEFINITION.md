@@ -1,12 +1,12 @@
 # API정의서
 
-기준일: 2026-09-27. 모바일 앱과 향후 웹의 공통 백엔드 계약이다.
+기준일: 2026-09-28. 모바일 앱과 향후 웹의 공통 백엔드 계약이다.
 
 현재 외부 기준 주소 `http://mt0205.synology.me:23912`의 `/health/ready`는 200으로 확인했다. 같은 주소의 HTTPS는 TLS 연결에 실패한다. 외부 HTTP에서는 모든 `/api/v1/` 경로를 Nginx가 404로 차단한다. 합성 계정용 디버그 APK는 LAN 전용 `http://192.168.0.213:23913` API에 접속한다. 실제 CI·토큰·개인정보를 외부에서 전송하기 전 HTTPS/WSS를 구성해야 한다.
 
 | 범위 | 상태 | 상세 계약 | 코드 |
 |---|---|---|---|
-| 채팅 subject·방·메시지·첨부·읽음·WebSocket | 구현 | [CHAT-API.md](../CHAT-API.md) | `app/chat/api.py` |
+| 채팅 subject·방·메시지·첨부·읽음·WebSocket | 구현 | [CHAT-API.md](../CHAT-API.md). subject에 선택적 `displayTitle`, 방 목록·상세에 `displayTitle`; 방 목록은 `nextCursor`로 추가 조회 | `app/chat/api.py`, `0009_chat_subject_title.py` |
 | 헬스체크 `/health/live`, `/health/ready` | 구현 | [프로그램 명세서](../architecture/PROGRAM-SPEC.md) | `app/main.py` |
 | 디버그 테스트 로그인·고객 프로필 | 구현 | 아래 계약. 테스트 로그인은 `TEST_LOGIN_ENABLED=true`일 때만 동작하며 외부 프록시는 차단 | `app/accounts/api.py` |
 | 홈 분야 코드 조회 | 구현 | `GET /api/v1/catalog/home-categories` — 공개 읽기 전용, 노출 중인 코드를 `displayOrder`, `code`순 반환 | `app/catalog/api.py` |

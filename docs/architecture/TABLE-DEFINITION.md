@@ -10,7 +10,7 @@
 | `quote_requests` | `id uuid`, `owner_user_id`, `category_code`, `title`, `description`, `service_mode`, `region_name`, `budget_max`, `status`, 생성·수정시각 | PK `id`; 고객·카테고리 FK; 예산 음수 금지; `open/closed/deleted`; 분야·생성시각 및 작성자 인덱스 | 소비자 견적 요청·탐색·마감. 삭제 시 기존 제안·채팅 참조 보존 |
 | `proposals` | `id uuid`, `quote_request_id`, `expert_user_id`, `service_id`, `room_id`, `created_at` | PK `id`; 견적·고객·서비스·채팅방 FK; `(quote_request_id,expert_user_id)` 고유 | 고수당 견적별 한 제안과 채팅방 연결 |
 | `service_favorites` | `user_id`, `service_id`, `created_at` | 복합 PK `(user_id,service_id)`; 고객·서비스 FK | 찜한 서비스 |
-| `chat_subjects` | `id uuid`, `subject_type varchar(80)`, `subject_id uuid`, `owner_user_id varchar(80)`, `active bool`, `created_at timestamptz` | PK `id`; UQ `(subject_type, subject_id)`; type 형식 검사 | 미래의 모든 서비스 리소스를 채팅에 연결 |
+| `chat_subjects` | `id uuid`, `subject_type varchar(80)`, `subject_id uuid`, `owner_user_id varchar(80)`, `display_title varchar(120) NULL`, `active bool`, `created_at timestamptz` | PK `id`; UQ `(subject_type, subject_id)`; type 형식 검사 | 미래의 모든 서비스 리소스를 채팅에 연결. 제목은 채팅 독립성을 유지하는 표시용 스냅샷 |
 | `chat_rooms` | `id uuid`, `subject_id uuid`, `initiated_by varchar(80)`, `created_at`, `last_message_at` | PK `id`; FK subject RESTRICT; UQ `(subject_id, initiated_by)` | 대상·발신자별 방 |
 | `chat_participants` | `room_id uuid`, `user_id varchar(80)`, `joined_at`, `last_read_message_id uuid` | PK `(room_id,user_id)`; FK room CASCADE, 읽음 메시지 SET NULL | 참여자·읽음 위치 |
 | `chat_messages` | `id uuid`, `room_id uuid`, `sender_user_id varchar(80)`, `client_message_id uuid`, `body text`, `created_at` | PK `id`; FK room CASCADE; `(room_id,sender_user_id)` 참가자 FK; UQ `(room_id,sender_user_id,client_message_id)`; 본문 최대 4000자 | 메시지·재시도 중복 방지 |

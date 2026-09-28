@@ -23,7 +23,7 @@
 
 `docs/API-SPEC.md`는 화면에서 도출한 전체 API **제안**이고, `docs/CHAT-API.md`는 구현된 채팅 계약이다. 채팅 클라이언트 연동에는 후자가 우선한다.
 
-추가 가이드: [카카오·네이버 간편인증](architecture/SOCIAL-LOGIN-GUIDE.md), [AWS 이전 기준](architecture/AWS-MIGRATION.md). 실행 검증: [강남구 200회](test-results/gangnam-200-20260927.md), [강남구 일반·영등포구 고수 1,000회](test-results/cross-district-1000-20260927.md).
+추가 가이드: [카카오·네이버 간편인증](architecture/SOCIAL-LOGIN-GUIDE.md), [AWS 이전 기준](architecture/AWS-MIGRATION.md). **공식 누적 검증 산출물**: [통합테스트 시나리오](test-results/INTEGRATION-TEST-SCENARIOS.md). 기존 실행 증거: [강남구 200회](test-results/gangnam-200-20260927.md), [강남구 일반·영등포구 고수 1,000회](test-results/cross-district-1000-20260927.md).
 
 모바일 **마지막 빌드의 Android 디버그 실행 캡처**: [테스트 계정 선택](previews/android-login-gate-v0.3.png), [홈 분야·지역 드롭다운](previews/android-home-categories-v0.4.png), [지역 선택](previews/android-region-picker-v0.4.png), [마이 고객정보](previews/android-my-v0.3.png). 홈 C영역 4열×2행과 홈 디자인 변경의 최신 실행 모습은 [홈 상단](previews/android-home-fixed-v0.4.png), [스크롤 후 카드](previews/android-home-fixed-scrolled-v0.4.png)에서 확인한다. 이전 캡처와 [스플래시 시안](previews/splash-preview.png)·[빈 메인 시안](previews/main-preview.png)은 과거 검토 자료다. Android 빌드 방법은 [mobile/README.md](../mobile/README.md)를 따른다.
 
@@ -36,6 +36,7 @@
 - 결정이 내려지면 [결정 기록](planning/DECISIONS.md)에 날짜·결정·근거·영향을 남기고 관련 문서를 갱신한다. 이전 제안과 충돌하면 우선순위를 명시한다.
 - 기능을 구현하기 전 해당 도메인의 미결정 사항을 확인하고, 구현 후 API/설계 문서의 실제 상태를 갱신한다.
 - 기능·정책·DB·배포가 바뀌는 커밋마다 위 8종의 영향 여부를 확인하고, 영향받은 문서를 같은 변경에서 갱신한다. 영향이 없는 문서는 억지로 수정하지 않는다.
+- 기능·오류 처리·권한·화면 흐름이 바뀌면 [통합테스트 시나리오](test-results/INTEGRATION-TEST-SCENARIOS.md)에 고정 ID의 정상/비정상 사례와 실행 증거를 추가한다. 미실행 항목을 통과로 표시하지 않는다.
 - 테이블 컬럼·API 필드에 새 구분값을 도입하거나 기존 값의 의미를 바꾸면 [코드인스턴스](architecture/CODE-INSTANCES.md)를 반드시 갱신한다.
 - 새 산출물은 `docs/planning/`(요구사항·흐름·결정), `docs/architecture/`(구성·데이터·배포 설계), `docs/api/`(도메인별 계약)에 둔다. 기존 두 API 문서는 링크를 유지하기 위해 현재 위치에 둔다.
 

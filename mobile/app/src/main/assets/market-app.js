@@ -170,13 +170,27 @@
   }
 
   async function renderChats() {
-    root.innerHTML=header('채팅')+`<h1 class="lead">대화 목록</h1><p class="sub">서비스 문의와 견적 제안을 한곳에서 확인하세요.</p><div id="rooms"></div>`;
-    try {const data=await api.request('GET','/api/v1/chat/rooms');
-      root.querySelector('#rooms').innerHTML=data.items.length ? data.items.map(x =>
-        `<a class="card" href="${link('room.html',{id:x.id})}"><span class="pill">${x.subjectType === 'service' ? '서비스 문의' : '견적 제안'}</span>
-        <div class="card-title" style="margin-top:8px">대화 이어가기</div><div class="card-meta"><span>${e(x.lastMessageAt ? new Date(x.lastMessageAt).toLocaleString('ko-KR') : '새 대화')}</span><span>${x.unreadCount ? e(x.unreadCount)+'개 안 읽음' : '›'}</span></div></a>`).join('') :
-        empty('아직 대화가 없습니다','마음에 드는 서비스를 찾고 고수에게 문의해 보세요.','서비스 둘러보기','kimgosu://tab/1');
-    }catch(ex){showError(ex.message)}
+    root.innerHTML=header('채팅')+`<h1 class="lead">대화 목록</h1><p class="sub">서비스 문의와 견적 제안을 한곳에서 확인하세요.</p><div id="rooms"></div><button id="moreRooms" class="outline wide" hidden>대화 더 보기</button>`;
+    const rows=root.querySelector('#rooms');
+    const more=root.querySelector('#moreRooms');
+    let cursor=null;
+    async function loadMore() {
+      more.disabled=true;
+      try {
+        const path='/api/v1/chat/rooms?limit=20'+(cursor?'&cursor='+encodeURIComponent(cursor):'');
+        const data=await api.request('GET',path);
+        if (!cursor && !data.items.length) rows.innerHTML=
+          empty('아직 대화가 없습니다','마음에 드는 서비스를 찾고 고수에게 문의해 보세요.','서비스 둘러보기','kimgosu://tab/1');
+        else rows.insertAdjacentHTML('beforeend',data.items.map(x =>
+          `<a class="card" href="${link('room.html',{id:x.id})}"><span class="pill">${x.subjectType === 'service' ? '서비스 문의' : '견적 제안'}</span>
+          <div class="card-title" style="margin-top:8px">${e(x.displayTitle || '대화 이어가기')}</div><div class="card-meta"><span>${e(x.lastMessageAt ? new Date(x.lastMessageAt).toLocaleString('ko-KR') : '새 대화')}</span><span>${x.unreadCount ? e(x.unreadCount)+'개 안 읽음' : '›'}</span></div></a>`).join(''));
+        cursor=data.nextCursor;
+        more.hidden=!cursor;
+      } catch(ex) {showError(ex.message)}
+      finally {more.disabled=false}
+    }
+    more.onclick=loadMore;
+    await loadMore();
   }
   if(page==='chat') window.addEventListener('kimgosu-tab-visible',renderChats);
 

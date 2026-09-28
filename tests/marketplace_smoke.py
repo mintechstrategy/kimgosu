@@ -45,13 +45,29 @@ def main():
     assert status == 201, inquiry
     room_id = inquiry["chatRoomId"]
     assert call("POST", f"/services/{service_id}/inquiries", {}, consumer)[1]["chatRoomId"] == room_id
-    assert call("GET", f"/chat/rooms/{room_id}", token=consumer)[0] == 200
+    assert call("GET", f"/chat/rooms/{room_id}", token=consumer)[1]["displayTitle"] == service["title"]
+    assert any(room["id"] == room_id and room["displayTitle"] == service["title"]
+               for room in call("GET", "/chat/rooms", token=consumer)[1]["items"])
+    # A busy account must be able to reach old rooms after the first screenful.
+    for index in range(21):
+        extra = {**service, "title": f"페이지 이동 검증 {index:02d}"}
+        status, created_extra = call("POST", "/services", extra, expert)
+        assert status == 201, created_extra
+        assert call("POST", f"/services/{created_extra['id']}/inquiries", {}, consumer)[0] == 201
+    first = call("GET", "/chat/rooms?limit=20", token=consumer)[1]
+    assert len(first["items"]) == 20 and first["nextCursor"]
+    second = call("GET", f"/chat/rooms?limit=20&cursor={first['nextCursor']}", token=consumer)[1]
+    assert second["items"] and not ({r["id"] for r in first["items"]} &
+                                    {r["id"] for r in second["items"]})
     assert call("POST", f"/chat/rooms/{room_id}/reviews", {"rating": 5,
            "body": "상담 내용이 정확하고 응답이 친절했습니다."}, consumer)[0] == 409
     assert call("POST", f"/chat/rooms/{room_id}/completion", {}, consumer)[1]["completed"] is False
     assert call("POST", f"/chat/rooms/{room_id}/completion", {}, expert)[1]["completed"] is True
     assert call("POST", f"/chat/rooms/{room_id}/reviews", {"rating": 5,
            "body": "상담 내용이 정확하고 응답이 친절했습니다."}, consumer)[0] == 201
+    assert call("POST", f"/chat/rooms/{room_id}/reviews", {"rating": 4,
+           "body": "요청 내용이 명확해 작업 협의가 원활했습니다."}, expert)[0] == 201
+    assert len(call("GET", f"/chat/rooms/{room_id}/reviews", token=consumer)[1]["items"]) == 2
     assert call("POST", f"/chat/rooms/{room_id}/reviews", {"rating": 5,
            "body": "상담 내용이 정확하고 응답이 친절했습니다."}, consumer)[0] == 409
     assert call("PUT", f"/services/{service_id}/favorite", {}, consumer)[0] == 204
@@ -67,6 +83,7 @@ def main():
     status, proposal = call("POST", f"/quote-requests/{quote_id}/proposals", {"serviceId": service_id}, expert)
     assert status == 201, proposal
     assert proposal["chatRoomId"]
+    assert call("GET", f"/chat/rooms/{proposal['chatRoomId']}", token=consumer)[1]["displayTitle"] == quote["title"]
     assert call("POST", f"/quote-requests/{quote_id}/proposals", {"serviceId": service_id}, expert)[1]["created"] is False
     assert len(call("GET", f"/quote-requests/{quote_id}/proposals", token=consumer)[1]["items"]) == 1
     assert call("POST", f"/quote-requests/{quote_id}/close", {}, expert)[0] == 403

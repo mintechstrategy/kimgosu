@@ -1,13 +1,13 @@
 # 인터페이스 정의서
 
-기준일: 2026-09-27. 시스템 경계와 통신 계약을 기록한다. 개별 URL·필드는 [API정의서](../api/API-DEFINITION.md)를 따른다.
+기준일: 2026-09-28. 시스템 경계와 통신 계약을 기록한다. 개별 URL·필드는 [API정의서](../api/API-DEFINITION.md)를 따른다.
 
 | 경계 | 방향·방식 | 인증/데이터 | 상태 |
 |---|---|---|---|
 | 디버그 모바일 앱 ↔ FastAPI | LAN `http://192.168.0.213:23913`, JSON REST | 합성 CI 일반 50개·고수 50개만 서버 테스트 로그인 허용. 실제 CI 전송 없음 | 구현·API 검증. 공유기에서 23913 포워딩 금지 |
 | Android 홈 ↔ 카탈로그 API | 디버그는 LAN 23913, 릴리스는 HTTPS 23912의 `GET /api/v1/catalog/home-categories`. 최초 표시에는 번들 코드 사용 | 공개 코드 데이터만 전달. 릴리스는 HTTP로 강등하지 않음. 현행 HTTPS 미구성 시 번들 코드 유지 | 구현 |
 | Android WebView ↔ Java HTTP 어댑터 ↔ FastAPI | 로컬 화면의 JavaScript가 `KimgosuNative.request`로 `/api/v1` JSON 요청. 디버그 LAN 23913, 릴리스 HTTPS 23912 | 활성 메모리 JWT를 Java가 Bearer로 첨부. 로컬 asset 외 탐색 차단. 미래 웹은 같은 HTTP/JSON API를 직접 호출 | 코드 구현·Android 빌드, 운영 API 배포 전 |
-| 서비스·견적 도메인 ↔ 독립 채팅 | 업무 API가 리소스 소유권을 검증한 뒤 `chat_subjects`와 방·참여자를 같은 DB 트랜잭션에서 생성/재사용. 완료·리뷰는 특정 subject에 종속되지 않는 방 단위 | 일반 사용자는 임의 subject 소유자를 지정할 수 없음 | 운영 DB 2,000회 시나리오 및 완료·리뷰 smoke 검증 |
+| 서비스·견적 도메인 ↔ 독립 채팅 | 업무 API가 리소스 소유권을 검증한 뒤 `chat_subjects`와 방·참여자를 같은 DB 트랜잭션에서 생성/재사용. 업무 제목은 공통 `display_title` 스냅샷으로 전달하며 채팅 목록은 업무 테이블을 조인하지 않음. 완료·리뷰는 특정 subject에 종속되지 않는 방 단위 | 일반 사용자는 임의 subject 소유자를 지정할 수 없음 | 운영 DB 2,000회 시나리오 및 완료·리뷰 smoke 검증 |
 | 홈 지역 선택 ↔ Android 저장소/API | 기기 내부 SharedPreferences에 지역·비대면 포함 여부 저장; 목록 API에 `regions`, `includeRemote` 전달 | 서버/기기간 계정별 지역 동기화는 미구현 | 구현 |
 | 향후 웹 ↔ FastAPI | 동일 REST·WebSocket 계약 | Bearer JWT, 허용 Origin 설정 | 서버 계약 구현, 웹 미구현 |
 | 공유기 ↔ Nginx ↔ FastAPI | 외부 HTTP 23912 → PC `192.168.0.213:23912` → Docker 내부 HTTP·WebSocket. 로컬 점검은 `127.0.0.1:8080` | TLS 미구성 중 모든 공개 `/api/v1/` 요청은 Nginx에서 404. DB/Redis/8080은 외부 미공개 | 외부 HTTP 200 확인, HTTPS TLS 실패 확인 |

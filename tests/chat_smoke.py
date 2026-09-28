@@ -64,11 +64,14 @@ def main():
     stranger_token = token(stranger)
     writer = token(uuid4(), "chat:subjects:write")
     subject = call("POST", "/subjects", writer, {"subjectType": "service_inquiry",
-        "subjectId": str(uuid4()), "ownerUserId": str(owner)}, 201)
+        "subjectId": str(uuid4()), "ownerUserId": str(owner),
+        "displayTitle": "독립 서비스 문의"}, 201)
+    assert subject["displayTitle"] == "독립 서비스 문의"
     call("POST", "/subjects", writer, {"subjectType": "service_inquiry",
         "subjectId": subject["subjectId"], "ownerUserId": str(stranger)}, 409)
     room = call("POST", "/rooms", visitor_token, {"subjectId": subject["id"]}, 201)
     assert room["created"] is True
+    assert call("GET", f"/rooms/{room['id']}", visitor_token)["displayTitle"] == "독립 서비스 문의"
     repeat = call("POST", "/rooms", visitor_token, {"subjectId": subject["id"]}, 201)
     assert repeat["id"] == room["id"] and repeat["created"] is False
     call("POST", "/rooms", owner_token, {"subjectId": subject["id"]}, 403)

@@ -253,6 +253,11 @@ public final class MainActivity extends Activity {
             page.getSettings().setJavaScriptEnabled(true);
             page.getSettings().setDomStorageEnabled(false);
             page.getSettings().setAllowFileAccess(true);
+            // Pages are bundled assets; API traffic goes through ApiBridge, so remote frames
+            // must not be able to load and reach the JavaScript interface.
+            page.getSettings().setBlockNetworkLoads(true);
+            page.getSettings().setAllowFileAccessFromFileURLs(false);
+            page.getSettings().setAllowUniversalAccessFromFileURLs(false);
             page.getSettings().setAllowContentAccess(false);
             page.addJavascriptInterface(new ApiBridge(this, page, activeSession), "KimgosuNative");
             page.setWebViewClient(new WebViewClient() {

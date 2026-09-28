@@ -97,16 +97,18 @@ def _browse(connection, table, category, query, limit, owner=None, regions=None,
             "nextCursor": None}
 
 
-def _open_room(connection, subject_type: str, resource_id: UUID, owner: str, initiator: str):
+def _open_room(connection, subject_type: str, resource_id: UUID, owner: str,
+               initiator: str, display_title: str):
     if owner == initiator:
         raise HTTPException(403, "Cannot open a room with yourself")
     subject = connection.execute(text("""
-        INSERT INTO chat_subjects(id, subject_type, subject_id, owner_user_id)
-        VALUES (:id, :type, :resource, :owner)
-        ON CONFLICT(subject_type, subject_id) DO UPDATE SET active=true
+        INSERT INTO chat_subjects(id, subject_type, subject_id, owner_user_id, display_title)
+        VALUES (:id, :type, :resource, :owner, :title)
+        ON CONFLICT(subject_type, subject_id) DO UPDATE
+          SET active=true, display_title=EXCLUDED.display_title
         RETURNING id, owner_user_id
     """), {"id": uuid4(), "type": subject_type, "resource": resource_id,
-           "owner": owner}).mappings().one()
+           "owner": owner, "title": display_title}).mappings().one()
     if subject["owner_user_id"] != owner:
         raise HTTPException(409, "Chat subject owner mismatch")
     created = connection.execute(text("""
@@ -223,7 +225,7 @@ def inquire(service_id: UUID, request: Request, principal: dict = Depends(identi
         if service["status"] != "active":
             raise HTTPException(409, "Service is not active")
         room_id = _open_room(connection, "service", service_id,
-                             service["owner_user_id"], principal["user_id"])
+                             service["owner_user_id"], principal["user_id"], service["title"])
         return {"chatRoomId": str(room_id)}
 
 
@@ -367,7 +369,7 @@ def propose(quote_id: UUID, body: ProposalWrite, request: Request,
             return {"proposalId": str(previous["id"]), "chatRoomId": str(previous["room_id"]),
                     "created": False}
         room_id = _open_room(connection, "quote_request", quote_id,
-                             quote["owner_user_id"], principal["user_id"])
+                             quote["owner_user_id"], principal["user_id"], quote["title"])
         proposal_id = uuid4()
         connection.execute(text("""
             INSERT INTO proposals(id, quote_request_id, expert_user_id, service_id, room_id)
