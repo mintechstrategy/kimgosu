@@ -9,11 +9,13 @@ import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.RippleDrawable;
 import android.os.Bundle;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.net.Uri;
+import android.content.Intent;
 import android.text.TextUtils;
 import android.util.Log;
 import android.window.OnBackInvokedDispatcher;
@@ -64,6 +66,12 @@ public final class MainActivity extends Activity {
     private String pendingProvince = "서울";
     private Set<String> pendingRegions = new HashSet<>();
     private boolean includeRemote = true;
+    private static final int PICK_CHAT_ATTACHMENT = 7101;
+    private static final int SAVE_CHAT_ATTACHMENT = 7102;
+    private ApiBridge pendingAttachmentBridge;
+    private int pendingAttachmentCallback;
+    private String pendingAttachmentRoom;
+    private String pendingDownloadId;
 
     @Override public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -190,6 +198,12 @@ public final class MainActivity extends Activity {
             }
             activeSession = session;
             activeTestAccount = account;
+            String region = "고수".equals(account.mode) ? "영등포구" : "강남구";
+            getPreferences(Context.MODE_PRIVATE).edit()
+                    .putBoolean("expert_mode", session.expertEnabled && "고수".equals(account.mode))
+                    .putString("home_region_name", region)
+                    .putStringSet("home_regions", new HashSet<>(java.util.Collections.singleton(region)))
+                    .putBoolean("include_remote", true).apply();
             showMain(0);
         }));
     }
@@ -231,6 +245,8 @@ public final class MainActivity extends Activity {
             lp.topMargin = dp(3);
             item.addView(label, lp);
             item.setContentDescription(TABS[i] + (i == selectedTab ? " 선택됨" : ""));
+            item.setForeground(new RippleDrawable(ColorStateList.valueOf(Color.rgb(224, 236, 255)),
+                    null, shape(Color.WHITE, 12)));
             item.setOnClickListener(v -> {
                 selectTab(index, true);
             });
@@ -294,6 +310,8 @@ public final class MainActivity extends Activity {
         content.addView(page, selectedTab == 0
                 ? new LinearLayout.LayoutParams(-1, 0, 1)
                 : new LinearLayout.LayoutParams(-1, -1));
+        page.setAlpha(0.92f);
+        page.animate().alpha(1f).setDuration(120).start();
         final WebView attachedPage = page;
         if (selectedTab == 0 && page.getUrl() == null) page.post(() -> loadHomePage(attachedPage));
         else if (selectedTab == 4 && page.getUrl() == null) page.post(() -> loadMyPage(attachedPage));
@@ -312,6 +330,64 @@ public final class MainActivity extends Activity {
         WebView current = tabViews[tab];
         if (current != null) current.evaluateJavascript(
                 "window.dispatchEvent(new Event('kimgosu-tab-visible'))", null);
+    }
+
+    void pickChatAttachment(ApiBridge bridge, int callbackId, String roomId) {
+        if (pendingAttachmentBridge != null) {
+            bridge.attachmentReply(callbackId, 409, "{\"detail\":\"파일 선택이 진행 중입니다\"}");
+            return;
+        }
+        pendingAttachmentBridge = bridge;
+        pendingAttachmentCallback = callbackId;
+        pendingAttachmentRoom = roomId;
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("*/*");
+        intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"image/*", "application/pdf",
+                "text/plain", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "application/vnd.ms-powerpoint", "application/vnd.openxmlformats-officedocument.presentationml.presentation"});
+        try { startActivityForResult(intent, PICK_CHAT_ATTACHMENT); }
+        catch (Exception ex) { clearPendingAttachment(); bridge.attachmentReply(callbackId, 503,
+                "{\"detail\":\"파일 선택기를 열 수 없습니다\"}"); }
+    }
+
+    void saveChatAttachment(ApiBridge bridge, String attachmentId, String filename) {
+        if (pendingAttachmentBridge != null) return;
+        pendingAttachmentBridge = bridge;
+        pendingDownloadId = attachmentId;
+        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("application/octet-stream");
+        intent.putExtra(Intent.EXTRA_TITLE, filename);
+        try { startActivityForResult(intent, SAVE_CHAT_ATTACHMENT); }
+        catch (Exception ex) { clearPendingAttachment(); Toast.makeText(this,
+                "저장 위치를 열 수 없습니다", Toast.LENGTH_SHORT).show(); }
+    }
+
+    private void clearPendingAttachment() {
+        pendingAttachmentBridge = null;
+        pendingAttachmentRoom = null;
+        pendingDownloadId = null;
+    }
+
+    @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode != PICK_CHAT_ATTACHMENT && requestCode != SAVE_CHAT_ATTACHMENT) return;
+        ApiBridge bridge = pendingAttachmentBridge;
+        if (bridge == null) return;
+        Uri uri = resultCode == RESULT_OK && data != null ? data.getData() : null;
+        if (requestCode == PICK_CHAT_ATTACHMENT) {
+            int callbackId = pendingAttachmentCallback;
+            String room = pendingAttachmentRoom;
+            clearPendingAttachment();
+            if (uri == null) bridge.attachmentReply(callbackId, 499, "{\"detail\":\"파일 선택을 취소했습니다\"}");
+            else bridge.uploadAttachment(callbackId, room, uri);
+        } else {
+            String attachment = pendingDownloadId;
+            clearPendingAttachment();
+            if (uri != null) bridge.downloadAttachment(attachment, uri);
+        }
     }
 
     void switchMode(boolean expert) {

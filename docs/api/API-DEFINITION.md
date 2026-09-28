@@ -28,6 +28,8 @@ API 요청·응답의 구분값은 [코드인스턴스](../architecture/CODE-INS
 
 기본 경로 `/api/v1`. 목록은 공개, 작성·내 활동·문의·찜·제안은 Bearer JWT가 필요하다. 금액은 원 단위 정수. `GET /services?categoryCode=&q=&regions=강남구,영등포구&includeRemote=true&limit=`와 같은 `GET /quote-requests`는 `{items,nextCursor:null}`을 반환한다. `regions`는 최대 20개의 쉼표 구분 지역명이다. 선택 지역의 대면 서비스와, `includeRemote=true`이면 비대면 서비스도 포함한다. 현재 최대 50개만 반환하며 실제 커서 페이지 이동은 후속 구현이다. 각 항목에는 UUID `id`, `ownerUserId`, `categoryCode`, `title`, `description`, `mode`, `regionName`, 상태·생성시각이 있고 서비스에는 `priceFrom`, 견적에는 `budgetMax`가 있다.
 
+접근권한 계약(R-035): 서비스·견적 변경/숨김/마감/삭제는 JWT `sub`와 DB `owner_user_id`가 같은 작성자에게만 허용한다. 토큰이 없으면 401, 다른 작성자는 403이다. 채팅방·메시지·완료·리뷰와 파일 다운로드는 방 참가자 관계로 검사하며 비참가자에게 대화 내용은 노출하지 않는다. 클라이언트의 버튼 숨김은 보조 장치이고 권한 판정은 서버가 수행한다. 교차 계정 테스트 `tests/authorization_matrix.py`를 CI 배포 선행 관문으로 실행한다.
+
 | Method | Path | 동작·검사 |
 |---|---|---|
 | POST/GET | `/services` | 고수 계정만 등록; 목록은 노출 중인 서비스. 등록 JSON `categoryCode,title,description,mode,regionName?,priceFrom` |

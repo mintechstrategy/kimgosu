@@ -72,12 +72,19 @@
   }
 
   function renderRegister() {
-    root.innerHTML = header('등록') + `<h2 class="lead">필요한 일을 등록해보세요</h2>
-      <p class="sub">요구사항을 올리면 맞는 고수가 제안을 보낼 수 있어요.</p>
-      <div class="hero-card"><h2>견적 요청하기</h2><p>작업 내용과 희망 예산을 알려주세요.</p>
-      <a class="primary" href="editor.html?kind=quote">견적 등록하기 →</a></div>
-      ${me.expertEnabled ? `<div class="card"><h2>나의 서비스 등록</h2><p class="card-sub">제공하는 전문 서비스를 소개하고 문의를 받아보세요.</p>
-      <a class="outline wide" href="editor.html?kind=service">서비스 등록하기</a></div>` : ''}`;
+    const expert=me.expertEnabled && me.expertMode;
+    root.innerHTML = header('등록') + `<span class="role-badge">${expert?'고수로 활동 중':'일반 이용 중'}</span>
+      <h2 class="lead">${expert?'전문 서비스를 등록하세요':'필요한 일을 등록해보세요'}</h2>
+      <p class="sub">${expert?'서비스를 소개하면 고객이 검색하고 문의할 수 있어요.':'요구사항을 올리면 맞는 고수가 제안을 보낼 수 있어요.'}</p>
+      ${expert ? `<div class="hero-card"><h2>고수 서비스 등록</h2><p>제공 분야·가격·서비스 내용을 알려주세요.</p>
+        <a class="primary" href="editor.html?kind=service">서비스 등록하기 →</a></div>
+        <div class="card"><h2>일반 이용자로 견적 요청</h2><p class="card-sub">도움이 필요할 때는 일반 이용자로 요청할 수 있어요.</p>
+        <a class="outline wide" href="editor.html?kind=quote">견적 등록하기</a></div>` :
+        `<div class="hero-card"><h2>견적 요청하기</h2><p>작업 내용과 희망 예산을 알려주세요.</p>
+        <a class="primary" href="editor.html?kind=quote">견적 등록하기 →</a></div>
+        ${me.expertEnabled ? `<div class="card"><h2>고수로 서비스 등록</h2><p class="card-sub">고수 활동으로 전환하면 서비스를 관리할 수 있어요.</p>
+        <button id="registerExpertSwitch" class="outline wide">고수 화면으로 전환</button></div>` : ''}`}`;
+    root.querySelector('#registerExpertSwitch')?.addEventListener('click',()=>api.setMode('expert'));
   }
 
   async function renderEditor() {
@@ -99,12 +106,16 @@
     field('mode').onchange = () => {root.querySelector('#regionRow').hidden = field('mode').value !== 'onsite'};
     if (editingId) {
       try {const item=await api.request('GET',`/api/v1/${kind === 'service' ? 'services' : 'quote-requests'}/${encodeURIComponent(editingId)}`);
+        if (!me.userId || item.ownerUserId !== me.userId) {
+          root.innerHTML = header('수정 권한 없음',true) + error('작성자만 이 글을 수정할 수 있습니다.');
+          return;
+        }
         field('categoryCode').value=item.categoryCode;field('title').value=item.title;
         field('description').value=item.description;field('mode').value=item.mode;
         field('regionName').value=item.regionName||'';
         field('amount').value=(kind === 'service' ? item.priceFrom : item.budgetMax) ?? '';
         field('mode').onchange();
-      }catch(ex){showError(ex.message)}
+      }catch(ex){root.innerHTML = header('글을 불러올 수 없습니다',true) + error(ex.message);return}
     }
     form.onsubmit = async event => {event.preventDefault();
       const payload = {categoryCode:field('categoryCode').value,title:field('title').value,
@@ -199,9 +210,19 @@
   async function renderRoom() {
     const id=params.get('id');root.innerHTML=header('대화방',true)+`<button id="olderMessages" class="outline wide" hidden>이전 대화 보기</button><div class="bubble-list" id="messages"></div>
       <div id="completion" class="completion"></div>
-      <form class="send-bar" id="send"><input name="message" maxlength="4000" placeholder="메시지를 입력하세요"><button>전송</button></form>`;
+      <div id="pendingAttachments" class="pending-attachments" hidden></div>
+      <form class="send-bar" id="send"><button type="button" id="attachFile" class="attach-button" aria-label="사진 또는 문서 첨부">＋</button><input name="message" maxlength="4000" placeholder="메시지를 입력하세요"><button type="submit">전송</button></form>`;
     const box=root.querySelector('#messages');const older=root.querySelector('#olderMessages');
-    let last=null, olderCursor=null, messages=[], completionStamp=null;
+    const pendingBox=root.querySelector('#pendingAttachments');
+    let last=null, olderCursor=null, messages=[], completionStamp=null, pendingFiles=[];
+    function paintPending(){
+      pendingBox.hidden=!pendingFiles.length;
+      pendingBox.innerHTML=pendingFiles.map((file,index)=>`<span class="pending-file">${e(file.filename)} <button type="button" data-index="${index}" aria-label="첨부 제거">×</button></span>`).join('');
+      pendingBox.querySelectorAll('button').forEach(button=>button.onclick=async()=>{
+        const [removed]=pendingFiles.splice(Number(button.dataset.index),1);paintPending();
+        api.request('DELETE',`/api/v1/chat/attachments/${encodeURIComponent(removed.id)}`).catch(()=>{});
+      });
+    }
     api.request('GET',`/api/v1/chat/rooms/${encodeURIComponent(id)}`).then(room=>{
       root.querySelector('.page-head strong').textContent=room.displayTitle || '대화방';
     }).catch(()=>{});
@@ -211,8 +232,10 @@
       messages=[...byId.values()].sort((a,b)=>a.createdAt.localeCompare(b.createdAt)||a.id.localeCompare(b.id));
     }
     function paintMessages() {
-      box.innerHTML=messages.length?messages.map(x=>`<div class="bubble ${x.senderUserId===me.userId?'mine':''}">${e(x.text)}</div>`).join(''):
+      box.innerHTML=messages.length?messages.map(x=>`<div class="bubble ${x.senderUserId===me.userId?'mine':''}">${e(x.text)}${(x.attachments||[]).map(file=>`<button type="button" class="attached-file" data-id="${e(file.id)}" data-name="${e(file.filename)}">📎 ${e(file.filename)} · ${Math.ceil(file.byteSize/1024)}KB</button>`).join('')}</div>`).join(''):
         empty('새 대화입니다','첫 메시지를 보내보세요.');
+      box.querySelectorAll('.attached-file').forEach(button=>button.onclick=()=>
+        Promise.resolve(api.saveAttachment(button.dataset.id,button.dataset.name)).catch(ex=>showError(ex.message)));
       older.hidden=!olderCursor;
     }
     async function refreshCompletion(){try{
@@ -249,10 +272,19 @@
       } catch(ex) {showError(ex.message)}
       finally {older.disabled=false}
     };
+    root.querySelector('#attachFile').onclick=async event=>{
+      if(pendingFiles.length>=5){showError('한 메시지에 최대 5개까지 첨부할 수 있습니다');return}
+      const button=event.currentTarget;button.disabled=true;
+      try{const file=await api.pickAttachment(id);pendingFiles.push(file);paintPending()}
+      catch(ex){if(!/취소|선택하지/.test(ex.message))showError(ex.message)}
+      finally{button.disabled=false}
+    };
     root.querySelector('#send').onsubmit=async event=>{event.preventDefault();const form=event.target;
-      const value=form.elements.namedItem('message').value.trim();if(!value)return;
-      try{await api.request('POST',`/api/v1/chat/rooms/${id}/messages`,{clientMessageId:uid(),text:value});form.reset();await refresh()}
-      catch(ex){showError(ex.message)}};
+      const value=form.elements.namedItem('message').value.trim();if(!value&&!pendingFiles.length)return;
+      const button=form.querySelector('button[type="submit"]');button.disabled=true;
+      try{await api.request('POST',`/api/v1/chat/rooms/${id}/messages`,{clientMessageId:uid(),text:value,attachmentIds:pendingFiles.map(file=>file.id)});
+        form.reset();pendingFiles=[];paintPending();await refresh()}
+      catch(ex){showError(ex.message)}finally{button.disabled=false}};
     await refresh();await refreshCompletion();
     let timer=null, refreshing=false;
     async function tick() {
@@ -271,8 +303,8 @@
   }
 
   function renderMy() {
-    root.innerHTML=header('마이')+`<div class="hero-card"><h2>${e(me.customerName || '게스트')}님</h2>
-      <p>${me.expertEnabled?'고수 계정 · 일반 서비스도 이용할 수 있어요':'일반 계정'}</p></div>
+    root.innerHTML=header('마이')+`<span class="role-badge">${me.expertMode?'고수로 활동 중':'일반 이용 중'}</span><div class="hero-card"><h2>${e(me.customerName || '게스트')}님</h2>
+      <p>${me.expertEnabled?'고수 활동과 일반 이용을 전환할 수 있어요':'일반 이용자 계정'}</p></div>
       ${me.expertEnabled ? `<button id="modeSwitch" class="outline wide">${me.expertMode ? '일반 화면으로 전환' : '고수 화면으로 전환'}</button>` : ''}
       <h2 class="section-title">나의 활동</h2>
       <a class="list-row" href="activity.html?section=quotes"><strong>나의 견적 요청</strong><span>›</span></a>
@@ -283,11 +315,11 @@
       <a class="list-row" href="support.html"><strong>고객센터</strong><span>›</span></a>
       ${window.KimgosuNative?'<a class="list-row" href="kimgosu://reselect"><strong>테스트 계정 변경</strong><span>›</span></a>':''}`;
     if (me.expertEnabled) root.querySelector('#modeSwitch').onclick = () =>
-      window.KimgosuNative?.setMode(me.expertMode ? 'consumer' : 'expert');
+      api.setMode(me.expertMode ? 'consumer' : 'expert');
   }
 
   async function renderExpert() {
-    root.innerHTML=`<h1 class="lead">안녕하세요, ${e(me.customerName || '고수')}님</h1>
+    root.innerHTML=`<div class="expert-top"><span class="role-badge">고수로 활동 중</span><button id="expertModeSwitch" class="head-action">일반 화면 보기</button></div><h1 class="lead">안녕하세요, ${e(me.customerName || '고수')}님</h1>
       <p class="sub">새 견적 요청을 살펴보고 고객에게 제안해 보세요.</p>
       <div class="hero-card"><h2>나의 전문 서비스를 소개하세요</h2><p>등록한 서비스 분야의 견적에 제안할 수 있어요.</p>
       <a class="primary" href="editor.html?kind=service">서비스 등록하기 →</a></div>
@@ -296,6 +328,7 @@
       <div class="section-title">나의 활동</div>
       <a class="list-row" href="activity.html?section=services"><strong>나의 서비스 관리</strong><span>›</span></a>
       <a class="list-row" href="activity.html?section=proposals"><strong>보낸 제안</strong><span>›</span></a>`;
+    root.querySelector('#expertModeSwitch').onclick=()=>api.setMode('consumer');
     try {const data=await api.request('GET','/api/v1/quote-requests?limit=5');
       root.querySelector('#expertQuotes').innerHTML=data.items.length?data.items.map(x=>card(x,'quote')).join(''):
         empty('새 견적 요청이 없습니다','조금 뒤 다시 확인해 주세요.');

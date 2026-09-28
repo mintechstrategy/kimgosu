@@ -54,3 +54,12 @@ body:has(.hero){padding:17px 18px 30px;background:#fff}
 .service-art .badge{display:none}
 .hero-art:after{content:"";position:absolute;inset:auto 0 0;height:18px;background:linear-gradient(transparent,#fff)}
 .wide-service .service-art{height:72px;align-self:flex-start}
+/* Preserve the supplied home artwork while keeping text clear of the illustration. */
+.hero h1{font-size:clamp(20px,5.4vw,25px);letter-spacing:-.8px;line-height:1.32;max-width:78%;font-weight:400}
+.hero h1 strong{font-weight:500}.hero-art{right:-18px;width:45%}
+.quote-banner h2,.section-head h2{font-weight:700}.service-body h3,.wide-service h3{font-weight:600}.price{font-weight:700}
+.service-cta,.primary-button,.section-head a{font-weight:600}
+body{animation:screen-in .14s ease-out both}@keyframes screen-in{from{opacity:.88}to{opacity:1}}
+.primary-button,.service-cta,.category-card,.search-box,.chip{transition:transform .13s ease,background-color .13s ease,box-shadow .13s ease}
+.primary-button:active,.service-cta:active,.category-card:active,.search-box:active,.chip:active{transform:scale(.975)}
+@media(prefers-reduced-motion:reduce){body{animation:none}.primary-button,.service-cta,.category-card,.search-box,.chip{transition:none}}

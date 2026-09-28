@@ -60,6 +60,22 @@
 | IT-311 | 메시지 없는 방을 열어 대화 상단을 확인 | 이전 대화 버튼은 보이지 않고 빈 대화 안내만 보임 | R-007 | [에뮬레이터 실행 화면](../previews/android-room-empty-v0.5.png) 확인 통과 |
 | IT-312 | 일시적 네트워크 실패 후 채팅 API가 다시 응답 | 오류 상태가 다음 갱신에 정상 메시지·완료 상태로 복구 | R-007 | 복구 코드 수정, 실패 주입 재현 테스트 미실행 |
 | IT-313 | 긴 서비스 제목으로 채팅방 진입 | 뒤로가기 버튼은 한 줄·터치 가능 상태, 제목은 최대 두 줄로 표시 | R-016, R-027 | [에뮬레이터 화면](../previews/android-room-long-title-v0.5.png) 확인 통과 |
+| IT-314 | 일반 계정이 문서 파일을 선택해 글 없이 보내고, 대화에서 다시 저장 | 업로드 ID가 메시지에 연결되고 첨부명이 보임. 참가자만 다운로드 가능 | R-007, R-030 | [문서 전송 화면](../previews/android-document-sent-v0.5.png) 확인. 저장 위치 선택까지 확인, 저장 결과·내용 대조 전 |
+| IT-315 | 사진 첨부, 선택 취소, 5개 초과, 100MB 초과, 비참여자 내려받기 | 정상 파일만 전송, 취소는 메시지 변화 없음, 개수·크기 제한 및 비참여 차단 | R-007, R-030 | [사진 선택 대기 화면](../previews/android-attachment-pending-v0.5.png), API의 크기·권한 검증 통과. AOS 전송/경계값 미실행 |
+
+## 접근 권한 회귀검증
+
+| ID | 선행조건/행동 | 기대 결과 | 현재 증거·상태 |
+|---|---|---|---|
+| IT-501 | 고수 A의 서비스에 고수 B·일반 C가 수정·숨김·삭제 요청 | 모두 403, 원본 유지 | `tests/authorization_matrix.py` LAN 실행 통과 |
+| IT-502 | 일반 A의 견적에 일반 B·고수 C가 수정·마감·삭제 요청 | 모두 403, 원본 유지 | `tests/authorization_matrix.py` LAN 실행 통과 |
+| IT-503 | 서비스·견적 수정 URL을 비소유자 계정으로 직접 열기 | 폼과 저장 버튼 대신 권한 오류, 서버 PUT도 403 | 프론트 수정 코드 반영·API 통과, APK 직접 탐색 검증 전 |
+| IT-504 | 방 비참가자가 방·메시지·완료·리뷰를 조회/수정 | 403/404, 대화 및 거래 정보 비노출 | `tests/authorization_matrix.py` LAN 실행 통과 |
+| IT-505 | 토큰 없이 서비스·견적 수정, 다른 계정으로 고객원장 `/me` 조회 | 변경은 401, `/me`는 자신의 고객 ID만 반환 | `tests/authorization_matrix.py` LAN 실행 통과 |
+| IT-506 | 계정 변경 후 오래된 WebView에서 이전 계정 글 수정 시도 | WebView 폐기, 새 JWT/프로필 사용, 타인 글 수정 불가 | 코드 확인, Android 계정 교체 직접 검증 전 |
+| IT-507 | 첨부 비참가 다운로드, 메시지 첨부 도용, subject 임의 등록 | 참가자/업로더/서비스 capability 위반은 거부 | `tests/chat_smoke.py` 기존 범위 통과; 전체 매트릭스 재검증 예정 |
+
+접근 권한은 화면 표시와 무관하게 API에서 확정한다. 테스트 계정은 공유 가능한 합성 계정이므로 운영 인증의 보안성을 증명하지 않는다.
 
 ## AOS·배포·운영
 
@@ -70,6 +86,7 @@
 | IT-403 | 두 휴대폰 A 일반/B 고수로 등록→문의→협상→완료→리뷰 | 메시지/완료 상태가 양쪽에 반영 | R-023~R-025 | [수동 절차](TWO-PHONE-TEST-PLAN.md), 사용자 실기기 실행 대기 |
 | IT-404 | `main` push → Actions → GHCR → PC 배포 에이전트 | 검증 성공 커밋의 API·worker·scheduler 이미지 자동 교체, DB 유지 | R-010 | [Actions run 36411785492](https://github.com/mintechstrategy/kimgosu/actions/runs/36411785492) 성공; 배포 확인은 실행 기록 기준 |
 | IT-405 | 외부 HTTP 23912의 `/api/v1/` 요청 | TLS 준비 전 공개 인증/API가 404, LAN 23913 테스트 API는 동작 | R-017, R-028 | Nginx 확인 통과; TLS/WSS 구성 전 |
+| IT-406 | 작은 화면과 긴 방 제목·메시지, 홈 원본 이미지 노출 | 글자가 사진 속 인물을 가리지 않고 방 제목·뒤로가기·첨부 입력이 잘리지 않음 | R-016, R-031 | [홈 조정 화면](../previews/android-home-ui-review-v0.5.png), [채팅방](../previews/android-chat-attachment-ui-v0.5.png) 일부 확인. 작은 화면 실기기 전 |
 
 ## 실행 기록
 
@@ -81,5 +98,7 @@
 | 2026-09-28 | Android 0.5.0 에뮬레이터 | IT-001, 401 일부 | 계정 선택·일반 로그인·홈 사진·채팅 목록 표시 | [홈 캡처](../previews/android-account-1-home-v0.5.png) |
 | 2026-09-28 | 운영 DB·Android 0.5.0 에뮬레이터 | IT-309 일부 | 55개 영속 메시지, API 50+5 분리, 방 제목/최근 메시지 앱 표시 | [55개 실행값](chat-long-history-latest.json) |
 | 2026-09-28 | Android 0.5.0 에뮬레이터 | IT-313 | 긴 방 제목 두 줄, 뒤로가기 한 줄, 과거 메시지와 입력창 표시 | [화면 캡처](../previews/android-room-long-title-v0.5.png) |
+| 2026-09-29 | Android 0.5.0 에뮬레이터 | IT-314 일부, IT-315 일부, IT-406 일부 | 문서·사진 시스템 선택, 문서 1건 메시지 전송 및 첨부 표시, 글꼴·홈 이미지 조정 | [문서 전송](../previews/android-document-sent-v0.5.png), [홈](../previews/android-home-ui-review-v0.5.png) |
+| 2026-09-29 | LAN 23913 운영 API·합성 계정 4개 | IT-501~505 | 타인 서비스/견적 변경 12종 거부, 비참가 방·완료·리뷰 접근 거부, 무토큰 변경 거부, `/me` 계정 격리 확인. 생성한 테스트 글 2건은 논리 삭제 | `python tests/authorization_matrix.py` PASS |
 
 미실행 항목은 실패가 아니다. 실제 두 휴대폰 결과는 기종/Android 버전/네트워크/계정 번호/실행 시각/실제 결과를 이 표에 추가한다.
