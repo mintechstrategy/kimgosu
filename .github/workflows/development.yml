@@ -1,0 +1,26 @@
+name: Development checks
+on:
+  push:
+    branches: [dev]
+    paths: ['services/samples/railway-db/**', 'apps/dev-console/**', 'apps/diagnostics/**', '.github/workflows/development.yml']
+  pull_request:
+    branches: [dev]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: development-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  api-web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24.22.2'
+      - run: npm ci --ignore-scripts && npm run check && npm test
+        working-directory: services/samples/railway-db
+      - run: npm ci --ignore-scripts && npm run build
+        working-directory: apps/dev-console

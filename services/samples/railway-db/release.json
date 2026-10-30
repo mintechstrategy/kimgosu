@@ -1,0 +1,15 @@
+{
+  "id": "4c162c3b732a513b09aadca00f7b019fd6c0ba94ffde233e273c2f0bdd096bf4",
+  "files": {
+    "package.json": "25163d755d296bf91535805c79beafb55e1328da9df1567912c0d6dcdab2ed4c",
+    "package-lock.json": "ce2ca84254fb7e964a625837739c230de2fc0aecd70423b56d5a891174e6c42a",
+    "Dockerfile": "00569005acda9a0163da4c276a7abc3e0cdcda8d4342d3a45d54524351acacb2",
+    ".dockerignore": "25a40a5923b98c8177cdb7609067b2dc1a4af34c665322f158e4ac3a41d1bd4e",
+    "railway.json": "8da0fb7236fd31a0f00f92cec0c849ac49f32058a83a0d11e689cf57bba4383b",
+    "src/app.ts": "aa6218dddd0a29d9a2de31a10f6b2f1f044e6ae2f6757e496a821f16e3b43e50",
+    "src/store.ts": "81f549f077615e30df56ea0f186094e43f9d078e7c03c680e85e2017f840e5f7",
+    "src/server.ts": "a9802e26dd4cfa71dd3d01af8249a95648d8e80e0207e26f42faf2cbfc4389f6"
+  },
+  "gitPushed": false,
+  "delivery": "allowlisted Railway CLI upload"
+}

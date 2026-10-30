@@ -1,0 +1,1 @@
+{"name":"kimgosu-dev-console","private":true,"version":"0.0.1","type":"module","scripts":{"build":"vue-tsc --noEmit && vite build"},"dependencies":{"vue":"^3.5.0"},"devDependencies":{"@cloudflare/vite-plugin":"^2.0.0-beta.v.8","@vitejs/plugin-vue":"^6.0.0","cf":"^1.0.0-beta.26","playwright":"^1.56.0","typescript":"^5.9.0","vite":"^7.0.0","vue-tsc":"^3.0.0"}}

@@ -1,0 +1,9 @@
+**
+!Dockerfile
+!package.json
+!package-lock.json
+!release.json
+!src/
+!src/app.ts
+!src/store.ts
+!src/server.ts
