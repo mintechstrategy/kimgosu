@@ -1,0 +1,53 @@
+{
+  "taskId": "KG-DEVDB-129",
+  "version": "v0.1-dev-slice",
+  "status": "prepared-protected-adapter-not-deployed",
+  "scope": "synthetic owner-private registration input persistence, not completed trades",
+  "inputContract": "registration-inputs.schema.json",
+  "inputSelectors": { "quotes": "#/$defs/quote", "services": "#/$defs/service" },
+  "existingEndpoints": ["GET /health", "POST /v1/validation/quotes", "POST /v1/validation/services"],
+  "newEndpoints": [
+    "POST /v1/development/registrations/quotes",
+    "GET /v1/development/registrations/quotes",
+    "GET /v1/development/registrations/quotes/:id",
+    "PUT /v1/development/registrations/quotes/:id",
+    "DELETE /v1/development/registrations/quotes/:id",
+    "POST /v1/development/registrations/services",
+    "GET /v1/development/registrations/services",
+    "GET /v1/development/registrations/services/:id",
+    "PUT /v1/development/registrations/services/:id",
+    "DELETE /v1/development/registrations/services/:id"
+  ],
+  "create": { "body": ["id", "input"], "id": "caller-generated lowercase UUID v1-v5; reuse for uncertain request reconciliation", "success": 201, "duplicate": 409 },
+  "read": { "success": 200, "missingOrOtherOwner": 404 },
+  "list": { "query": "optional after UUID cursor", "pageSize": 50, "order": "id ascending", "response": ["items", "nextCursor"], "snapshotIsolation": false },
+  "update": { "method": "PUT", "body": ["expectedVersion", "input"], "semantics": "full input replacement; atomic version compare-and-increment", "success": 200 },
+  "delete": { "header": "If-Match: quoted positive integer version", "success": 204, "semantics": "hard-delete this synthetic registration only" },
+  "versionRangeForMutation": { "minimum": 1, "maximum": 2147483646 },
+  "session": {
+    "source": "trusted server-injected resolveSession; no public issuance implemented",
+    "required": ["ownerId", "namespace", "expiresAt", "scope"],
+    "ownerId": "lowercase UUID v1-v5; verified by server, never supplied by client body/header",
+    "namespace": "kg-devdb-129- followed by a unique lowercase UUID v4",
+    "expiresAt": "finite Unix epoch milliseconds, strictly later than server Date.now()",
+    "scope": "synthetic-registration-crud",
+    "transport": "future individually issued opaque short-lived session over HTTPS; never a bundled shared secret",
+    "unconfiguredStatus": 503,
+    "invalidSessionStatus": 401,
+    "oauthImplemented": false,
+    "adminBypass": false
+  },
+  "record": ["id", "kind", "input", "version", "createdAt", "updatedAt"],
+  "provenance": { "synthetic": true, "namespace": "server session namespace", "productionMetricsEligible": false },
+  "errorCodes": {
+    "400": ["invalid-envelope", "invalid-query", "invalid-id", "version-required", "invalid-version"],
+    "401": ["development-session-required"],
+    "404": ["not-found"],
+    "409": ["id-conflict", "not-found-or-version-conflict"],
+    "422": ["valid=false with original validator errors path/keyword"],
+    "503": ["development-storage-disabled", "development-storage-unavailable"]
+  },
+  "persistence": "PostgreSQL SQL adapter; no memory or fixture fallback; success only after query returns. persisted=false on error is not proof of rollback after an uncertain connection failure.",
+  "liveTarget": { "projectId": "95b52b2c-e1c0-45da-909b-d7989ce08a90", "environmentId": "a1b5a11e-88a1-417e-84bc-2bbb2ba0fc18", "environment": "dev", "service": "Postgres", "verifiedLive": false },
+  "remaining": ["server session issuance/revocation integration", "reviewed live migration and CRUD", "app/web client integration and UI E2E", "public discovery", "categories and regions", "media ownership/upload", "chat", "customer ledger", "trade state and reviews", "administrator permissions and audit", "production metrics"]
+}

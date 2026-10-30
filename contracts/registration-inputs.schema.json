@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "김고수 C1/F3 등록 입력 부분 계약 v0.1",
+  "$comment": "KG-ENG-DEV-001. 전체 등록 API가 아닌 원본 정적 입력 부분 계약. 문자계수 정책 승인 전이며 JSON Schema의 원문 코드포인트 길이로만 시험한다. 추가 속성은 이 부분 계약의 검증 대상이 아니다.",
+  "$defs": {
+    "title": {"type": "string", "minLength": 1, "maxLength": 40},
+    "requirements": {"type": "string", "minLength": 50, "maxLength": 1000},
+    "photoSelection": {
+      "type": "array",
+      "maxItems": 5,
+      "items": {"type": "string", "minLength": 1},
+      "$comment": "문자열은 선택 사진을 가리키는 임시 불투명 핸들 표현이다. 업로드 성공, 파일 실체, 소유권, URL/DB ID 규격을 보장하지 않는다."
+    },
+    "quote": {
+      "type": "object",
+      "required": ["title", "requirements", "deadline_days", "min_price", "max_price"],
+      "properties": {
+        "title": {"$ref": "#/$defs/title"},
+        "requirements": {"$ref": "#/$defs/requirements"},
+        "deadline_days": {"type": "integer", "enum": [3, 7, 14], "default": 7, "$comment": "48:573. default는 주석이며 값 주입이 아니다. 제출값은 필수다."},
+        "photos": {"$ref": "#/$defs/photoSelection"},
+        "min_price": {"type": "integer", "minimum": 1},
+        "max_price": {"type": "integer", "minimum": 1}
+      }
+    },
+    "package": {
+      "type": "object",
+      "required": ["tier", "price"],
+      "properties": {
+        "tier": {"type": "string", "enum": ["BASIC", "PRIME", "SUPER"]},
+        "price": {"type": "integer", "minimum": 0},
+        "description": {"type": "string", "maxLength": 100}
+      },
+      "$comment": "45:500은 숫자만 명시하며 서비스 가격의 0 허용 여부는 별도 정책 결정 대상이다. 견적의 양수 규칙을 서비스에 전이하지 않는다. BASIC 설명의 필수 여부도 추가 확정하지 않는다."
+    },
+    "service": {
+      "type": "object",
+      "required": ["title", "self_introduction", "service_description", "photos", "packages", "precautions"],
+      "properties": {
+        "title": {"$ref": "#/$defs/title"},
+        "self_introduction": {"type": "string", "minLength": 1, "maxLength": 300},
+        "service_description": {"$ref": "#/$defs/requirements"},
+        "photos": {"$ref": "#/$defs/photoSelection", "minItems": 1},
+        "precautions": {"type": "string", "minLength": 1, "maxLength": 500},
+        "packages": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 3,
+          "prefixItems": [
+            {"$ref": "#/$defs/package", "properties": {"tier": {"const": "BASIC"}}},
+            {"$ref": "#/$defs/package", "required": ["description"], "properties": {"tier": {"const": "PRIME"}, "description": {"minLength": 1}}},
+            {"$ref": "#/$defs/package", "required": ["description"], "properties": {"tier": {"const": "SUPER"}, "description": {"minLength": 1}}}
+          ],
+          "items": false
+        }
+      }
+    }
+  }
+}
