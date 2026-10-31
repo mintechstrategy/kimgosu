@@ -4,6 +4,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { ApiError } from './security.ts';
 import { registerAuthRoutes } from './auth.ts';
 import type { AuthOptions } from './providers.ts';
+import { POLICY_METADATA, loadPolicySnapshot, requiredReadyKindsForGrant } from './policy.ts';
 
 export type Row = Record<string, unknown>;
 export interface Sql {
@@ -69,24 +70,49 @@ export function buildApp(db: Sql, release: string, options: AuthOptions = {}) {
     return result.rows[0];
   }
   app.get('/health', async () => ({ status: 'ok', scope: 'membership-development', release }));
-  app.get('/v1/auth/config', async () => {
-    const documents = await db.query(`SELECT DISTINCT ON(kind) kind,version,status,
+  // Only the exact supported opt-in activates its strict query contract.
+  // Absent/unknown/array metadata retains the existing non-opted-in legacy path.
+  const policyOptInQuery = { schema: { querystring: {
+    type: 'object',
+    if: { required: ['metadata'], properties: { metadata: { const: POLICY_METADATA } } },
+    then: { required: ['metadata'], additionalProperties: false, properties: { metadata: { type: 'string', const: POLICY_METADATA } } },
+  } } };
+  app.get('/v1/auth/config', policyOptInQuery, async (request) => {
+    const snapshot = (request.query as { metadata?: string }).metadata === POLICY_METADATA ? await loadPolicySnapshot(db) : null;
+    const documents = snapshot ? { rows: snapshot.currentDocuments.flatMap(slot => {
+      const d = snapshot.documents.find(d => d.id === slot.currentDocument?.id) ?? snapshot.documents.find(d => d.kind === slot.kind && d.isDisplay);
+      return d ? [{ kind: d.kind, version: d.version, status: d.status, canConsent: d.canConsent }] : [];
+    }) } : await db.query(`SELECT DISTINCT ON(kind) kind,version,status,
       (status='READY' AND approved_at IS NOT NULL AND effective_at<=now() AND operator_name IS NOT NULL AND length(trim(operator_name))>0) AS "canConsent"
       FROM kg_membership.policy_documents ORDER BY kind,(status='READY' AND approved_at IS NOT NULL AND effective_at<=now()) DESC,effective_at DESC NULLS LAST,created_at DESC,id DESC`);
     const configured = options.providers ?? {};
     const identityReady = Boolean(options.identityKey && options.identityKey.length >= 32);
-    const docsReady = ['TERMS', 'PRIVACY_CONSENT', 'PRIVACY_POLICY'].every(kind => documents.rows.some(d => d.kind === kind && d.canConsent === true));
+    const docsReady = requiredReadyKindsForGrant.every(kind => documents.rows.some(d => d.kind === kind && d.canConsent === true));
     return { release, signupReady: docsReady && identityReady && Boolean(options.sms) && Object.keys(configured).length > 0, providers: (['kakao', 'naver', 'google'] as const).map(id => ({ id, enabled: Boolean(configured[id]) && identityReady, ...(!configured[id] || !identityReady ? { reason: 'PROVIDER_INTEGRATION_NOT_CONNECTED' } : {}) })),
       sms: { available: Boolean(options.sms) && identityReady, codeDigits: 5, expiresInSeconds: 60, phonePattern: '^010[0-9]{8}$' },
       requiredFields: ['name', 'email'], minimumAgeAcknowledgement: 14, collectsGender: false, collectsAgeGroup: false,
       rejoinWaitDays: 30, retention: { purpose: '거래상대방 보호', startsAt: 'WITHDRAWAL_CONFIRMED', calendarYears: 1, rejoinResetsClock: false },
-      documents: documents.rows };
+      documents: documents.rows, ...(snapshot ? { policySnapshot: snapshot } : {}) };
   });
-  app.get('/v1/policies', async () => ({ documents: (await db.query(`${policySelect} ORDER BY kind,created_at DESC,id DESC`)).rows }));
-  app.get<{ Params: { kind: string }; Querystring: { version?: string } }>('/v1/policies/:kind', {
+  app.get('/v1/policies', policyOptInQuery, async (request) => {
+    if ((request.query as { metadata?: string }).metadata === POLICY_METADATA) {
+      const snapshot = await loadPolicySnapshot(db);
+      return { documents: snapshot.documents, policySnapshot: snapshot };
+    }
+    return { documents: (await db.query(`${policySelect} ORDER BY kind,created_at DESC,id DESC`)).rows };
+  });
+  app.get<{ Params: { kind: string }; Querystring: { version?: string; metadata?: string } }>('/v1/policies/:kind', {
     schema: { params: { type: 'object', required: ['kind'], additionalProperties: false, properties: { kind: { type: 'string', enum: kinds } } },
-      querystring: { type: 'object', additionalProperties: false, properties: { version: { type: 'string', minLength: 1, maxLength: 100 } } } },
+      querystring: { type: 'object', additionalProperties: false, properties: { version: { type: 'string', minLength: 1, maxLength: 100 }, metadata: { const: POLICY_METADATA, type: 'string' } } } },
   }, async (request, reply) => {
+    if (request.query.metadata === POLICY_METADATA) {
+      const snapshot = await loadPolicySnapshot(db);
+      const kind = request.params.kind;
+      const currentId = snapshot.currentDocuments.find(d => d.kind === kind)?.currentDocument?.id;
+      const document = request.query.version !== undefined ? snapshot.documents.find(d => d.kind === kind && d.version === request.query.version) :
+        snapshot.documents.find(d => d.id === currentId) ?? snapshot.documents.find(d => d.kind === kind && d.isDisplay);
+      return document ? { ...document, policySnapshot: snapshot } : fail(reply, 404, 'DOCUMENT_PREPARING');
+    }
     const result = await db.query(`${policySelect} WHERE kind=$1 AND ($2::text IS NULL OR version=$2)
       ORDER BY (status='READY' AND approved_at IS NOT NULL AND effective_at<=now()) DESC,effective_at DESC NULLS LAST,created_at DESC,id DESC LIMIT 1`, [request.params.kind, request.query.version ?? null]);
     return result.rows[0] ?? fail(reply, 404, 'DOCUMENT_PREPARING');

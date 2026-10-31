@@ -3,10 +3,11 @@ import { randomInt, randomUUID, timingSafeEqual } from 'node:crypto';
 import type { Sql, Row } from './app.ts';
 import type { AuthOptions, ProviderId } from './providers.ts';
 import { ApiError, digest, opaque, challenge, mac, tokenSchema } from './security.ts';
+import { currentDocumentsSelect, requiredGrantKinds, requiredReadyKindsForGrant, consentInputSchema, nicknameSchema, revisionSchema, loadPolicySnapshot, assertPolicyRevision } from './policy.ts';
 export type Authenticate = (request: FastifyRequest, reply: FastifyReply) => Promise<Row | null>;
 const body = (properties: Record<string, unknown>, required = Object.keys(properties)) => ({ body: { type: 'object', additionalProperties: false, properties, required } });
 const string = (minLength: number, maxLength: number) => ({ type: 'string', minLength, maxLength });
-const documentInput = { type: 'array', minItems: 2, maxItems: 3, items: { type: 'object', additionalProperties: false, required: ['kind', 'version'], properties: { kind: { type: 'string', enum: ['TERMS', 'PRIVACY_CONSENT', 'MARKETING'] }, version: string(1, 100) } } };
+const documentInput = consentInputSchema;
 export async function issueSession(sql: Sql, memberId: unknown, family?: unknown) {
   const accessToken = opaque(); const refreshToken = opaque();
   await sql.query(`INSERT INTO kg_membership.sessions(id,member_id,access_digest,expires_at,refresh_digest,refresh_expires_at,family_id)
@@ -14,14 +15,14 @@ export async function issueSession(sql: Sql, memberId: unknown, family?: unknown
   return { accessToken, refreshToken, tokenType: 'Bearer', expiresInSeconds: 900 };
 }
 export async function currentDocuments(sql: Sql) {
-  return (await sql.query(`SELECT DISTINCT ON(kind) id,kind,version FROM kg_membership.policy_documents
-    WHERE status='READY' AND approved_at IS NOT NULL AND effective_at<=now() AND operator_name IS NOT NULL AND length(trim(operator_name))>0
-    ORDER BY kind,effective_at DESC,id DESC`)).rows;
+  return (await sql.query(currentDocumentsSelect)).rows;
 }
-async function recordGrants(sql: Sql, memberId: unknown, accepted: { kind: string; version: string }[]) {
-  const docs = await currentDocuments(sql);
-  if (!['TERMS', 'PRIVACY_CONSENT', 'PRIVACY_POLICY'].every(kind => docs.some(d => d.kind === kind))) throw new ApiError(409, 'DOCUMENT_NOT_READY');
-  if (!['TERMS', 'PRIVACY_CONSENT'].every(kind => accepted.some(d => d.kind === kind))) throw new ApiError(400, 'REQUIRED_CONSENT_MISSING');
+async function recordGrants(sql: Sql, memberId: unknown, accepted: { kind: string; version: string }[], expectedPolicyRevision?: string) {
+  const snapshot = expectedPolicyRevision === undefined ? null : await loadPolicySnapshot(sql);
+  if (snapshot) assertPolicyRevision(snapshot, expectedPolicyRevision!);
+  const docs = snapshot ? snapshot.currentDocuments.flatMap(d => d.currentDocument ? [d.currentDocument] : []) : await currentDocuments(sql);
+  if (!requiredReadyKindsForGrant.every(kind => docs.some(d => d.kind === kind))) throw new ApiError(409, 'DOCUMENT_NOT_READY');
+  if (!requiredGrantKinds.every(kind => accepted.some(d => d.kind === kind))) throw new ApiError(400, 'REQUIRED_CONSENT_MISSING');
   if (new Set(accepted.map(a => a.kind)).size !== accepted.length) throw new ApiError(400, 'INVALID_REQUEST');
   for (const a of accepted) {
     const d = docs.find(d => d.kind === a.kind && d.version === a.version);
@@ -31,7 +32,7 @@ async function recordGrants(sql: Sql, memberId: unknown, accepted: { kind: strin
 }
 async function requireCurrentConsents(sql: Sql, memberId: unknown) {
   const docs = await currentDocuments(sql);
-  for (const kind of ['TERMS', 'PRIVACY_CONSENT']) {
+  for (const kind of requiredGrantKinds) {
     const doc = docs.find(d => d.kind === kind);
     if (!doc) throw new ApiError(409, 'DOCUMENT_NOT_READY');
     const last = (await sql.query(`SELECT action FROM kg_membership.consent_events WHERE member_id=$1 AND document_id=$2 ORDER BY id DESC LIMIT 1`, [memberId, doc.id])).rows[0];
@@ -127,8 +128,10 @@ export function registerAuthRoutes(app: FastifyInstance, db: Sql, authenticate: 
     });
     if (!result) throw new ApiError(400, 'SMS_CODE_INVALID_OR_EXPIRED'); return { verified: true };
   });
-  app.post<{ Body: { registrationTicket: string; name: string; email: string; age14Confirmed: boolean; expertRequested: boolean; consents: { kind: string; version: string }[] } }>('/v1/auth/signup', { schema: body({ registrationTicket: tokenSchema, name: string(1, 100), email: { type: 'string', maxLength: 254, pattern: '^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$' }, age14Confirmed: { const: true }, expertRequested: { type: 'boolean' }, consents: documentInput }) }, async req => {
+  app.post<{ Body: { registrationTicket: string; name: string; email: string; age14Confirmed: boolean; expertRequested: boolean; consents: { kind: string; version: string }[]; expectedPolicyRevision?: string } }>('/v1/auth/signup', { schema: body({ registrationTicket: tokenSchema, name: string(1, 100), email: { type: 'string', maxLength: 254, pattern: '^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$' }, age14Confirmed: { const: true }, expertRequested: { type: 'boolean' }, consents: documentInput, expectedPolicyRevision: revisionSchema }, ['registrationTicket', 'name', 'email', 'age14Confirmed', 'expertRequested', 'consents']) }, async req => {
     return db.transaction(async sql => {
+      // Fence policy DML before ticket/member/advisory locks; held through commit/rollback.
+      await sql.query('LOCK TABLE kg_membership.policy_documents IN SHARE MODE');
       const t = await ticket(sql, req.body.registrationTicket);
       if (!t.phone_digest || !t.phone_verified_at) throw new ApiError(409, 'PHONE_VERIFICATION_REQUIRED');
       if (!req.body.name.trim()) throw new ApiError(400, 'INVALID_REQUEST');
@@ -154,7 +157,7 @@ export function registerAuthRoutes(app: FastifyInstance, db: Sql, authenticate: 
       const restricted = (await sql.query(`SELECT id FROM kg_membership.restrictions WHERE principal_id=$1 AND revoked_at IS NULL AND starts_at<=now() AND (ends_at IS NULL OR ends_at>now())`, [principalId])).rows.length > 0;
       const memberId = randomUUID();
       await sql.query(`INSERT INTO kg_membership.members(id,principal_id,name,email,nickname,status,expert_active,phone_digest,age14_confirmed_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,now())`, [memberId, principalId, req.body.name.trim(), req.body.email, '고수' + opaque().slice(0, 8).replace(/[-_]/g, 'A'), 'ACTIVE', req.body.expertRequested && !restricted, t.phone_digest]);
-      await recordGrants(sql, memberId, req.body.consents);
+      await recordGrants(sql, memberId, req.body.consents, req.body.expectedPolicyRevision);
       await sql.query(`INSERT INTO kg_membership.notification_preferences(member_id) VALUES($1)`, [memberId]);
       await sql.query(`UPDATE kg_membership.registration_tickets SET consumed_at=now() WHERE ticket_digest=$1`, [t.ticket_digest]);
       return { outcome: 'REGISTERED', session: await issueSession(sql, memberId) };
@@ -173,11 +176,13 @@ export function registerAuthRoutes(app: FastifyInstance, db: Sql, authenticate: 
     });
     if (!result) throw new ApiError(401, 'SESSION_INVALID'); return result;
   });
-  app.post<{ Body: { consents: { kind: string; version: string }[] } }>('/v1/me/consents', { schema: body({ consents: documentInput }) }, async (req, reply) => {
+  app.post<{ Body: { consents: { kind: string; version: string }[]; expectedPolicyRevision?: string } }>('/v1/me/consents', { schema: body({ consents: documentInput, expectedPolicyRevision: revisionSchema }, ['consents']) }, async (req, reply) => {
     const auth = await authenticate(req, reply); if (!auth) return;
     return db.transaction(async sql => {
+      // Read the original selector/snapshot in a new statement after this SHARE fence.
+      await sql.query('LOCK TABLE kg_membership.policy_documents IN SHARE MODE');
       const m = (await sql.query(`SELECT id FROM kg_membership.members WHERE id=$1 AND withdrawn_at IS NULL FOR UPDATE`, [auth.memberId])).rows[0]; if (!m) throw new ApiError(401, 'SESSION_INVALID');
-      await recordGrants(sql, auth.memberId, req.body.consents); return { recorded: true };
+      await recordGrants(sql, auth.memberId, req.body.consents, req.body.expectedPolicyRevision); return { recorded: true };
     });
   });
   app.post<{ Body: { kind: string } }>('/v1/me/consents/withdraw', { schema: body({ kind: { type: 'string', enum: ['TERMS', 'PRIVACY_CONSENT', 'MARKETING'] } }) }, async (req, reply) => {
@@ -201,7 +206,7 @@ export function registerAuthRoutes(app: FastifyInstance, db: Sql, authenticate: 
       return { withdrawn: true, ...r.rows[0], previousPrivateDataRestoredOnRejoin: false, rejoinResetsRetentionClock: false };
     });
   });
-  app.patch<{ Body: { nickname: string } }>('/v1/me/profile', { schema: body({ nickname: { type: 'string', pattern: '^[\\p{L}\\p{N}]{1,10}$', maxLength: 10 } }) }, async (req, reply) => {
+  app.patch<{ Body: { nickname: string } }>('/v1/me/profile', { schema: body({ nickname: nicknameSchema }) }, async (req, reply) => {
     const auth = await authenticate(req, reply); if (!auth) return;
     if (auth.status !== 'ACTIVE') throw new ApiError(403, 'ACCOUNT_RESTRICTED');
     await requireCurrentConsents(db, auth.memberId);

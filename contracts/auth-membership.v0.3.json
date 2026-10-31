@@ -1,0 +1,1173 @@
+{
+  "contractId": "KG-AUTH-INTERFACE-v0.3",
+  "owner": "project-lead / KG-BACKEND-POLICY-METADATA-01",
+  "status": "LOCAL_CANDIDATE_NOT_DEPLOYED_NOT_POLICY_EFFECTIVE",
+  "baseContract": {
+    "path": "contracts/auth-membership.v0.2.json",
+    "sha256": "1c145d8a2b27aa3309143e8467d9debe8a4a1e2b654fb69ddfad830d004b78c9",
+    "strategy": "Opt-in additive metadata query on existing paths. Without metadata=policy-v0.3 and without expectedPolicyRevision, v0.2 behavior is unchanged. No client modified."
+  },
+  "policyVersion": "product/MEMBERSHIP-SERVICE-POLICY.md v0.3",
+  "schemaDialect": "http://json-schema.org/draft-07/schema#",
+  "schemaDefinitions": {
+    "Token": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{43}$"
+    },
+    "Timestamp": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?Z$"
+    },
+    "Session": {
+      "type": "object",
+      "properties": {
+        "accessToken": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{43}$"
+        },
+        "refreshToken": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{43}$"
+        },
+        "tokenType": {
+          "const": "Bearer"
+        },
+        "expiresInSeconds": {
+          "const": 900
+        }
+      },
+      "required": [
+        "accessToken",
+        "refreshToken",
+        "tokenType",
+        "expiresInSeconds"
+      ],
+      "additionalProperties": true
+    },
+    "ConsentInputs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "TERMS",
+              "PRIVACY_CONSENT",
+              "MARKETING"
+            ]
+          },
+          "version": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          }
+        },
+        "required": [
+          "kind",
+          "version"
+        ],
+        "additionalProperties": false
+      },
+      "minItems": 2,
+      "maxItems": 3
+    },
+    "PolicyDocument": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "TERMS",
+            "PRIVACY_CONSENT",
+            "PRIVACY_POLICY",
+            "MARKETING",
+            "OPERATIONS"
+          ]
+        },
+        "version": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "DRAFT",
+            "READY",
+            "RETIRED"
+          ]
+        },
+        "title": {
+          "type": "string"
+        },
+        "body": {
+          "type": "string"
+        },
+        "bodySha256": {
+          "type": "string"
+        },
+        "operator": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "effectiveAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?Z$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "canConsent": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "kind",
+        "version",
+        "status",
+        "title",
+        "body",
+        "bodySha256",
+        "operator",
+        "effectiveAt",
+        "canConsent"
+      ],
+      "additionalProperties": true
+    },
+    "Preferences": {
+      "type": "object",
+      "properties": {
+        "advertising": {
+          "type": "boolean"
+        },
+        "chat": {
+          "type": "boolean"
+        },
+        "comment": {
+          "type": "boolean"
+        },
+        "quote": {
+          "type": "boolean"
+        },
+        "inquiry": {
+          "type": "boolean"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "advertising",
+        "chat",
+        "comment",
+        "quote",
+        "inquiry",
+        "version"
+      ],
+      "additionalProperties": true
+    },
+    "StartResponse": {
+      "type": "object",
+      "properties": {
+        "authorizationUrl": {
+          "type": "string",
+          "pattern": "^https://"
+        },
+        "state": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{43}$"
+        },
+        "expiresInSeconds": {
+          "const": 300
+        }
+      },
+      "required": [
+        "authorizationUrl",
+        "state",
+        "expiresInSeconds"
+      ],
+      "additionalProperties": true
+    },
+    "ErrorEnvelope": {
+      "type": "object",
+      "properties": {
+        "error": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "pattern": "^[A-Z][A-Z0-9_]*$"
+            },
+            "serverTime": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?Z$"
+            },
+            "retryAfter": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?Z$"
+            },
+            "retryAfterSeconds": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "rejoinAfter": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?Z$"
+            }
+          },
+          "required": [
+            "code"
+          ],
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "error"
+      ],
+      "additionalProperties": true
+    },
+    "CurrentDocument": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "enum": [
+            "TERMS",
+            "PRIVACY_CONSENT",
+            "PRIVACY_POLICY",
+            "MARKETING",
+            "OPERATIONS"
+          ]
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "bodySha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "status": {
+          "const": "READY"
+        },
+        "canConsent": {
+          "const": true
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "version",
+        "bodySha256",
+        "status",
+        "canConsent"
+      ],
+      "additionalProperties": true
+    },
+    "SnapshotDocument": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "TERMS",
+            "PRIVACY_CONSENT",
+            "PRIVACY_POLICY",
+            "MARKETING",
+            "OPERATIONS"
+          ]
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "enum": [
+            "DRAFT",
+            "READY",
+            "RETIRED"
+          ]
+        },
+        "title": {
+          "type": "string"
+        },
+        "body": {
+          "type": "string"
+        },
+        "bodySha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "operator": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "effectiveAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?Z$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "canConsent": {
+          "type": "boolean"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "approvedAt": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Timestamp"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "createdAt": {
+          "$ref": "#/definitions/Timestamp"
+        },
+        "isCurrent": {
+          "type": "boolean"
+        },
+        "isDisplay": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "kind",
+        "version",
+        "status",
+        "title",
+        "body",
+        "bodySha256",
+        "operator",
+        "effectiveAt",
+        "canConsent",
+        "id",
+        "approvedAt",
+        "createdAt",
+        "isCurrent",
+        "isDisplay"
+      ],
+      "additionalProperties": true
+    },
+    "PolicySnapshot": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "const": "policy-v0.3"
+        },
+        "policyRevision": {
+          "type": "string",
+          "pattern": "^ps3-[0-9a-f]{64}$"
+        },
+        "serverTime": {
+          "$ref": "#/definitions/Timestamp"
+        },
+        "timeAuthority": {
+          "const": "POSTGRES_TRANSACTION_NOW"
+        },
+        "cache": {
+          "const": {
+            "control": "no-store",
+            "ttlSeconds": 0,
+            "revalidateBeforeConsent": true
+          }
+        },
+        "requirements": {
+          "const": {
+            "requiredGrantKinds": [
+              "TERMS",
+              "PRIVACY_CONSENT"
+            ],
+            "requiredReadyKindsForGrant": [
+              "TERMS",
+              "PRIVACY_CONSENT",
+              "PRIVACY_POLICY"
+            ],
+            "optionalGrantKinds": [
+              "MARKETING"
+            ],
+            "operationsConsentRequired": false
+          }
+        },
+        "constraints": {
+          "const": {
+            "consentInputs": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 3,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "kind",
+                  "version"
+                ],
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "TERMS",
+                      "PRIVACY_CONSENT",
+                      "MARKETING"
+                    ]
+                  },
+                  "version": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  }
+                }
+              }
+            },
+            "nickname": {
+              "type": "string",
+              "pattern": "^[\\p{L}\\p{N}]{1,10}$",
+              "maxLength": 10
+            }
+          }
+        },
+        "currentDocuments": {
+          "type": "array",
+          "minItems": 5,
+          "maxItems": 5,
+          "items": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "TERMS",
+                  "PRIVACY_CONSENT",
+                  "PRIVACY_POLICY",
+                  "MARKETING",
+                  "OPERATIONS"
+                ]
+              },
+              "currentDocument": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/CurrentDocument"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "currentDocument"
+            ],
+            "additionalProperties": true
+          }
+        },
+        "missingReadyKinds": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "TERMS",
+              "PRIVACY_CONSENT",
+              "PRIVACY_POLICY"
+            ]
+          }
+        },
+        "documents": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/SnapshotDocument"
+          }
+        },
+        "limitations": {
+          "const": {
+            "commitFence": false,
+            "allowedActions": "NOT_IMPLEMENTED",
+            "materialChangeClassification": "NOT_IMPLEMENTED"
+          }
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "policyRevision",
+        "serverTime",
+        "timeAuthority",
+        "cache",
+        "requirements",
+        "constraints",
+        "currentDocuments",
+        "missingReadyKinds",
+        "documents",
+        "limitations"
+      ],
+      "additionalProperties": true
+    }
+  },
+  "operations": [
+    {
+      "id": "authConfig",
+      "method": "GET",
+      "path": "/v1/auth/config",
+      "authentication": "none",
+      "requestSchema": null,
+      "responses": {
+        "200": {
+          "type": "object",
+          "properties": {
+            "release": {
+              "type": "string"
+            },
+            "signupReady": {
+              "type": "boolean"
+            },
+            "providers": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "enum": [
+                      "google",
+                      "kakao",
+                      "naver"
+                    ]
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "enabled"
+                ],
+                "additionalProperties": true
+              }
+            },
+            "sms": {
+              "type": "object",
+              "properties": {
+                "available": {
+                  "type": "boolean"
+                },
+                "codeDigits": {
+                  "const": 5
+                },
+                "expiresInSeconds": {
+                  "const": 60
+                },
+                "phonePattern": {
+                  "const": "^010[0-9]{8}$"
+                }
+              },
+              "required": [
+                "available",
+                "codeDigits",
+                "expiresInSeconds",
+                "phonePattern"
+              ],
+              "additionalProperties": true
+            },
+            "requiredFields": {
+              "const": [
+                "name",
+                "email"
+              ]
+            },
+            "minimumAgeAcknowledgement": {
+              "const": 14
+            },
+            "collectsGender": {
+              "const": false
+            },
+            "collectsAgeGroup": {
+              "const": false
+            },
+            "rejoinWaitDays": {
+              "const": 30
+            },
+            "retention": {
+              "type": "object",
+              "properties": {
+                "purpose": {
+                  "type": "string"
+                },
+                "startsAt": {
+                  "const": "WITHDRAWAL_CONFIRMED"
+                },
+                "calendarYears": {
+                  "const": 1
+                },
+                "rejoinResetsClock": {
+                  "const": false
+                }
+              },
+              "required": [
+                "purpose",
+                "startsAt",
+                "calendarYears",
+                "rejoinResetsClock"
+              ],
+              "additionalProperties": true
+            },
+            "documents": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "TERMS",
+                      "PRIVACY_CONSENT",
+                      "PRIVACY_POLICY",
+                      "MARKETING",
+                      "OPERATIONS"
+                    ]
+                  },
+                  "version": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "enum": [
+                      "DRAFT",
+                      "READY",
+                      "RETIRED"
+                    ]
+                  },
+                  "canConsent": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "version",
+                  "status",
+                  "canConsent"
+                ],
+                "additionalProperties": true
+              }
+            },
+            "policySnapshot": {
+              "$ref": "#/definitions/PolicySnapshot"
+            }
+          },
+          "required": [
+            "release",
+            "signupReady",
+            "providers",
+            "sms",
+            "requiredFields",
+            "minimumAgeAcknowledgement",
+            "collectsGender",
+            "collectsAgeGroup",
+            "rejoinWaitDays",
+            "retention",
+            "documents",
+            "policySnapshot"
+          ],
+          "additionalProperties": true
+        }
+      },
+      "errors": [
+        {
+          "status": 503,
+          "code": "POLICY_METADATA_UNAVAILABLE"
+        }
+      ],
+      "source": "services/backend/src/app.ts",
+      "optInQuery": {
+        "metadata": "policy-v0.3"
+      },
+      "querySchema": {
+        "type": "object",
+        "properties": {
+          "metadata": {
+            "const": "policy-v0.3"
+          }
+        },
+        "required": [
+          "metadata"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "id": "policies",
+      "method": "GET",
+      "path": "/v1/policies",
+      "authentication": "none",
+      "requestSchema": null,
+      "responses": {
+        "200": {
+          "type": "object",
+          "properties": {
+            "documents": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/SnapshotDocument"
+              }
+            },
+            "policySnapshot": {
+              "$ref": "#/definitions/PolicySnapshot"
+            }
+          },
+          "required": [
+            "documents",
+            "policySnapshot"
+          ],
+          "additionalProperties": true
+        }
+      },
+      "errors": [
+        {
+          "status": 503,
+          "code": "POLICY_METADATA_UNAVAILABLE"
+        }
+      ],
+      "source": "services/backend/src/app.ts",
+      "optInQuery": {
+        "metadata": "policy-v0.3"
+      },
+      "querySchema": {
+        "type": "object",
+        "properties": {
+          "metadata": {
+            "const": "policy-v0.3"
+          }
+        },
+        "required": [
+          "metadata"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "id": "policy",
+      "method": "GET",
+      "path": "/v1/policies/:kind",
+      "authentication": "none",
+      "requestSchema": null,
+      "responses": {
+        "200": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "TERMS",
+                "PRIVACY_CONSENT",
+                "PRIVACY_POLICY",
+                "MARKETING",
+                "OPERATIONS"
+              ]
+            },
+            "version": {
+              "type": "string",
+              "minLength": 1
+            },
+            "status": {
+              "enum": [
+                "DRAFT",
+                "READY",
+                "RETIRED"
+              ]
+            },
+            "title": {
+              "type": "string"
+            },
+            "body": {
+              "type": "string"
+            },
+            "bodySha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "operator": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "effectiveAt": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?Z$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "canConsent": {
+              "type": "boolean"
+            },
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "approvedAt": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/Timestamp"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "createdAt": {
+              "$ref": "#/definitions/Timestamp"
+            },
+            "isCurrent": {
+              "type": "boolean"
+            },
+            "isDisplay": {
+              "type": "boolean"
+            },
+            "policySnapshot": {
+              "$ref": "#/definitions/PolicySnapshot"
+            }
+          },
+          "required": [
+            "kind",
+            "version",
+            "status",
+            "title",
+            "body",
+            "bodySha256",
+            "operator",
+            "effectiveAt",
+            "canConsent",
+            "id",
+            "approvedAt",
+            "createdAt",
+            "isCurrent",
+            "isDisplay",
+            "policySnapshot"
+          ],
+          "additionalProperties": true
+        }
+      },
+      "errors": [
+        {
+          "status": 404,
+          "code": "DOCUMENT_PREPARING"
+        },
+        {
+          "status": 503,
+          "code": "POLICY_METADATA_UNAVAILABLE"
+        }
+      ],
+      "source": "services/backend/src/app.ts",
+      "paramsSchema": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "TERMS",
+              "PRIVACY_CONSENT",
+              "PRIVACY_POLICY",
+              "MARKETING",
+              "OPERATIONS"
+            ]
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "additionalProperties": false
+      },
+      "querySchema": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "metadata": {
+            "const": "policy-v0.3"
+          }
+        },
+        "required": [
+          "metadata"
+        ],
+        "additionalProperties": false
+      },
+      "optInQuery": {
+        "metadata": "policy-v0.3"
+      }
+    },
+    {
+      "id": "signup",
+      "method": "POST",
+      "path": "/v1/auth/signup",
+      "authentication": "registrationTicket",
+      "requestSchema": {
+        "type": "object",
+        "properties": {
+          "registrationTicket": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{43}$"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "email": {
+            "type": "string",
+            "maxLength": 254,
+            "pattern": "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$"
+          },
+          "age14Confirmed": {
+            "const": true
+          },
+          "expertRequested": {
+            "type": "boolean"
+          },
+          "consents": {
+            "$ref": "#/definitions/ConsentInputs"
+          },
+          "expectedPolicyRevision": {
+            "type": "string",
+            "pattern": "^ps3-[0-9a-f]{64}$"
+          }
+        },
+        "required": [
+          "registrationTicket",
+          "name",
+          "email",
+          "age14Confirmed",
+          "expertRequested",
+          "consents"
+        ],
+        "additionalProperties": false
+      },
+      "responses": {
+        "200": {
+          "type": "object",
+          "properties": {
+            "outcome": {
+              "const": "REGISTERED"
+            },
+            "session": {
+              "$ref": "#/definitions/Session"
+            }
+          },
+          "required": [
+            "outcome",
+            "session"
+          ],
+          "additionalProperties": true
+        }
+      },
+      "errors": [
+        {
+          "status": 400,
+          "code": "REQUIRED_CONSENT_MISSING"
+        },
+        {
+          "status": 409,
+          "code": "DOCUMENT_NOT_READY"
+        },
+        {
+          "status": 409,
+          "code": "POLICY_VERSION_CHANGED"
+        },
+        {
+          "status": 401,
+          "code": "REGISTRATION_INVALID"
+        },
+        {
+          "status": 409,
+          "code": "PHONE_VERIFICATION_REQUIRED"
+        },
+        {
+          "status": 409,
+          "code": "ALREADY_REGISTERED"
+        },
+        {
+          "status": 409,
+          "code": "REJOIN_WAIT_REQUIRED"
+        },
+        {
+          "status": 409,
+          "code": "PHONE_ALREADY_REGISTERED"
+        },
+        {
+          "status": 409,
+          "code": "IDENTITY_RECOVERY_REQUIRED"
+        },
+        {
+          "status": 503,
+          "code": "POLICY_METADATA_UNAVAILABLE",
+          "when": "expectedPolicyRevision provided"
+        }
+      ],
+      "source": "services/backend/src/auth.ts",
+      "errorMetadata": {
+        "REJOIN_WAIT_REQUIRED": {
+          "required": [
+            "serverTime",
+            "rejoinAfter"
+          ]
+        }
+      },
+      "semantics": [
+        "name.trim() nonempty; no gender/ageGroup/birthDate/nickname fields.",
+        "consents contain unique kind; TERMS+PRIVACY_CONSENT required, MARKETING optional; PRIVACY_POLICY must be ready but is not a grant input.",
+        "Automatic nickname on signup. Nonempty user nickname must remain pending for explicit subsequent profile PATCH and GET readback; do not silently drop.",
+        "Same principal or eligible phone wait exposes only own authenticated registration context rejoinAfter; different principal phone returns IDENTITY_RECOVERY_REQUIRED without old member info.",
+        "New member and customer number; unexpired restrictions resolve via principal and /me. expertRequested immediately activates if eligible and not restricted."
+      ],
+      "revisionField": "Optional for backward compatibility; v0.3 consumers must echo policySnapshot.policyRevision after explicit confirmation"
+    },
+    {
+      "id": "consentsPost",
+      "method": "POST",
+      "path": "/v1/me/consents",
+      "authentication": "bearer",
+      "requestSchema": {
+        "type": "object",
+        "properties": {
+          "consents": {
+            "$ref": "#/definitions/ConsentInputs"
+          },
+          "expectedPolicyRevision": {
+            "type": "string",
+            "pattern": "^ps3-[0-9a-f]{64}$"
+          }
+        },
+        "required": [
+          "consents"
+        ],
+        "additionalProperties": false
+      },
+      "responses": {
+        "200": {
+          "type": "object",
+          "properties": {
+            "recorded": {
+              "const": true
+            }
+          },
+          "required": [
+            "recorded"
+          ],
+          "additionalProperties": true
+        }
+      },
+      "errors": [
+        {
+          "status": 401,
+          "code": "AUTH_REQUIRED"
+        },
+        {
+          "status": 401,
+          "code": "SESSION_INVALID"
+        },
+        {
+          "status": 400,
+          "code": "REQUIRED_CONSENT_MISSING"
+        },
+        {
+          "status": 409,
+          "code": "DOCUMENT_NOT_READY"
+        },
+        {
+          "status": 409,
+          "code": "POLICY_VERSION_CHANGED"
+        },
+        {
+          "status": 503,
+          "code": "POLICY_METADATA_UNAVAILABLE",
+          "when": "expectedPolicyRevision provided"
+        }
+      ],
+      "source": "services/backend/src/auth.ts",
+      "semantics": [
+        "No expectedVersion/idempotency key in request; each grant appends event including repeated identical grants.",
+        "Uncertain result GET /me/consents and exact version policies before explicit retry; records give current per-kind history head, not operation receipt."
+      ],
+      "revisionField": "Optional for backward compatibility; v0.3 consumers must echo policySnapshot.policyRevision after explicit confirmation"
+    }
+  ],
+  "metadataAuthority": {
+    "selector": "Existing final grant guard: READY, approved_at IS NOT NULL, effective_at <= DB now(), nonempty PostgreSQL trim(operator_name); ORDER BY kind,effective_at DESC,id DESC",
+    "missingCurrent": "null; unready displayDocument never promoted. Existing canConsent denotes eligibility of a row, isCurrent denotes the single grant target; historical READY may have canConsent true but isCurrent false.",
+    "atomicity": "Each opted-in response reads documents/current targets/serverTime in one PostgreSQL statement. Separate responses may differ: compare revisions or consume a single full policySnapshot. No global snapshot or commit fence promised.",
+    "revision": "ps3- + SHA256 of fixed-order UTF8 JSON: selector, requirements, constraints, documents sorted lexically by opaque ID. Includes full raw body/hash/status/operator/effectiveness/approval/creation and SQL flags. Excludes serverTime/nonce/release/providers/account status.",
+    "ids": "id/version are opaque nonempty strings; bigint ID text never converted to JS number. IDs are not timestamps or semantic versions.",
+    "bodyHash": "SHA256 of exact UTF8 body bytes, no trim/newline/Unicode normalization. Invalid hash, duplicate ID/kind-version/current/display, missing typed fields =>503, no inferred permission.",
+    "clock": "serverTime is DB transaction now() shared with predicates; in a grant transaction it is transaction-start time, not wall time at commit. X-Server-Time remains independent API onSend anchor. Do not veto canConsent with client wall clock.",
+    "requiredSet": {
+      "requiredGrantKinds": [
+        "TERMS",
+        "PRIVACY_CONSENT"
+      ],
+      "requiredReadyKindsForGrant": [
+        "TERMS",
+        "PRIVACY_CONSENT",
+        "PRIVACY_POLICY"
+      ],
+      "optionalGrantKinds": [
+        "MARKETING"
+      ],
+      "operationsConsentRequired": false
+    },
+    "constraintsScope": "Exact existing consent-input and nickname schemas shared by validation and metadata. Other config values remain v0.2; no new operation/permission matrix.",
+    "history": "Snapshot includes public policy history bodies. Current targets are explicit; historical row read is not consent authorization.",
+    "compareAndGrant": "Optional expectedPolicyRevision validated after authenticated context/member lock (signup transaction rolls back provisional writes on error). Single snapshot used for revision and existing required/version checks. Does not fence a concurrent policy edit after that read.",
+    "legacyConflict": "Legacy v0.2 display selector can differ on equal effective_at/created_at tie or operator metadata. It is preserved for compatibility, not promoted to authority. Opted-in config/default detail selects existing grant current ID, else legacy unready display fallback; list retains history ordering.",
+    "unsupported": [
+      "material-change reconsent classification",
+      "allowedActions",
+      "commit-time writer/reader fencing",
+      "legal retention deletion/anonymization",
+      "dynamic policy editor",
+      "client adoption",
+      "deployment packaging"
+    ]
+  },
+  "cache": {
+    "responseCacheControl": "no-store",
+    "ttlSeconds": 0,
+    "etag": "NOT_IMPLEMENTED",
+    "conditionalRequests": "No304; If-None-Match ignored; opted-in GET always queries and returns full200 or explicit error. policyRevision is a comparison token, not an HTTP ETag or grant token.",
+    "refresh": "Requery on opening/resume and immediately before consent confirmation; changed ID/version/bodySha/revision invalidates checked confirmation. Inconsistent/missing/503/unknown metadata failclosed and explicit fetch retry. Do not fall back to v0.2 authority in a v0.3 flow.",
+    "mutationConflict": "POLICY_VERSION_CHANGED => fetch current snapshot and reconfirm. Never blind-replay signup/grant; uncertain result retains v0.2 authenticated readback/UNKNOWN limitations. No idempotency receipt added."
+  },
+  "executionGates": {
+    "realPostgres": "NOT_RUN_NEW_CANDIDATE",
+    "publicApi": "NOT_RUN",
+    "deployment": "NOT_RUN",
+    "clientUI": "UNCHANGED_NOT_TESTED",
+    "effectivePolicies": "DRAFT_NOT_EFFECTIVE_NO_PROMOTION",
+    "independentQa": "PENDING_ACTUAL_UIUX"
+  },
+  "humanGuide": "contracts/auth-membership.v0.3.md"
+}
