@@ -1,0 +1,210 @@
+{
+  "taskId": "KG-AUTH-INTEGRATION-02",
+  "at": "2026-10-31T01:41:44.658738+00:00",
+  "algorithm": "sha256 canonical UTF8 JSON rows sorted by path; keys sorted, separators comma colon, ensure_ascii false",
+  "candidateSha256": "160e5f4df09e56b20925df020196dcf282fc1a5975a512e59be220f95a0a6ad8",
+  "backendSourceTreeSha256": "aa3a42670a46483d8d6256610c425fc4ab73d9c9247b3dc72902bb6cc2b096d3",
+  "previousBackendCandidate": "574ceecbdf4bf8de54f5e9e261a373dfbf58ed6e0ce3560373ec00e4dcbc7550",
+  "backendFiles": [
+    {
+      "path": "services/backend/Dockerfile",
+      "sha256": "3bff615b9f09109d1837d06d7656627abbc37084d8de14820559140fd34c753d"
+    },
+    {
+      "path": "services/backend/migrations/001_membership.sql",
+      "sha256": "fb084169ff0c31fa6fde30f42922c3b87408fb0965abfb8b1037ca901f6050bd"
+    },
+    {
+      "path": "services/backend/migrations/002_auth_lifecycle.sql",
+      "sha256": "86ab595eec6ee0f9f3b05257b8bd82dd44c65bdf8f194246ff26cb08a2d7b239"
+    },
+    {
+      "path": "services/backend/migrations/003_explicit_social_link.sql",
+      "sha256": "b551962e36327fdbf9303f7038edbe4ab3b03f699d9a4ff1b50ce8a98ee59040"
+    },
+    {
+      "path": "services/backend/package-lock.json",
+      "sha256": "7ccb7f5d5c6302630d35437940cd751e647bb6dbb68bf6edb5dfed97902328c3"
+    },
+    {
+      "path": "services/backend/package.json",
+      "sha256": "0fbc59ed625c5c267293ea16970f66a6fb5fb981cdd7d987bd170ce66f83de93"
+    },
+    {
+      "path": "services/backend/scripts/railway-integration.ts",
+      "sha256": "2505fb68349533fe8ae8f2cc7ca88fd8be3b997c8a13eb8c2d07a45ec95f0a01"
+    },
+    {
+      "path": "services/backend/scripts/railway-verify.py",
+      "sha256": "5dcc207ea2dd15a3a0328d50517bc87f322b7ae0cb139b533e39f7ee8431f1e2"
+    },
+    {
+      "path": "services/backend/src/app.test.ts",
+      "sha256": "9ea8427573c245beea011c1353f0ca7c320e433934ab0971f184123b0d5dbed1"
+    },
+    {
+      "path": "services/backend/src/app.ts",
+      "sha256": "344f34ce562856e53fbdb1c4b5eb6497e08bba563e0e8e1ad689210a24580eb0"
+    },
+    {
+      "path": "services/backend/src/auth.ts",
+      "sha256": "d3c8fa4a6e96f2604fbdc709e158e6bd6de019f9e3daa376b6d953ab482c534d"
+    },
+    {
+      "path": "services/backend/src/database.ts",
+      "sha256": "24af4cbf451097bca66dd60d3c853765f703f442d2cce25de4f9ccf7f7169d02"
+    },
+    {
+      "path": "services/backend/src/providers.test.ts",
+      "sha256": "ff0b1da306a553704997bbba43569430b7e090db4870cbf0cb4eef41353dde5a"
+    },
+    {
+      "path": "services/backend/src/providers.ts",
+      "sha256": "198e0ecd020e48248acb29fdf9fc66f6660da555d0b0aecd636b1030e667ff90"
+    },
+    {
+      "path": "services/backend/src/security.ts",
+      "sha256": "2476ff2da63903542737c55d340f05a7cf44e3f43017808eaceb40e4d533f8ba"
+    },
+    {
+      "path": "services/backend/src/server.ts",
+      "sha256": "c983ef0434bd455bcfd5ce2025cdfbe281b933f27acce9b3263c6add2050ee6a"
+    },
+    {
+      "path": "services/backend/tsconfig.json",
+      "sha256": "e86f79905bd8b0a38a945249ab55a0771b4c3eed4ff49100db8e62bd3f9ef9ac"
+    }
+  ],
+  "files": [
+    {
+      "path": ".dockerignore",
+      "sha256": "e9184cd847cae00651a3b5b968f1c77ab116705fb8801d6ce7e7cb76a834da13"
+    },
+    {
+      "path": "AGENTS.md",
+      "sha256": "9f070135c3c5305d28546fcdd1acf9667f5a23a0c3d6e026b8edbd0083ed768a"
+    },
+    {
+      "path": "Dockerfile",
+      "sha256": "d23fa35647a028cf36aee4b6a0d1c564a45082632286fd6156da72c32ccde750"
+    },
+    {
+      "path": "contracts/auth-membership.v0.1.json",
+      "sha256": "7e327db0b65bae709b65102704f24dd03d8bae542d98bb87e37a8f28cd0c9c00"
+    },
+    {
+      "path": "contracts/auth-membership.v0.2.json",
+      "sha256": "1c145d8a2b27aa3309143e8467d9debe8a4a1e2b654fb69ddfad830d004b78c9"
+    },
+    {
+      "path": "contracts/auth-membership.v0.2.md",
+      "sha256": "13f91488040504e1485bb3a0e9d574f39c14bb30e1c1efc04e40226acc579a50"
+    },
+    {
+      "path": "engineering/BACKEND-AUTHORITY.md",
+      "sha256": "76a33223dde8d3b594c7e29a77efcbb551b7db534d266cdc492bbcac96710caf"
+    },
+    {
+      "path": "engineering/auth-integration-02/CONTRACT-DECISIONS.json",
+      "sha256": "1f9934e41d56cf129ca81c3a907dfd6ad59aed3c4ec76f90ccd2710281a0a401"
+    },
+    {
+      "path": "engineering/auth-integration-02/SOURCE-REFERENCES.json",
+      "sha256": "74317d33a6667e6e0dbee028eaca2747a8bebcce608f62c97fca699c58a92012"
+    },
+    {
+      "path": "engineering/auth-integration-02/contract.test.ts",
+      "sha256": "4c864f62904d7f871ed513b254d83a36f3d8550c9a73889f3c53c4202ac582ca"
+    },
+    {
+      "path": "engineering/auth-integration-02/verify.py",
+      "sha256": "e067998d9025c3be577e6ead2acb35f82918742ef022bb88f7242eaefd3afc5f"
+    },
+    {
+      "path": "railway.json",
+      "sha256": "76577bce27be76ff04fdc36212bc96b344c5f49657e6dc15f87e8b4746f60a58"
+    },
+    {
+      "path": "services/backend/Dockerfile",
+      "sha256": "3bff615b9f09109d1837d06d7656627abbc37084d8de14820559140fd34c753d"
+    },
+    {
+      "path": "services/backend/migrations/001_membership.sql",
+      "sha256": "fb084169ff0c31fa6fde30f42922c3b87408fb0965abfb8b1037ca901f6050bd"
+    },
+    {
+      "path": "services/backend/migrations/002_auth_lifecycle.sql",
+      "sha256": "86ab595eec6ee0f9f3b05257b8bd82dd44c65bdf8f194246ff26cb08a2d7b239"
+    },
+    {
+      "path": "services/backend/migrations/003_explicit_social_link.sql",
+      "sha256": "b551962e36327fdbf9303f7038edbe4ab3b03f699d9a4ff1b50ce8a98ee59040"
+    },
+    {
+      "path": "services/backend/package-lock.json",
+      "sha256": "7ccb7f5d5c6302630d35437940cd751e647bb6dbb68bf6edb5dfed97902328c3"
+    },
+    {
+      "path": "services/backend/package.json",
+      "sha256": "0fbc59ed625c5c267293ea16970f66a6fb5fb981cdd7d987bd170ce66f83de93"
+    },
+    {
+      "path": "services/backend/scripts/railway-integration.ts",
+      "sha256": "2505fb68349533fe8ae8f2cc7ca88fd8be3b997c8a13eb8c2d07a45ec95f0a01"
+    },
+    {
+      "path": "services/backend/scripts/railway-verify.py",
+      "sha256": "5dcc207ea2dd15a3a0328d50517bc87f322b7ae0cb139b533e39f7ee8431f1e2"
+    },
+    {
+      "path": "services/backend/src/app.test.ts",
+      "sha256": "9ea8427573c245beea011c1353f0ca7c320e433934ab0971f184123b0d5dbed1"
+    },
+    {
+      "path": "services/backend/src/app.ts",
+      "sha256": "344f34ce562856e53fbdb1c4b5eb6497e08bba563e0e8e1ad689210a24580eb0"
+    },
+    {
+      "path": "services/backend/src/auth.ts",
+      "sha256": "d3c8fa4a6e96f2604fbdc709e158e6bd6de019f9e3daa376b6d953ab482c534d"
+    },
+    {
+      "path": "services/backend/src/database.ts",
+      "sha256": "24af4cbf451097bca66dd60d3c853765f703f442d2cce25de4f9ccf7f7169d02"
+    },
+    {
+      "path": "services/backend/src/providers.test.ts",
+      "sha256": "ff0b1da306a553704997bbba43569430b7e090db4870cbf0cb4eef41353dde5a"
+    },
+    {
+      "path": "services/backend/src/providers.ts",
+      "sha256": "198e0ecd020e48248acb29fdf9fc66f6660da555d0b0aecd636b1030e667ff90"
+    },
+    {
+      "path": "services/backend/src/security.ts",
+      "sha256": "2476ff2da63903542737c55d340f05a7cf44e3f43017808eaceb40e4d533f8ba"
+    },
+    {
+      "path": "services/backend/src/server.ts",
+      "sha256": "c983ef0434bd455bcfd5ce2025cdfbe281b933f27acce9b3263c6add2050ee6a"
+    },
+    {
+      "path": "services/backend/tsconfig.json",
+      "sha256": "e86f79905bd8b0a38a945249ab55a0771b4c3eed4ff49100db8e62bd3f9ef9ac"
+    }
+  ],
+  "backendSnapshotRoot": "engineering/auth-integration-02/candidate",
+  "changedBackendFiles": [
+    "services/backend/src/app.ts",
+    "services/backend/src/auth.ts",
+    "services/backend/src/security.ts"
+  ],
+  "newDeployment": false,
+  "newCommit": false,
+  "priorRealDbEvidenceDoesNotApplyToNewMetadata": true,
+  "authorityCanonical": "engineering/BACKEND-AUTHORITY.md",
+  "supersedesIntegrationDocumentCandidate": "2684572e007db0a99d8083deef4338ed8a327a4d884148eee8cd8719e9042733",
+  "backendCodeSameAsBeforeAuthorityAddition": true,
+  "auditFollowup": "engineering/auth-integration-02/AUDIT-FOLLOWUP.json",
+  "afterAuditOnlyReplayReceiptLabelChanged": true
+}

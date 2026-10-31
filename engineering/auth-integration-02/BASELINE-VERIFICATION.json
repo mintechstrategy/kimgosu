@@ -1,0 +1,50 @@
+{
+  "taskId": "KG-AUTH-INTEGRATION-02",
+  "at": "2026-10-31T01:25:57.369972+00:00",
+  "candidates": [
+    {
+      "track": "app",
+      "manifest": "engineering/auth-three-tracks-01/app/CANDIDATE.json",
+      "candidate": "ced07c478fde599baa6fa06b34ecbca65838ae97849a144c6d26751d12fc6fde",
+      "verifiedFiles": 64,
+      "drift": []
+    },
+    {
+      "track": "web",
+      "manifest": "engineering/auth-three-tracks-01/web/candidate-manifest.json",
+      "candidate": "a8c47ea5168fc22e627e50e656f15f50aa59d1876d6f168085ef466cc62f6e29",
+      "verifiedFiles": 24,
+      "drift": []
+    },
+    {
+      "track": "backend",
+      "manifest": "engineering/auth-three-tracks-01/backend/CANDIDATE.json",
+      "candidate": "574ceecbdf4bf8de54f5e9e261a373dfbf58ed6e0ce3560373ec00e4dcbc7550",
+      "verifiedFiles": 17,
+      "drift": []
+    }
+  ],
+  "v01Sha256": "7e327db0b65bae709b65102704f24dd03d8bae542d98bb87e37a8f28cd0c9c00",
+  "migrationHashes": {
+    "services/backend/migrations/001_membership.sql": "fb084169ff0c31fa6fde30f42922c3b87408fb0965abfb8b1037ca901f6050bd",
+    "services/backend/migrations/003_explicit_social_link.sql": "b551962e36327fdbf9303f7038edbe4ab3b03f699d9a4ff1b50ce8a98ee59040",
+    "services/backend/migrations/002_auth_lifecycle.sql": "86ab595eec6ee0f9f3b05257b8bd82dd44c65bdf8f194246ff26cb08a2d7b239"
+  },
+  "gitHead": "39fbf87561e8c6b721ef003200ad0738de2c8b02",
+  "gitIndexSha256": "1604fc13b343a25616e0568b07acfed1f351e31962612c9d74e3d874a709ca55",
+  "protectedParentFiles": {
+    "RAILWAY.md": "2554704056373f76ba4ec90641901e8a727e91a42faa3c461520654eaf69c591",
+    "contracts/development-transactions.v0.1.json": "b1fd3ceff224645713f30bccb5ff34d5ef9de413439ee979726cb63d53e92523"
+  },
+  "dbEvidence": {
+    "mode": "RETAINED_PRIOR_READBACK_NOT_RERUN",
+    "path": "engineering/auth-three-tracks-01/backend/DB-READBACK.json",
+    "sha256": "6ec6cb69578ffe902909770e4f2123a3efc25fad5fcb6b915de22d573d64f6ad",
+    "syntheticMembersRetained": 10,
+    "allWithdrawn": true,
+    "activeFixtureSessions": 0,
+    "isolatedSchemasRemaining": 0,
+    "actualPolicyReadyRows": 0,
+    "actualOperationsDraft": true
+  }
+}
