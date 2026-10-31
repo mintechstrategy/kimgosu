@@ -1,22 +1,11 @@
-# Repository-root build context is required for the shared contracts directory.
-FROM node:24.22.0-bookworm-slim AS build
-WORKDIR /app/services/backend
-COPY services/backend/package.json services/backend/package-lock.json ./
-RUN npm ci --include=dev
-COPY services/backend/tsconfig.json ./
-COPY services/backend/src ./src
-COPY contracts /app/contracts
-RUN npm run typecheck && npm run build
-
-FROM node:24.22.0-bookworm-slim AS runtime
-LABEL ai.mintech.kimgosu.deployment-probe="dev-validation-02"
+# LOCAL PREPARATION ONLY: do not publish during the diagnostic performance run.
+# Repository-root context; railway.json selects services/backend/Dockerfile.
+FROM node:24.22.2-bookworm-slim
 ENV NODE_ENV=production
-ENV KIMGOSU_RUNTIME=cloud
-WORKDIR /app/services/backend
+WORKDIR /app
 COPY services/backend/package.json services/backend/package-lock.json ./
-RUN npm ci --omit=dev && npm cache clean --force
-COPY --from=build /app/services/backend/dist ./dist
-COPY --from=build /app/contracts /app/contracts
+RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
+COPY services/backend/src/app.ts services/backend/src/auth.ts services/backend/src/database.ts services/backend/src/providers.ts services/backend/src/security.ts services/backend/src/server.ts ./src/
 USER node
-# Railway supplies PORT. Intentionally fail closed when it is absent/invalid.
-CMD ["node", "dist/cloud-server.js"]
+EXPOSE 8080
+CMD ["node", "src/server.ts"]

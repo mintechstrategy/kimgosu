@@ -1,0 +1,38 @@
+{
+  "retrievedAt": "2026-10-31T01:32:30.980530+00:00",
+  "primarySources": [
+    {
+      "url": "https://www.rfc-editor.org/rfc/rfc9700",
+      "sections": [
+        "2.1",
+        "4.1"
+      ],
+      "scope": "PKCE/redirect security baseline; no provider certification"
+    },
+    {
+      "url": "https://www.rfc-editor.org/rfc/rfc8252",
+      "sections": [
+        "6",
+        "7",
+        "8"
+      ],
+      "scope": "External user agent/native redirect binding/public-client PKCE"
+    },
+    {
+      "url": "https://fetch.spec.whatwg.org/",
+      "sections": [
+        "CORS-safelisted request-header",
+        "CORS-preflight fetch",
+        "Access-Control-Expose-Headers"
+      ],
+      "scope": "Request Cache-Control not safelisted; expose non-safelisted response timing headers"
+    }
+  ],
+  "retrieval": "Search tool returned first-party standards extracts; web_extract configured native backend could not extract, preserved as limitation. No auth/provider registration/network mutation.",
+  "localAuthority": [
+    "product/MEMBERSHIP-SERVICE-POLICY.md v0.3",
+    "design/publishing/auth-policy-01/HANDOFF.md:22",
+    "decisions/kimgosu-design-v0.1/sources/extracted-text.md 43:631/43:633/43:701"
+  ],
+  "notLegalReview": true
+}

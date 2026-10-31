@@ -1,0 +1,305 @@
+{
+  "taskId": "KG-AUTH-INTEGRATION-02",
+  "qaTaskId": "KG-AUTH-INTEGRATION-02-QA",
+  "owner": "project-lead delegated integration writer",
+  "qaOwner": "uiux",
+  "nextOwner": "parent collection",
+  "scope": "Technical canonicalization, additive timing/CORS metadata, local-only deployment preparation; no product policy adoption",
+  "decisions": [
+    {
+      "id": "D01",
+      "status": "ADOPTED_TECHNICAL",
+      "topic": "existing backend12 routes",
+      "decision": "Version current12 in v0.2; retain v0.1 bytes and core9 unchanged. Reject alternative web proposal URIs; no new public auth surface."
+    },
+    {
+      "id": "D02",
+      "status": "IMPLEMENTED_LOCAL_NOT_DEPLOYED",
+      "topic": "SMS/rejoin timing",
+      "decision": "DB-derived serverTime/expiresAt/retryAfter on sms; rate deadline+relative Retry-After; own verified registration wait rejoinAfter. No raw code or other-principal retention/restriction metadata."
+    },
+    {
+      "id": "D03",
+      "status": "IMPLEMENTED_LOCAL_NOT_DEPLOYED",
+      "topic": "CORS",
+      "decision": "Current web emits Cache-Control header; exact preflight addition, expose Date/Retry-After/X-Server-Time; origin hook precedes429. No env mutation/wildcards/cookies."
+    },
+    {
+      "id": "D04",
+      "status": "ADOPTED_TECHNICAL_CLIENT_WORK_PENDING",
+      "topic": "nickname",
+      "decision": "Automatic signup nickname retained. Preserve optional user input as pending explicit post-signup PATCH profile and GET /me exact readback; blank means no update. No signup nickname field and no silent dropping.",
+      "basis": [
+        "policy B03/MP03",
+        "original extracted-text 43:701",
+        "design/publishing/auth-policy-01/HANDOFF.md:22"
+      ]
+    },
+    {
+      "id": "D05",
+      "status": "POLICY_UIX_DECISION_REQUIRED",
+      "topic": "withdraw reason/detail",
+      "decision": "No new collection purpose/DDL/storage and no silent omission. Current confirmed-only request rejects extra fields. Parent+uiux decide inactive/revised input surface or explicitly approved future storage contract before enabling that UI path."
+    },
+    {
+      "id": "D06",
+      "status": "DOCUMENTED_CURRENT_LIMITATION",
+      "topic": "ambiguous withdrawal",
+      "decision": "Old bearer401 proves session invalid only, cannot prove withdrawal/time. UNKNOWN outcome and no blind retry; no new public status endpoint."
+    },
+    {
+      "id": "D07",
+      "status": "DOCUMENTED_CURRENT_LIMITATION",
+      "topic": "consent/idempotency/version",
+      "decision": "Current grant appends duplicates, no expectedVersion/idempotency. Requery exact kind/version+notification state then explicit confirmation; material-change classification and allowed-operation matrix remain unapproved."
+    },
+    {
+      "id": "D08",
+      "status": "BLOCKED_EXTERNAL_CONFIGURATION",
+      "topic": "OAuth callbacks",
+      "decision": "Server-only HTTPS devweb redirect allowlist exists, but native binding/web callback/handoff not implemented. Google provider PKCE only; Kakao/Naver provider PKCE not claimed. No client secret in apps, no unreviewed URL token handoff."
+    },
+    {
+      "id": "D09",
+      "status": "LOCAL_PREPARATION_ONLY",
+      "topic": "deployment",
+      "decision": "Root Dockerfile modern native TS runtime; railway.json selects backend Dockerfile; strict minimal context. Existing API rootDirectory/image/env and exclusive diagnostic sessions untouched. No git index/commit/push/CLI deploy/DB calls."
+    },
+    {
+      "id": "D10",
+      "status": "USER_CONFIRMED_DEFAULT_ARCHITECTURE_ADOPTED_NO_BROAD_REFACTOR",
+      "topic": "backend business authority",
+      "decision": "Server re-evaluates principal/session/permission/status, current policy eligibility, SMS, timestamps, restrictions and CAS; client validation only assists input/display. canConsent/verified/status/customerNumber/clocks sent by client are not authority. Price/transaction domain absent from this source and not added."
+    }
+  ],
+  "findings": [
+    {
+      "id": "F01",
+      "impact": "CORE_COMPATIBILITY_EXCEPTION",
+      "source": "services/backend/src/app.ts",
+      "anchor": "notifications PATCH guards ACTIVE and advertising grant only",
+      "finding": "No requireCurrentConsents guard on legacy notificationPATCH; /me reports ACTIVE/RESTRICTED only. Do not infer uniform reconsent operation gate from profile/expert/link.",
+      "proposal": "Parent policy/security review operation matrix; preserve core9 in this task. Independent audit may compare exact final manifest."
+    },
+    {
+      "id": "F02",
+      "impact": "CONCURRENCY_LIMITATION",
+      "source": "services/backend/src/auth.ts",
+      "anchor": "consents POST, profile PATCH",
+      "finding": "Consents append events without expectedVersion/idempotency; nickname last-write-wins. Readback detects observed state, not serializable multi-device user intent.",
+      "proposal": "No speculative DDL/refactor. Explicit client recovery and future version protocol requires scoped follow-up."
+    },
+    {
+      "id": "F03",
+      "impact": "PRIVACY_RECOVERY_GATE",
+      "source": "services/backend/src/auth.ts",
+      "anchor": "withdraw + authenticate",
+      "finding": "No authenticated durable withdrawal receipt/recovery endpoint after revoking all sessions;401 is ambiguous.",
+      "proposal": "Leave UNKNOWN outcome, policy/security-reviewed support/recovery design before product completion; no unauthenticated member-status query."
+    },
+    {
+      "id": "F04",
+      "impact": "REAL_PROVIDER_CLIENT_FLOW_INCOMPLETE",
+      "source": "services/backend/src/providers.ts",
+      "anchor": "configuredProviders + realProvider",
+      "finding": "HTTPS devweb-host redirect only; per-platform exact callback registration and full native/web client flow unverified. Kakao/Naver lack provider PKCE in this adapter.",
+      "proposal": "Keep external gates; do not activate via environment guesses. Callback/handoff design approval needed."
+    },
+    {
+      "id": "F05",
+      "impact": "NEW_CANDIDATE_DB_VERIFICATION_REQUIRED",
+      "source": "services/backend/src/auth.ts",
+      "anchor": "timing aggregate/RETURNING + rejoin selection",
+      "finding": "New SQL metadata expressions exercised only by SQL doubles; prior realDB76 belongs to574cee baseline, not this source.",
+      "proposal": "After perf restoration and parent clearance replay bounded realDB on new manifest with approved isolation/cleanup. Do not rerun DDL001/002/003 or resurrect fixed sessions."
+    }
+  ],
+  "sourceRefs": [
+    {
+      "path": "services/backend/src/app.ts",
+      "needle": "function authenticate",
+      "lines": [
+        62
+      ]
+    },
+    {
+      "path": "services/backend/src/app.ts",
+      "needle": "signupReady:",
+      "lines": [
+        79
+      ]
+    },
+    {
+      "path": "services/backend/src/app.ts",
+      "needle": "policySelect",
+      "lines": [
+        16,
+        85,
+        90
+      ]
+    },
+    {
+      "path": "services/backend/src/app.ts",
+      "needle": "expectedVersion",
+      "lines": [
+        112,
+        113,
+        114,
+        130
+      ]
+    },
+    {
+      "path": "services/backend/src/app.ts",
+      "needle": "Access-Control-Allow-Headers",
+      "lines": [
+        49
+      ]
+    },
+    {
+      "path": "services/backend/src/app.ts",
+      "needle": "onSend",
+      "lines": [
+        41
+      ]
+    },
+    {
+      "path": "services/backend/src/auth.ts",
+      "needle": "async function recordGrants",
+      "lines": [
+        21
+      ]
+    },
+    {
+      "path": "services/backend/src/auth.ts",
+      "needle": "async function requireCurrentConsents",
+      "lines": [
+        32
+      ]
+    },
+    {
+      "path": "services/backend/src/auth.ts",
+      "needle": "app.post<{ Body: { registrationTicket: string; phone",
+      "lines": [
+        93
+      ]
+    },
+    {
+      "path": "services/backend/src/auth.ts",
+      "needle": "GREATEST(",
+      "lines": [
+        100
+      ]
+    },
+    {
+      "path": "services/backend/src/auth.ts",
+      "needle": "const timing =",
+      "lines": [
+        112
+      ]
+    },
+    {
+      "path": "services/backend/src/auth.ts",
+      "needle": "const rejectWaiting",
+      "lines": [
+        145
+      ]
+    },
+    {
+      "path": "services/backend/src/auth.ts",
+      "needle": "app.post<{ Body: { confirmed",
+      "lines": [
+        194
+      ]
+    },
+    {
+      "path": "services/backend/src/auth.ts",
+      "needle": "app.patch<{ Body: { nickname",
+      "lines": [
+        204
+      ]
+    },
+    {
+      "path": "services/backend/src/auth.ts",
+      "needle": "app.post<{ Body: { requested",
+      "lines": [
+        211
+      ]
+    },
+    {
+      "path": "services/backend/src/auth.ts",
+      "needle": "issueSession",
+      "lines": [
+        10,
+        87,
+        160,
+        172
+      ]
+    },
+    {
+      "path": "services/backend/src/auth.ts",
+      "needle": "refresh_digest",
+      "lines": [
+        12,
+        165,
+        168
+      ]
+    },
+    {
+      "path": "services/backend/migrations/001_membership.sql",
+      "needle": "CREATE TABLE",
+      "lines": [
+        7,
+        10,
+        27,
+        34,
+        50,
+        59,
+        69,
+        78
+      ]
+    },
+    {
+      "path": "services/backend/migrations/001_membership.sql",
+      "needle": "CHECK",
+      "lines": [
+        14,
+        15,
+        16,
+        17,
+        23,
+        24,
+        28,
+        29,
+        36,
+        38,
+        41,
+        47,
+        48,
+        54,
+        72,
+        85
+      ]
+    },
+    {
+      "path": "services/backend/migrations/001_membership.sql",
+      "needle": "UNIQUE",
+      "lines": [
+        13,
+        26,
+        46,
+        56,
+        72
+      ]
+    }
+  ],
+  "frozenClients": {
+    "app": "ced07c478fde599baa6fa06b34ecbca65838ae97849a144c6d26751d12fc6fde",
+    "web": "a8c47ea5168fc22e627e50e656f15f50aa59d1876d6f168085ef466cc62f6e29"
+  },
+  "readOnlyAuditor": {
+    "owner": "sa-0-2b16f3ad/deleg_5c32ac7f",
+    "scope": "engineering/business-logic-audit-01/**",
+    "writtenByThisTask": false,
+    "compareAgainst": "engineering/auth-integration-02/CANDIDATE.json"
+  }
+}

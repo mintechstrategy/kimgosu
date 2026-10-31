@@ -4,13 +4,16 @@
 !.dockerignore
 !services/
 !services/backend/
+!services/backend/Dockerfile
 !services/backend/package.json
 !services/backend/package-lock.json
-!services/backend/tsconfig.json
 !services/backend/src/
-!services/backend/src/**
-!contracts/
-!contracts/**
+!services/backend/src/app.ts
+!services/backend/src/auth.ts
+!services/backend/src/database.ts
+!services/backend/src/providers.ts
+!services/backend/src/security.ts
+!services/backend/src/server.ts
 # Defence in depth if sensitive files are ever placed in an allowed directory.
 **/.env
 **/.env.*

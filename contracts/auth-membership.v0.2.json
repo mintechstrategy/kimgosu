@@ -1,0 +1,1831 @@
+{
+  "contractId": "KG-AUTH-INTERFACE-v0.2",
+  "owner": "project-lead / KG-AUTH-INTEGRATION-02",
+  "status": "FROZEN_TECHNICAL_LOCAL_CANDIDATE_NOT_DEPLOYED_NOT_POLICY_EFFECTIVE",
+  "baseUrl": "https://api-dev-kimgosu.mintech.ai",
+  "policyVersion": "product/MEMBERSHIP-SERVICE-POLICY.md v0.3",
+  "compatibility": {
+    "v01Path": "contracts/auth-membership.v0.1.json",
+    "v01Sha256": "7e327db0b65bae709b65102704f24dd03d8bae542d98bb87e37a8f28cd0c9c00",
+    "core9PreservedVerbatim": [
+      {
+        "method": "GET",
+        "path": "/health",
+        "response": "{status:\"ok\",scope:\"membership-development\",release:string}"
+      },
+      {
+        "method": "GET",
+        "path": "/v1/auth/config",
+        "response": "{release,signupReady,providers:[{id:kakao|naver|google,enabled,reason?}],sms:{available,codeDigits:5,expiresInSeconds:60,phonePattern},requiredFields:[name,email],minimumAgeAcknowledgement:14,collectsGender:false,collectsAgeGroup:false,rejoinWaitDays:30,retention:{purpose,startsAt:WITHDRAWAL_CONFIRMED,calendarYears:1,rejoinResetsClock:false},documents:[{kind,version,status,canConsent}]}"
+      },
+      {
+        "method": "GET",
+        "path": "/v1/policies",
+        "response": "{documents:[PolicyDocument]}"
+      },
+      {
+        "method": "GET",
+        "path": "/v1/policies/:kind?version=optional",
+        "response": "PolicyDocument or404 DOCUMENT_PREPARING"
+      },
+      {
+        "method": "GET",
+        "path": "/v1/me",
+        "response": "{id,customerNumber:string,name,email,nickname,status:ACTIVE|RESTRICTED,expertActive:boolean,createdAt:ISO8601}"
+      },
+      {
+        "method": "GET",
+        "path": "/v1/me/consents",
+        "response": "{records:[{kind,title,version,status:GRANTED|WITHDRAWN,recordedAt:ISO8601}]}"
+      },
+      {
+        "method": "GET",
+        "path": "/v1/me/notifications",
+        "response": "{advertising,chat,comment,quote,inquiry:boolean,version:number}"
+      },
+      {
+        "method": "PATCH",
+        "path": "/v1/me/notifications",
+        "request": "{expectedVersion:number,oneOrMoreOf:advertising|chat|comment|quote|inquiry:boolean}; no client memberId",
+        "response": "same preferences with incremented numeric version; advertisingON requires separate marketing grant; OFF never withdraws consent"
+      },
+      {
+        "method": "POST",
+        "path": "/v1/auth/logout",
+        "response": "{loggedOut:true}; revoke server session then client forgets it"
+      }
+    ],
+    "strategy": "Same v1 method/path/request/response core. Additive extension endpoints and typed error timing metadata. Response clients ignore unknown fields; requests remain strict on schema-backed routes.",
+    "coreCount": 9,
+    "extensionCount": 12
+  },
+  "schemaDialect": "http://json-schema.org/draft-07/schema#",
+  "schemaDefinitions": {
+    "Token": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{43}$"
+    },
+    "Timestamp": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?Z$"
+    },
+    "Session": {
+      "type": "object",
+      "properties": {
+        "accessToken": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{43}$"
+        },
+        "refreshToken": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{43}$"
+        },
+        "tokenType": {
+          "const": "Bearer"
+        },
+        "expiresInSeconds": {
+          "const": 900
+        }
+      },
+      "required": [
+        "accessToken",
+        "refreshToken",
+        "tokenType",
+        "expiresInSeconds"
+      ],
+      "additionalProperties": true
+    },
+    "ConsentInputs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "TERMS",
+              "PRIVACY_CONSENT",
+              "MARKETING"
+            ]
+          },
+          "version": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          }
+        },
+        "required": [
+          "kind",
+          "version"
+        ],
+        "additionalProperties": false
+      },
+      "minItems": 2,
+      "maxItems": 3
+    },
+    "PolicyDocument": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "TERMS",
+            "PRIVACY_CONSENT",
+            "PRIVACY_POLICY",
+            "MARKETING",
+            "OPERATIONS"
+          ]
+        },
+        "version": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "DRAFT",
+            "READY",
+            "RETIRED"
+          ]
+        },
+        "title": {
+          "type": "string"
+        },
+        "body": {
+          "type": "string"
+        },
+        "bodySha256": {
+          "type": "string"
+        },
+        "operator": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "effectiveAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?Z$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "canConsent": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "kind",
+        "version",
+        "status",
+        "title",
+        "body",
+        "bodySha256",
+        "operator",
+        "effectiveAt",
+        "canConsent"
+      ],
+      "additionalProperties": true
+    },
+    "Preferences": {
+      "type": "object",
+      "properties": {
+        "advertising": {
+          "type": "boolean"
+        },
+        "chat": {
+          "type": "boolean"
+        },
+        "comment": {
+          "type": "boolean"
+        },
+        "quote": {
+          "type": "boolean"
+        },
+        "inquiry": {
+          "type": "boolean"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "advertising",
+        "chat",
+        "comment",
+        "quote",
+        "inquiry",
+        "version"
+      ],
+      "additionalProperties": true
+    },
+    "StartResponse": {
+      "type": "object",
+      "properties": {
+        "authorizationUrl": {
+          "type": "string",
+          "pattern": "^https://"
+        },
+        "state": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{43}$"
+        },
+        "expiresInSeconds": {
+          "const": 300
+        }
+      },
+      "required": [
+        "authorizationUrl",
+        "state",
+        "expiresInSeconds"
+      ],
+      "additionalProperties": true
+    },
+    "ErrorEnvelope": {
+      "type": "object",
+      "properties": {
+        "error": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "pattern": "^[A-Z][A-Z0-9_]*$"
+            },
+            "serverTime": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?Z$"
+            },
+            "retryAfter": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?Z$"
+            },
+            "retryAfterSeconds": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "rejoinAfter": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?Z$"
+            }
+          },
+          "required": [
+            "code"
+          ],
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "error"
+      ],
+      "additionalProperties": true
+    }
+  },
+  "operations": [
+    {
+      "id": "health",
+      "method": "GET",
+      "path": "/health",
+      "authentication": "none",
+      "requestSchema": null,
+      "responses": {
+        "200": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "const": "ok"
+            },
+            "scope": {
+              "const": "membership-development"
+            },
+            "release": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "scope",
+            "release"
+          ],
+          "additionalProperties": true
+        }
+      },
+      "errors": [],
+      "source": "services/backend/src/app.ts"
+    },
+    {
+      "id": "authConfig",
+      "method": "GET",
+      "path": "/v1/auth/config",
+      "authentication": "none",
+      "requestSchema": null,
+      "responses": {
+        "200": {
+          "type": "object",
+          "properties": {
+            "release": {
+              "type": "string"
+            },
+            "signupReady": {
+              "type": "boolean"
+            },
+            "providers": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "enum": [
+                      "google",
+                      "kakao",
+                      "naver"
+                    ]
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "enabled"
+                ],
+                "additionalProperties": true
+              }
+            },
+            "sms": {
+              "type": "object",
+              "properties": {
+                "available": {
+                  "type": "boolean"
+                },
+                "codeDigits": {
+                  "const": 5
+                },
+                "expiresInSeconds": {
+                  "const": 60
+                },
+                "phonePattern": {
+                  "const": "^010[0-9]{8}$"
+                }
+              },
+              "required": [
+                "available",
+                "codeDigits",
+                "expiresInSeconds",
+                "phonePattern"
+              ],
+              "additionalProperties": true
+            },
+            "requiredFields": {
+              "const": [
+                "name",
+                "email"
+              ]
+            },
+            "minimumAgeAcknowledgement": {
+              "const": 14
+            },
+            "collectsGender": {
+              "const": false
+            },
+            "collectsAgeGroup": {
+              "const": false
+            },
+            "rejoinWaitDays": {
+              "const": 30
+            },
+            "retention": {
+              "type": "object",
+              "properties": {
+                "purpose": {
+                  "type": "string"
+                },
+                "startsAt": {
+                  "const": "WITHDRAWAL_CONFIRMED"
+                },
+                "calendarYears": {
+                  "const": 1
+                },
+                "rejoinResetsClock": {
+                  "const": false
+                }
+              },
+              "required": [
+                "purpose",
+                "startsAt",
+                "calendarYears",
+                "rejoinResetsClock"
+              ],
+              "additionalProperties": true
+            },
+            "documents": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "TERMS",
+                      "PRIVACY_CONSENT",
+                      "PRIVACY_POLICY",
+                      "MARKETING",
+                      "OPERATIONS"
+                    ]
+                  },
+                  "version": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "enum": [
+                      "DRAFT",
+                      "READY",
+                      "RETIRED"
+                    ]
+                  },
+                  "canConsent": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "version",
+                  "status",
+                  "canConsent"
+                ],
+                "additionalProperties": true
+              }
+            }
+          },
+          "required": [
+            "release",
+            "signupReady",
+            "providers",
+            "sms",
+            "requiredFields",
+            "minimumAgeAcknowledgement",
+            "collectsGender",
+            "collectsAgeGroup",
+            "rejoinWaitDays",
+            "retention",
+            "documents"
+          ],
+          "additionalProperties": true
+        }
+      },
+      "errors": [],
+      "source": "services/backend/src/app.ts"
+    },
+    {
+      "id": "policies",
+      "method": "GET",
+      "path": "/v1/policies",
+      "authentication": "none",
+      "requestSchema": null,
+      "responses": {
+        "200": {
+          "type": "object",
+          "properties": {
+            "documents": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/PolicyDocument"
+              }
+            }
+          },
+          "required": [
+            "documents"
+          ],
+          "additionalProperties": true
+        }
+      },
+      "errors": [],
+      "source": "services/backend/src/app.ts"
+    },
+    {
+      "id": "policy",
+      "method": "GET",
+      "path": "/v1/policies/:kind",
+      "authentication": "none",
+      "requestSchema": null,
+      "responses": {
+        "200": {
+          "$ref": "#/definitions/PolicyDocument"
+        }
+      },
+      "errors": [
+        {
+          "status": 404,
+          "code": "DOCUMENT_PREPARING"
+        }
+      ],
+      "source": "services/backend/src/app.ts",
+      "paramsSchema": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "TERMS",
+              "PRIVACY_CONSENT",
+              "PRIVACY_POLICY",
+              "MARKETING",
+              "OPERATIONS"
+            ]
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "additionalProperties": false
+      },
+      "querySchema": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "id": "me",
+      "method": "GET",
+      "path": "/v1/me",
+      "authentication": "bearer",
+      "requestSchema": null,
+      "responses": {
+        "200": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$"
+            },
+            "customerNumber": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "email": {
+              "type": "string"
+            },
+            "nickname": {
+              "type": "string"
+            },
+            "status": {
+              "enum": [
+                "ACTIVE",
+                "RESTRICTED"
+              ]
+            },
+            "expertActive": {
+              "type": "boolean"
+            },
+            "createdAt": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?Z$"
+            }
+          },
+          "required": [
+            "id",
+            "customerNumber",
+            "name",
+            "email",
+            "nickname",
+            "status",
+            "expertActive",
+            "createdAt"
+          ],
+          "additionalProperties": true
+        }
+      },
+      "errors": [
+        {
+          "status": 401,
+          "code": "AUTH_REQUIRED"
+        },
+        {
+          "status": 401,
+          "code": "SESSION_INVALID"
+        }
+      ],
+      "source": "services/backend/src/app.ts"
+    },
+    {
+      "id": "consentsGet",
+      "method": "GET",
+      "path": "/v1/me/consents",
+      "authentication": "bearer",
+      "requestSchema": null,
+      "responses": {
+        "200": {
+          "type": "object",
+          "properties": {
+            "records": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "TERMS",
+                      "PRIVACY_CONSENT",
+                      "PRIVACY_POLICY",
+                      "MARKETING",
+                      "OPERATIONS"
+                    ]
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "version": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "enum": [
+                      "GRANTED",
+                      "WITHDRAWN"
+                    ]
+                  },
+                  "recordedAt": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?Z$"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "title",
+                  "version",
+                  "status",
+                  "recordedAt"
+                ],
+                "additionalProperties": true
+              }
+            }
+          },
+          "required": [
+            "records"
+          ],
+          "additionalProperties": true
+        }
+      },
+      "errors": [
+        {
+          "status": 401,
+          "code": "AUTH_REQUIRED"
+        },
+        {
+          "status": 401,
+          "code": "SESSION_INVALID"
+        }
+      ],
+      "source": "services/backend/src/app.ts"
+    },
+    {
+      "id": "notificationsGet",
+      "method": "GET",
+      "path": "/v1/me/notifications",
+      "authentication": "bearer",
+      "requestSchema": null,
+      "responses": {
+        "200": {
+          "$ref": "#/definitions/Preferences"
+        }
+      },
+      "errors": [
+        {
+          "status": 401,
+          "code": "AUTH_REQUIRED"
+        },
+        {
+          "status": 401,
+          "code": "SESSION_INVALID"
+        }
+      ],
+      "source": "services/backend/src/app.ts"
+    },
+    {
+      "id": "notificationsPatch",
+      "method": "PATCH",
+      "path": "/v1/me/notifications",
+      "authentication": "bearer",
+      "requestSchema": {
+        "type": "object",
+        "properties": {
+          "expectedVersion": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "advertising": {
+            "type": "boolean"
+          },
+          "chat": {
+            "type": "boolean"
+          },
+          "comment": {
+            "type": "boolean"
+          },
+          "quote": {
+            "type": "boolean"
+          },
+          "inquiry": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "expectedVersion"
+        ],
+        "additionalProperties": false,
+        "minProperties": 2
+      },
+      "responses": {
+        "200": {
+          "$ref": "#/definitions/Preferences"
+        }
+      },
+      "errors": [
+        {
+          "status": 401,
+          "code": "AUTH_REQUIRED"
+        },
+        {
+          "status": 401,
+          "code": "SESSION_INVALID"
+        },
+        {
+          "status": 403,
+          "code": "ACCOUNT_RESTRICTED"
+        },
+        {
+          "status": 409,
+          "code": "MARKETING_CONSENT_REQUIRED"
+        },
+        {
+          "status": 409,
+          "code": "VERSION_CONFLICT"
+        }
+      ],
+      "source": "services/backend/src/app.ts"
+    },
+    {
+      "id": "logout",
+      "method": "POST",
+      "path": "/v1/auth/logout",
+      "authentication": "bearer",
+      "requestSchema": null,
+      "responses": {
+        "200": {
+          "type": "object",
+          "properties": {
+            "loggedOut": {
+              "const": true
+            }
+          },
+          "required": [
+            "loggedOut"
+          ],
+          "additionalProperties": true
+        }
+      },
+      "errors": [
+        {
+          "status": 401,
+          "code": "AUTH_REQUIRED"
+        },
+        {
+          "status": 401,
+          "code": "SESSION_INVALID"
+        }
+      ],
+      "source": "services/backend/src/app.ts",
+      "requestNote": "No body schema in legacy core; clients omit body. No schema tightening in v0.2."
+    },
+    {
+      "id": "socialStart",
+      "method": "POST",
+      "path": "/v1/auth/social/start",
+      "authentication": "none",
+      "requestSchema": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "google",
+              "kakao",
+              "naver"
+            ]
+          },
+          "codeChallenge": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{43}$"
+          }
+        },
+        "required": [
+          "provider",
+          "codeChallenge"
+        ],
+        "additionalProperties": false
+      },
+      "responses": {
+        "200": {
+          "$ref": "#/definitions/StartResponse"
+        }
+      },
+      "errors": [
+        {
+          "status": 503,
+          "code": "PROVIDER_NOT_CONFIGURED"
+        },
+        {
+          "status": 503,
+          "code": "IDENTITY_CONFIGURATION_REQUIRED"
+        }
+      ],
+      "source": "services/backend/src/auth.ts"
+    },
+    {
+      "id": "socialLinkStart",
+      "method": "POST",
+      "path": "/v1/me/social/link/start",
+      "authentication": "bearer",
+      "requestSchema": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "google",
+              "kakao",
+              "naver"
+            ]
+          },
+          "codeChallenge": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{43}$"
+          },
+          "confirmed": {
+            "const": true
+          }
+        },
+        "required": [
+          "provider",
+          "codeChallenge",
+          "confirmed"
+        ],
+        "additionalProperties": false
+      },
+      "responses": {
+        "200": {
+          "$ref": "#/definitions/StartResponse"
+        }
+      },
+      "errors": [
+        {
+          "status": 401,
+          "code": "AUTH_REQUIRED"
+        },
+        {
+          "status": 401,
+          "code": "SESSION_INVALID"
+        },
+        {
+          "status": 503,
+          "code": "PROVIDER_NOT_CONFIGURED"
+        },
+        {
+          "status": 503,
+          "code": "IDENTITY_CONFIGURATION_REQUIRED"
+        },
+        {
+          "status": 403,
+          "code": "ACCOUNT_RESTRICTED"
+        },
+        {
+          "status": 409,
+          "code": "DOCUMENT_NOT_READY"
+        },
+        {
+          "status": 403,
+          "code": "CONSENT_RENEWAL_REQUIRED"
+        }
+      ],
+      "source": "services/backend/src/auth.ts"
+    },
+    {
+      "id": "socialComplete",
+      "method": "POST",
+      "path": "/v1/auth/social/complete",
+      "authentication": "conditional: bearer required for a link flow bound to same member",
+      "requestSchema": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "google",
+              "kakao",
+              "naver"
+            ]
+          },
+          "state": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{43}$"
+          },
+          "code": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "codeVerifier": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._~-]{43,128}$"
+          }
+        },
+        "required": [
+          "provider",
+          "state",
+          "code",
+          "codeVerifier"
+        ],
+        "additionalProperties": false
+      },
+      "responses": {
+        "200": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "outcome": {
+                  "const": "AUTHENTICATED"
+                },
+                "session": {
+                  "$ref": "#/definitions/Session"
+                }
+              },
+              "required": [
+                "outcome",
+                "session"
+              ],
+              "additionalProperties": true
+            },
+            {
+              "type": "object",
+              "properties": {
+                "outcome": {
+                  "const": "REGISTRATION_REQUIRED"
+                },
+                "registrationTicket": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9_-]{43}$"
+                },
+                "expiresInSeconds": {
+                  "const": 600
+                }
+              },
+              "required": [
+                "outcome",
+                "registrationTicket",
+                "expiresInSeconds"
+              ],
+              "additionalProperties": true
+            },
+            {
+              "type": "object",
+              "properties": {
+                "outcome": {
+                  "const": "LINKED"
+                },
+                "provider": {
+                  "type": "string",
+                  "enum": [
+                    "google",
+                    "kakao",
+                    "naver"
+                  ]
+                }
+              },
+              "required": [
+                "outcome",
+                "provider"
+              ],
+              "additionalProperties": true
+            }
+          ]
+        }
+      },
+      "errors": [
+        {
+          "status": 401,
+          "code": "AUTH_REQUIRED"
+        },
+        {
+          "status": 401,
+          "code": "SESSION_INVALID"
+        },
+        {
+          "status": 503,
+          "code": "PROVIDER_NOT_CONFIGURED"
+        },
+        {
+          "status": 503,
+          "code": "IDENTITY_CONFIGURATION_REQUIRED"
+        },
+        {
+          "status": 403,
+          "code": "ACCOUNT_RESTRICTED"
+        },
+        {
+          "status": 409,
+          "code": "DOCUMENT_NOT_READY"
+        },
+        {
+          "status": 403,
+          "code": "CONSENT_RENEWAL_REQUIRED"
+        },
+        {
+          "status": 401,
+          "code": "OAUTH_FLOW_INVALID"
+        },
+        {
+          "status": 401,
+          "code": "SOCIAL_AUTH_FAILED"
+        },
+        {
+          "status": 403,
+          "code": "LINK_OWNER_MISMATCH"
+        },
+        {
+          "status": 409,
+          "code": "SOCIAL_LINK_CONFLICT"
+        },
+        {
+          "status": 502,
+          "code": "PROVIDER_UNAVAILABLE"
+        }
+      ],
+      "source": "services/backend/src/auth.ts",
+      "semantics": [
+        "State consumed before provider exchange/owner validation; failure requires fresh start.",
+        "Existing restricted member may authenticate; GET /me yields RESTRICTED; mutation guards still apply.",
+        "Backend supports HTTPS dev-web callback configuration only; app callback binding and web handoff NOT_IMPLEMENTED."
+      ]
+    },
+    {
+      "id": "smsSend",
+      "method": "POST",
+      "path": "/v1/auth/sms/send",
+      "authentication": "registrationTicket",
+      "requestSchema": {
+        "type": "object",
+        "properties": {
+          "registrationTicket": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{43}$"
+          },
+          "phone": {
+            "type": "string",
+            "pattern": "^010[0-9]{8}$"
+          }
+        },
+        "required": [
+          "registrationTicket",
+          "phone"
+        ],
+        "additionalProperties": false
+      },
+      "responses": {
+        "200": {
+          "type": "object",
+          "properties": {
+            "challengeId": {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$"
+            },
+            "expiresInSeconds": {
+              "const": 60
+            },
+            "codeDigits": {
+              "const": 5
+            },
+            "serverTime": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?Z$"
+            },
+            "expiresAt": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?Z$"
+            },
+            "retryAfter": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?Z$"
+            }
+          },
+          "required": [
+            "challengeId",
+            "expiresInSeconds",
+            "codeDigits",
+            "serverTime",
+            "expiresAt",
+            "retryAfter"
+          ],
+          "additionalProperties": true
+        }
+      },
+      "errors": [
+        {
+          "status": 503,
+          "code": "IDENTITY_CONFIGURATION_REQUIRED"
+        },
+        {
+          "status": 401,
+          "code": "REGISTRATION_INVALID"
+        },
+        {
+          "status": 409,
+          "code": "PHONE_ALREADY_REGISTERED"
+        },
+        {
+          "status": 429,
+          "code": "SMS_RATE_LIMITED"
+        },
+        {
+          "status": 502,
+          "code": "SMS_DELIVERY_FAILED"
+        },
+        {
+          "status": 503,
+          "code": "SMS_PROVIDER_NOT_CONFIGURED"
+        }
+      ],
+      "source": "services/backend/src/auth.ts",
+      "errorMetadata": {
+        "SMS_RATE_LIMITED": {
+          "required": [
+            "serverTime",
+            "retryAfter",
+            "retryAfterSeconds"
+          ],
+          "headers": [
+            "Retry-After"
+          ]
+        }
+      },
+      "semantics": [
+        "At most 5 challenges/rolling hour and 60 seconds between successful DB challenge creations per phone; DB advisory lock.",
+        "Resend invalidates older challenges and ticket verification in same transaction. Delivery failure rolls back DB but uncertain external delivery is not proof of no SMS.",
+        "No runtime SMS adapter selected/wired; positive local tests are explicit doubles."
+      ]
+    },
+    {
+      "id": "smsVerify",
+      "method": "POST",
+      "path": "/v1/auth/sms/verify",
+      "authentication": "registrationTicket",
+      "requestSchema": {
+        "type": "object",
+        "properties": {
+          "registrationTicket": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{43}$"
+          },
+          "challengeId": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$"
+          },
+          "code": {
+            "type": "string",
+            "pattern": "^[0-9]{5}$"
+          }
+        },
+        "required": [
+          "registrationTicket",
+          "challengeId",
+          "code"
+        ],
+        "additionalProperties": false
+      },
+      "responses": {
+        "200": {
+          "type": "object",
+          "properties": {
+            "verified": {
+              "const": true
+            }
+          },
+          "required": [
+            "verified"
+          ],
+          "additionalProperties": true
+        }
+      },
+      "errors": [
+        {
+          "status": 503,
+          "code": "IDENTITY_CONFIGURATION_REQUIRED"
+        },
+        {
+          "status": 401,
+          "code": "REGISTRATION_INVALID"
+        },
+        {
+          "status": 400,
+          "code": "SMS_CODE_INVALID_OR_EXPIRED"
+        }
+      ],
+      "source": "services/backend/src/auth.ts",
+      "semantics": [
+        "Expiry/wrong/missing/locked/replayed challenge deliberately share error; do not promise distinct invalid-vs-expired server diagnosis.",
+        "Maximum 5 wrong attempts; verify success does not renew registration ticket; no verification-receipt GET surface."
+      ]
+    },
+    {
+      "id": "signup",
+      "method": "POST",
+      "path": "/v1/auth/signup",
+      "authentication": "registrationTicket",
+      "requestSchema": {
+        "type": "object",
+        "properties": {
+          "registrationTicket": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{43}$"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "email": {
+            "type": "string",
+            "maxLength": 254,
+            "pattern": "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$"
+          },
+          "age14Confirmed": {
+            "const": true
+          },
+          "expertRequested": {
+            "type": "boolean"
+          },
+          "consents": {
+            "$ref": "#/definitions/ConsentInputs"
+          }
+        },
+        "required": [
+          "registrationTicket",
+          "name",
+          "email",
+          "age14Confirmed",
+          "expertRequested",
+          "consents"
+        ],
+        "additionalProperties": false
+      },
+      "responses": {
+        "200": {
+          "type": "object",
+          "properties": {
+            "outcome": {
+              "const": "REGISTERED"
+            },
+            "session": {
+              "$ref": "#/definitions/Session"
+            }
+          },
+          "required": [
+            "outcome",
+            "session"
+          ],
+          "additionalProperties": true
+        }
+      },
+      "errors": [
+        {
+          "status": 400,
+          "code": "REQUIRED_CONSENT_MISSING"
+        },
+        {
+          "status": 409,
+          "code": "DOCUMENT_NOT_READY"
+        },
+        {
+          "status": 409,
+          "code": "POLICY_VERSION_CHANGED"
+        },
+        {
+          "status": 401,
+          "code": "REGISTRATION_INVALID"
+        },
+        {
+          "status": 409,
+          "code": "PHONE_VERIFICATION_REQUIRED"
+        },
+        {
+          "status": 409,
+          "code": "ALREADY_REGISTERED"
+        },
+        {
+          "status": 409,
+          "code": "REJOIN_WAIT_REQUIRED"
+        },
+        {
+          "status": 409,
+          "code": "PHONE_ALREADY_REGISTERED"
+        },
+        {
+          "status": 409,
+          "code": "IDENTITY_RECOVERY_REQUIRED"
+        }
+      ],
+      "source": "services/backend/src/auth.ts",
+      "errorMetadata": {
+        "REJOIN_WAIT_REQUIRED": {
+          "required": [
+            "serverTime",
+            "rejoinAfter"
+          ]
+        }
+      },
+      "semantics": [
+        "name.trim() nonempty; no gender/ageGroup/birthDate/nickname fields.",
+        "consents contain unique kind; TERMS+PRIVACY_CONSENT required, MARKETING optional; PRIVACY_POLICY must be ready but is not a grant input.",
+        "Automatic nickname on signup. Nonempty user nickname must remain pending for explicit subsequent profile PATCH and GET readback; do not silently drop.",
+        "Same principal or eligible phone wait exposes only own authenticated registration context rejoinAfter; different principal phone returns IDENTITY_RECOVERY_REQUIRED without old member info.",
+        "New member and customer number; unexpired restrictions resolve via principal and /me. expertRequested immediately activates if eligible and not restricted."
+      ]
+    },
+    {
+      "id": "refresh",
+      "method": "POST",
+      "path": "/v1/auth/refresh",
+      "authentication": "refreshToken",
+      "requestSchema": {
+        "type": "object",
+        "properties": {
+          "refreshToken": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{43}$"
+          }
+        },
+        "required": [
+          "refreshToken"
+        ],
+        "additionalProperties": false
+      },
+      "responses": {
+        "200": {
+          "$ref": "#/definitions/Session"
+        }
+      },
+      "errors": [
+        {
+          "status": 401,
+          "code": "SESSION_INVALID"
+        }
+      ],
+      "source": "services/backend/src/auth.ts",
+      "semantics": [
+        "One-use rotation; revoked refresh replay revokes whole family. Serialize client refresh, never blindly retry on timeout; fresh social auth if uncertain."
+      ]
+    },
+    {
+      "id": "consentsPost",
+      "method": "POST",
+      "path": "/v1/me/consents",
+      "authentication": "bearer",
+      "requestSchema": {
+        "type": "object",
+        "properties": {
+          "consents": {
+            "$ref": "#/definitions/ConsentInputs"
+          }
+        },
+        "required": [
+          "consents"
+        ],
+        "additionalProperties": false
+      },
+      "responses": {
+        "200": {
+          "type": "object",
+          "properties": {
+            "recorded": {
+              "const": true
+            }
+          },
+          "required": [
+            "recorded"
+          ],
+          "additionalProperties": true
+        }
+      },
+      "errors": [
+        {
+          "status": 401,
+          "code": "AUTH_REQUIRED"
+        },
+        {
+          "status": 401,
+          "code": "SESSION_INVALID"
+        },
+        {
+          "status": 400,
+          "code": "REQUIRED_CONSENT_MISSING"
+        },
+        {
+          "status": 409,
+          "code": "DOCUMENT_NOT_READY"
+        },
+        {
+          "status": 409,
+          "code": "POLICY_VERSION_CHANGED"
+        }
+      ],
+      "source": "services/backend/src/auth.ts",
+      "semantics": [
+        "No expectedVersion/idempotency key in request; each grant appends event including repeated identical grants.",
+        "Uncertain result GET /me/consents and exact version policies before explicit retry; records give current per-kind history head, not operation receipt."
+      ]
+    },
+    {
+      "id": "consentWithdraw",
+      "method": "POST",
+      "path": "/v1/me/consents/withdraw",
+      "authentication": "bearer",
+      "requestSchema": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "enum": [
+              "TERMS",
+              "PRIVACY_CONSENT",
+              "MARKETING"
+            ]
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "additionalProperties": false
+      },
+      "responses": {
+        "200": {
+          "type": "object",
+          "properties": {
+            "withdrawn": {
+              "const": true
+            }
+          },
+          "required": [
+            "withdrawn"
+          ],
+          "additionalProperties": true
+        }
+      },
+      "errors": [
+        {
+          "status": 401,
+          "code": "AUTH_REQUIRED"
+        },
+        {
+          "status": 401,
+          "code": "SESSION_INVALID"
+        },
+        {
+          "status": 409,
+          "code": "WITHDRAWAL_CONFIRMATION_REQUIRED"
+        }
+      ],
+      "source": "services/backend/src/auth.ts",
+      "semantics": [
+        "Only MARKETING succeeds; removes advertising preference atomically. Repeated withdrawal may increment preference version even without new event.",
+        "Required-kind request never silently withdraws account; final confirmed withdrawal separate.",
+        "GET /me/consents plus GET /me/notifications readback; absent marketing record means no recorded grant, not a newly recorded WITHDRAWN event."
+      ]
+    },
+    {
+      "id": "withdraw",
+      "method": "POST",
+      "path": "/v1/me/withdraw",
+      "authentication": "bearer",
+      "requestSchema": {
+        "type": "object",
+        "properties": {
+          "confirmed": {
+            "const": true
+          }
+        },
+        "required": [
+          "confirmed"
+        ],
+        "additionalProperties": false
+      },
+      "responses": {
+        "200": {
+          "type": "object",
+          "properties": {
+            "withdrawn": {
+              "const": true
+            },
+            "withdrawnAt": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?Z$"
+            },
+            "rejoinAfter": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?Z$"
+            },
+            "retentionUntil": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?Z$"
+            },
+            "previousPrivateDataRestoredOnRejoin": {
+              "const": false
+            },
+            "rejoinResetsRetentionClock": {
+              "const": false
+            }
+          },
+          "required": [
+            "withdrawn",
+            "withdrawnAt",
+            "rejoinAfter",
+            "retentionUntil",
+            "previousPrivateDataRestoredOnRejoin",
+            "rejoinResetsRetentionClock"
+          ],
+          "additionalProperties": true
+        }
+      },
+      "errors": [
+        {
+          "status": 401,
+          "code": "AUTH_REQUIRED"
+        },
+        {
+          "status": 401,
+          "code": "SESSION_INVALID"
+        }
+      ],
+      "source": "services/backend/src/auth.ts",
+      "semantics": [
+        "No reason/detail fields accepted or stored. UI selected reason/detail cannot be sent, discarded silently, or labelled saved; collecting/storage purpose requires policy+UIX decision.",
+        "Locks member, confirms once, disables expert/notifications, revokes all member sessions. Second request returns SESSION_INVALID, not idempotent receipt.",
+        "Lost response: GET /me with former bearer 200 means still active at read snapshot; 401 proves only invalid session, NOT withdrawal/time/retention. Remain outcome UNKNOWN; no new public account-status endpoint."
+      ]
+    },
+    {
+      "id": "profilePatch",
+      "method": "PATCH",
+      "path": "/v1/me/profile",
+      "authentication": "bearer",
+      "requestSchema": {
+        "type": "object",
+        "properties": {
+          "nickname": {
+            "type": "string",
+            "pattern": "^[\\p{L}\\p{N}]{1,10}$",
+            "maxLength": 10
+          }
+        },
+        "required": [
+          "nickname"
+        ],
+        "additionalProperties": false
+      },
+      "responses": {
+        "200": {
+          "type": "object",
+          "properties": {
+            "nickname": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "nickname"
+          ],
+          "additionalProperties": true
+        }
+      },
+      "errors": [
+        {
+          "status": 401,
+          "code": "AUTH_REQUIRED"
+        },
+        {
+          "status": 401,
+          "code": "SESSION_INVALID"
+        },
+        {
+          "status": 403,
+          "code": "ACCOUNT_RESTRICTED"
+        },
+        {
+          "status": 409,
+          "code": "DOCUMENT_NOT_READY"
+        },
+        {
+          "status": 403,
+          "code": "CONSENT_RENEWAL_REQUIRED"
+        }
+      ],
+      "source": "services/backend/src/auth.ts",
+      "semantics": [
+        "Unicode letters/numbers, 1..10 code points; no whitespace/special chars, no normalization promised. Last-write-wins, no expectedVersion. Exact GET /me readback required."
+      ]
+    },
+    {
+      "id": "expert",
+      "method": "POST",
+      "path": "/v1/me/expert",
+      "authentication": "bearer",
+      "requestSchema": {
+        "type": "object",
+        "properties": {
+          "requested": {
+            "const": true
+          }
+        },
+        "required": [
+          "requested"
+        ],
+        "additionalProperties": false
+      },
+      "responses": {
+        "200": {
+          "type": "object",
+          "properties": {
+            "expertActive": {
+              "const": true
+            }
+          },
+          "required": [
+            "expertActive"
+          ],
+          "additionalProperties": true
+        }
+      },
+      "errors": [
+        {
+          "status": 401,
+          "code": "AUTH_REQUIRED"
+        },
+        {
+          "status": 401,
+          "code": "SESSION_INVALID"
+        },
+        {
+          "status": 403,
+          "code": "ACCOUNT_RESTRICTED"
+        },
+        {
+          "status": 409,
+          "code": "DOCUMENT_NOT_READY"
+        },
+        {
+          "status": 403,
+          "code": "CONSENT_RENEWAL_REQUIRED"
+        },
+        {
+          "status": 403,
+          "code": "ACCOUNT_RESTRICTED_OR_PROFILE_INCOMPLETE"
+        }
+      ],
+      "source": "services/backend/src/auth.ts"
+    }
+  ],
+  "globalErrors": [
+    {
+      "status": 400,
+      "code": "INVALID_REQUEST"
+    },
+    {
+      "status": 403,
+      "code": "ORIGIN_NOT_ALLOWED"
+    },
+    {
+      "status": 403,
+      "code": "CORS_PREFLIGHT_DENIED"
+    },
+    {
+      "status": 404,
+      "code": "ROUTE_NOT_FOUND"
+    },
+    {
+      "status": 413,
+      "code": "INVALID_REQUEST"
+    },
+    {
+      "status": 415,
+      "code": "INVALID_REQUEST"
+    },
+    {
+      "status": 429,
+      "code": "AUTH_RATE_LIMITED"
+    },
+    {
+      "status": 500,
+      "code": "INTERNAL_ERROR"
+    }
+  ],
+  "errorSchema": {
+    "$ref": "#/definitions/ErrorEnvelope"
+  },
+  "http": {
+    "bodyLimitBytes": 16384,
+    "requestContentType": "application/json on body routes",
+    "responseCacheControl": "no-store",
+    "authorization": "Bearer opaque token; never cookie",
+    "cors": {
+      "defaultOrigins": [
+        "https://dev-kimgosu.mintech.ai"
+      ],
+      "localOrigins": "Explicit KG_CORS_LOCAL_ORIGINS only; http localhost/127.0.0.1 with port. No env changed here.",
+      "allowMethods": [
+        "GET",
+        "POST",
+        "PATCH",
+        "OPTIONS"
+      ],
+      "allowHeaders": [
+        "Authorization",
+        "Content-Type",
+        "Cache-Control"
+      ],
+      "exposeHeaders": [
+        "Date",
+        "Retry-After",
+        "X-Server-Time"
+      ],
+      "allowCredentials": false,
+      "vary": "Origin",
+      "unknownOrigin": "403 without ACAO; allowed origin applies also 400/401/403/409/429/500"
+    }
+  },
+  "clientTime": {
+    "format": "UTC ISO8601 strings; retryAfter is absolute timestamp, retryAfterSeconds and HTTP Retry-After are relative seconds.",
+    "serverTime": "SMS success/rate/rejoin metadata anchored to PostgreSQL transaction now(). X-Server-Time is API onSend time, not same clock snapshot. Do not combine anchors.",
+    "countdown": "remaining=max(0,deadline-serverTime-(monotonicNow-monotonicRequestStart)); using full elapsed request age is conservative against transit and lock/send delays. Wall-clock skew never extends expiry. Keep fractional milliseconds internally; countdown display rounds down.",
+    "suspend": "Use continuous monotonic clock including sleep; if unavailable or process restored, invalidate challenge UI/require explicit resend. Never trust a restored local 60-second counter.",
+    "authority": "Server predicates alone decide validity; clock zero only blocks local submission. A clock/datetime display is guidance, not rejoin authorization.",
+    "relativeCompatibility": "expiresInSeconds:60 retained for v0.1-compatible displays; v0.2 clients use DB anchored absolute times. Missing/malformed required metadata is incompatible response, not success."
+  },
+  "policyClassification": {
+    "requiredGrantKinds": [
+      "TERMS",
+      "PRIVACY_CONSENT"
+    ],
+    "requiredReadyKindsForGrant": [
+      "TERMS",
+      "PRIVACY_CONSENT",
+      "PRIVACY_POLICY"
+    ],
+    "optionalGrantKinds": [
+      "MARKETING"
+    ],
+    "publicNoticeKinds": [
+      "PRIVACY_POLICY",
+      "OPERATIONS"
+    ],
+    "operationsConsentRequired": false,
+    "classificationGate": "Current source requires current TERMS/PRIVACY_CONSENT on profile/expert/link mutations; /me status does not synthesize CONSENT_RENEWAL_REQUIRED. No approved material-change classification/required change set/operation restriction matrix exists; do not infer new policy approval from this conservative implementation.",
+    "coreException": "Legacy notification PATCH uses ACTIVE and marketing ON grant checks only; no new mandatory-reconsent gate retrofitted."
+  },
+  "gates": {
+    "publicDeployment": "BLOCKED_WHILE_DIAGNOSTIC_PERF",
+    "realDbReplay": "NOT_RUN_BLOCKED_WHILE_PERF_NEW_CANDIDATE",
+    "realOAuth": "NOT_RUN_PROVIDER_REGISTRATION_CALLBACK_PKCE_BINDING_REQUIRED",
+    "realSms": "NOT_RUN_NO_RUNTIME_PROVIDER",
+    "effectivePolicies": "READY0_OPERATIONS_DRAFT_RETAINED_PRIOR_EVIDENCE",
+    "independentQa": "KG-AUTH-INTEGRATION-02-QA owner uiux next parent collection",
+    "appWebBaseline": "FROZEN_READ_ONLY_NOT_V02_IMPLEMENTED"
+  },
+  "businessAuthority": {
+    "architectureCanonical": "engineering/BACKEND-AUTHORITY.md",
+    "adoption": "USER_CONFIRMED_DEFAULT_ARCHITECTURE_PRINCIPLE_NOT_A_FULL_EXISTING_CODE_COMPLIANCE_VERDICT",
+    "finalDecisionOwner": "backend DB/session/principal predicates, never client flags",
+    "server": ["authorization", "membership status", "customer number", "current policy eligibility and grant versions", "SMS proof", "restriction inheritance", "rejoin and retention clocks", "notification CAS conflicts"],
+    "client": ["display", "input assistance", "OS permissions", "secure token storage", "navigation and explicit user confirmation"],
+    "untrustedClientClaims": ["canConsent", "verified", "status", "customerNumber", "withdrawnAt", "rejoinAfter", "retentionUntil"],
+    "futureDomainRule": "Price/transaction conditions must be authoritative server decisions when implemented; these domains are not added or implemented in this membership task.",
+    "auditCandidate": "engineering/auth-integration-02/CANDIDATE.json",
+    "policyValueAuthority": "Server configuration/implementation and versioned API responses, not duplicate client policy calculations/constants. Direct API requests independently revalidated.",
+    "currentPolicyMetadata": ["/v1/auth/config requiredFields/minimumAgeAcknowledgement/sms/rejoinWaitDays/retention/documents", "/v1/policies/:kind version/status/canConsent/bodySha256", "/v1/me status/customerNumber", "/v1/me/notifications version", "SMS and rejoin/withdraw server timing metadata"],
+    "notImplementedMetadata": ["approved material-change reconsent classification", "complete allowed-action matrix", "minimum client version/update protocol", "dynamic operator policy editor", "price/transaction domain"],
+    "evolution": "Prefer compatible server-side policy changes. Preserve core9; exact document versions and conflict/requery/no-store behavior apply. Stale clients remain server-validated; incompatible semantics need explicit version/update design and may require client deployment. No universal app-deployment-free promise."
+  },
+  "humanGuide": "contracts/auth-membership.v0.2.md"
+}

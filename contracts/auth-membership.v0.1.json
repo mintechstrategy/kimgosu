@@ -1,0 +1,88 @@
+{
+  "contractId": "KG-AUTH-INTERFACE-v0.1",
+  "owner": "project-lead",
+  "status": "CURRENT_IMPLEMENTED_CORE_PLUS_EXPLICIT_EXTENSION_GATES",
+  "baseUrl": "https://api-dev-kimgosu.mintech.ai",
+  "authentication": "Bearer opaque token; server SHA256 digest lookup; no raw token/code logs, URLs, argv, shared artifacts or committed fixtures",
+  "errorEnvelope": {
+    "error": {
+      "code": "UPPER_SNAKE_CASE"
+    }
+  },
+  "http": {
+    "cache": "no-store",
+    "invalidInput": 400,
+    "missingOrRevokedSession": 401,
+    "restriction": 403,
+    "documentPreparing": 404,
+    "staleVersionOrMissingMarketingConsent": 409
+  },
+  "implementedCore": [
+    {
+      "method": "GET",
+      "path": "/health",
+      "response": "{status:\"ok\",scope:\"membership-development\",release:string}"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/auth/config",
+      "response": "{release,signupReady,providers:[{id:kakao|naver|google,enabled,reason?}],sms:{available,codeDigits:5,expiresInSeconds:60,phonePattern},requiredFields:[name,email],minimumAgeAcknowledgement:14,collectsGender:false,collectsAgeGroup:false,rejoinWaitDays:30,retention:{purpose,startsAt:WITHDRAWAL_CONFIRMED,calendarYears:1,rejoinResetsClock:false},documents:[{kind,version,status,canConsent}]}"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/policies",
+      "response": "{documents:[PolicyDocument]}"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/policies/:kind?version=optional",
+      "response": "PolicyDocument or404 DOCUMENT_PREPARING"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/me",
+      "response": "{id,customerNumber:string,name,email,nickname,status:ACTIVE|RESTRICTED,expertActive:boolean,createdAt:ISO8601}"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/me/consents",
+      "response": "{records:[{kind,title,version,status:GRANTED|WITHDRAWN,recordedAt:ISO8601}]}"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/me/notifications",
+      "response": "{advertising,chat,comment,quote,inquiry:boolean,version:number}"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/me/notifications",
+      "request": "{expectedVersion:number,oneOrMoreOf:advertising|chat|comment|quote|inquiry:boolean}; no client memberId",
+      "response": "same preferences with incremented numeric version; advertisingON requires separate marketing grant; OFF never withdraws consent"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/auth/logout",
+      "response": "{loggedOut:true}; revoke server session then client forgets it"
+    }
+  ],
+  "PolicyDocument": {
+    "kind": "TERMS|PRIVACY_CONSENT|PRIVACY_POLICY|MARKETING|OPERATIONS",
+    "version": "string",
+    "status": "DRAFT|READY|RETIRED",
+    "title": "string",
+    "body": "string",
+    "bodySha256": "string",
+    "operator": "string|null",
+    "effectiveAt": "ISO8601|null",
+    "canConsent": "boolean; only approved/effective READY metadata is eligible"
+  },
+  "unimplementedExtensions": "Backend may implement first-module real signup/social-start/callback/SMS/refresh/link/consent/withdraw/rejoin endpoints, but must produce contracts/ change requests in its own handoff for parent approval/versioning. Do not silently change implemented core paths/types or advertise missing external providers as enabled.",
+  "entry": {
+    "app": "Bundled splash3seconds then formal E1 login/signup (replaces previously requested temporary login); Browse opens preserved A1; protected entry records returnTarget and restores on cancel/back. No automatic replay of prior write after auth.",
+    "web": "Public/browse and login/signup/policies/member surfaces; no native splash image served or uploaded"
+  },
+  "currentTruth": "Pure UIX handoff accepted. New real Railway schema8tables applied and OPERATIONS review-v0.3-20261031 stored asDRAFT. Backend core typecheck+12unitPASS, but not publicly deployed yet. OAuth/SMS not connected; no real signup/consent complete claim.",
+  "policyVersion": "product/MEMBERSHIP-SERVICE-POLICY.md v0.3",
+  "nativePublishing": "engineering/auth-publishing-01/ios-recovery-02/PUBLISHING-ACCEPTANCE.json",
+  "at": "2026-10-31T09:11:52.673484+09:00"
+}
