@@ -1,0 +1,86 @@
+{
+  "ws": "WS-13",
+  "status": "DONE",
+  "summary": "008_expert_services.sql(고수 프로필·서비스 테이블)와 /v1/expert/profile, /v1/expert/services, /v1/experts 검색 API를 구현하고 실 PostgreSQL 통합 테스트 10건으로 권한·소유권·비노출·영속성을 검증했다.",
+  "changedFiles": [
+    "services/backend/migrations/008_expert_services.sql",
+    "services/backend/src/experts.ts",
+    "services/backend/src/app.ts",
+    "services/backend/tests/experts.integration.test.ts",
+    "services/backend/package.json",
+    "records/parallel-10/WS-13/RESULT.json"
+  ],
+  "verification": [
+    {
+      "check": "타입 체크",
+      "command": "cd services/backend && npx tsc --noEmit",
+      "result": "PASS",
+      "evidence": "출력 없음, exit 0. 단 tsconfig include는 src/**/*.ts, scripts/**/*.ts 이므로 tests/ 디렉터리는 이 검사 대상이 아니다(기존 저장소 관례와 동일)."
+    },
+    {
+      "check": "기존 유닛 테스트 회귀",
+      "command": "cd services/backend && npm test",
+      "result": "PASS",
+      "evidence": "tests 23, pass 23, fail 0 (app.ts 라우트 등록 추가 후에도 기존 유닛 전부 통과)."
+    },
+    {
+      "check": "신규 통합 테스트 (실 PostgreSQL, kgtest)",
+      "command": "KG_TEST_DATABASE_URL=postgres://postgres@127.0.0.1:55432/kgtest node --test tests/experts.integration.test.ts",
+      "result": "PASS",
+      "evidence": "tests 10, pass 10, fail 0. 비EXPERT 등록 403(EXPERT_ROLE_REQUIRED), expert_active DB 반전 시 즉시 403, 프로필 생성 201/중복 409/부분수정 200 및 DB 재조회 일치, 서비스 생성 201 후 DB 재조회 일치, 가격 유형-기본가 불일치 400(INVALID_PRICE), 타인 서비스 수정 404(SERVICE_NOT_FOUND) 및 행 무변경, 비노출 서비스 검색·상세·제목검색 모두 미반환 및 serviceCount=비노출 제외 실제 행 수 일치, limit=1/2 커서 페이지네이션 중복 없음·전체 전문가 도달, 잘못된 커서 400, limit=99 400, HIDDEN 프로필 검색 제외·상세 404, audit_log에 EXPERT_SERVICE_CREATED/UPDATED 기록."
+    },
+    {
+      "check": "기존 통합 테스트 회귀 (원장·합의)",
+      "command": "cd services/backend && KG_TEST_DATABASE_URL=postgres://postgres@127.0.0.1:55432/kgtest npm run test:integration",
+      "result": "PASS",
+      "evidence": "3개 스위트 연속 실행: ledger 6/6, experts 10/10, local-db 33/33 — 총 49 pass, 0 fail, exit 0 (로그 /tmp/ws13-integration.log)."
+    },
+    {
+      "check": "마이그레이션 재적용(멱등성)",
+      "command": "psql ... -f services/backend/migrations/008_expert_services.sql",
+      "result": "PASS",
+      "evidence": "두 번째 적용에서 relation/index already exists NOTICE만 발생, 오류 없음. kgtest에 expert_profiles, expert_services 생성 확인."
+    },
+    {
+      "check": "테스트 데이터 정리",
+      "command": "psql -c \"select count(*) from kg_membership.expert_profiles\" / expert_services / members(email ~ '^고수A-...')",
+      "result": "PASS",
+      "evidence": "expert_profiles 0행, expert_services 0행, 테스트가 만든 members/sessions/principals 0행(after 훅에서 id 기준 삭제)."
+    },
+    {
+      "check": "Railway·Cloudflare 실제 거래 검증",
+      "command": "(실행하지 않음)",
+      "result": "NOT_RUN",
+      "evidence": "PLAN-WAVE2 공통 규칙 2에 따라 push/배포가 금지되어 있고, 이 WS의 검증 항목은 로컬 실 PostgreSQL 통합 테스트와 tsc로 한정되어 있다. 개발계 배포 후 실제 거래 검증은 오케스트레이터 병합·배포 단계에서 수행해야 한다."
+    },
+    {
+      "check": "커밋/원격 반영",
+      "command": "(실행하지 않음)",
+      "result": "NOT_RUN",
+      "evidence": "지시대로 커밋·push·PR을 수행하지 않았다. 변경은 작업트리에만 존재한다."
+    }
+  ],
+  "contractChanges": [],
+  "migrations": [
+    "services/backend/migrations/008_expert_services.sql"
+  ],
+  "open": [
+    "서비스 카테고리 목록이 미확정이라 자유 문자열(1~50자)로 구현했다. 고정 분류 체계가 필요하면 사용자가 목록을 확정해야 한다.",
+    "고수 프로필 노출 상태는 ACTIVE/HIDDEN 2값만 두었다. 심사·정지 등 운영 상태가 필요하면 별도 결정이 필요하다(현재 EXPERT는 members.expert_active 즉시 활성 정책 유지).",
+    "서비스 이미지·포트폴리오·경력증빙 등 추가 필드는 이번 범위에 포함하지 않았다.",
+    "가격은 원(KRW) 정수 가정이며 통화·부가세 표기 규칙은 미확정."
+  ],
+  "risks": [
+    "로컬 kgtest DB를 여러 WS가 공유한다. 기존 ledger 테스트가 전역 TRUNCATE를 수행하므로 병렬 실행 시 서로의 데이터를 지울 수 있다(이번 WS 테스트는 자기 테이블·자기 id만 정리하도록 작성했으나 다른 WS 테스트의 전역 TRUNCATE 영향은 남는다).",
+    "tsconfig가 tests/를 include하지 않아 테스트 파일의 타입 오류는 tsc로 잡히지 않고 실행 시에만 드러난다.",
+    "현재 Node v26.7.0에서 실행했다(package.json engines는 >=24 <25). 실행은 통과했으나 지정 버전과 다르다.",
+    "GET /v1/experts 검색 정렬은 최신순 고정이며 관련도·평점 정렬은 없다(계획대로).",
+    "공통 파일 3줄 변경(app.ts import/등록 2줄, package.json test:integration 1줄) — 병합 시 충돌 가능 지점이다."
+  ],
+  "next": [
+    "오케스트레이터는 병합 전 상태로 test:integration(ledger→experts→local-db)을 재실행해야 한다.",
+    "앱/웹은 이 API(GET /v1/experts, GET /v1/experts/:id, POST/PATCH /v1/expert/*)에 연결하고 로컬 DB에 업무 데이터를 저장하지 않는다.",
+    "개발계 배포 후 Cloudflare 경유 실제 거래(고수 등록 → 검색 노출) 검증이 필요하다.",
+    "이미지/R2 업로드와 카테고리 확정은 후속 카드로 분리해야 한다."
+  ]
+}

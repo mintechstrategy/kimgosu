@@ -1,0 +1,137 @@
+{
+  "ws": "WS-11",
+  "status": "PARTIAL",
+  "summary": "kakao/naver 정식 OAuth 로그인 경로(start·callback·1회용 state·회원 식별·세션)를 실 PostgreSQL로 구현·검증했고 apple은 oauth_flows/social_links provider CHECK 미확장으로 503 PROVIDER_SCHEMA_PENDING까지만 동작한다(마이그레이션 번호 미배정).",
+  "reason": "PLAN 수용 기준 1의 '3개 provider 각각 start가 인가 URL과 state를 반환하고 DB에 flow가 남는다' 중 apple만 미충족. 001/002 마이그레이션의 oauth_flows_provider_check, social_links_provider_check가 ('google','kakao','naver')만 허용하는데, WS-11에는 마이그레이션 번호가 배정되지 않아 새 번호를 만들지 않고 CHECK를 확장하지 않았다. apple은 500이 아니라 503 PROVIDER_SCHEMA_PENDING으로 정직하게 거부되며 flow 행을 남기지 않는다.",
+  "unblock": "오케스트레이터가 WS-11용 마이그레이션 번호를 배정(현재 미사용 번호 예: 012)하면 003과 같은 부분 ALTER 스타일로 두 CHECK에 'apple'을 추가하고, services/backend/tests/oauth.integration.test.ts의 apple 기대값을 200 + flow 저장 검증으로 교체하면 수용 기준 1이 충족된다. 추가 결정 필요: Apple form_post 응답(첫 로그인 name은 id_token에 없고 POST 폼 user 필드로만 전달)을 받으려면 콜백 POST가 필요한데 PLAN은 GET만 지정했다.",
+  "changedFiles": [
+    "services/backend/src/oauth.ts",
+    "services/backend/src/app.ts",
+    "services/backend/src/providers.ts",
+    "contracts/auth-membership.v0.3.json",
+    "services/backend/tests/oauth.integration.test.ts",
+    "tests/contract/oauth.test.ts",
+    "tests/contract/contract.test.ts",
+    "tests/policy/metadata.test.ts",
+    "services/backend/package.json",
+    ".github/workflows/development.yml"
+  ],
+  "verification": [
+    {
+      "check": "백엔드 타입체크",
+      "command": "cd services/backend && npx tsc --noEmit",
+      "result": "PASS",
+      "evidence": "exit 0, 출력 없음"
+    },
+    {
+      "check": "백엔드 유닛 테스트(기존 provider/adapters 회귀 포함)",
+      "command": "cd services/backend && npm test",
+      "result": "PASS",
+      "evidence": "tests 23 / pass 23 / fail 0 (kakao·naver\\/google 어댑터, integer64 subject 보존, provider fail-closed 회귀 포함)"
+    },
+    {
+      "check": "v0.2 계약 회귀 + 실제 라우트 인벤토리 일치",
+      "command": "node --test tests/contract/contract.test.ts",
+      "result": "PASS",
+      "evidence": "tests 15 / pass 15 / fail 0. oauth.ts를 소스 열거에 포함하고 v0.2 21개 + v0.3 신규 2개(oauthStart, oauthCallback) + OPTIONS /* 가 실제 라우트와 일치"
+    },
+    {
+      "check": "v0.3 oauth 계약 회귀(선언 스키마 ↔ 실제 응답)",
+      "command": "node --test tests/contract/oauth.test.ts",
+      "result": "PASS",
+      "evidence": "tests 5 / pass 5 / fail 0. start 200, callback 200(AUTHENTICATED/REGISTERED), PROVIDER_NOT_CONFIGURED 503, OAUTH_STATE_INVALID 401, authConfig.oauth 블록(v0.3 서브스키마) + auth/config 전체가 v0.2 baseline 스키마 유지"
+    },
+    {
+      "check": "v0.3 정책 메타데이터 회귀(WS-11이 operation 수를 늘린 영향)",
+      "command": "node --test tests/policy/metadata.test.ts",
+      "result": "PASS",
+      "evidence": "tests 35 / pass 35 / fail 0. 최초 실행에서 기존 단언(operations.length===5)이 7로 깨져 FAIL했고, '기존 opt-in 5개 불변 + oauth 2개 순수 추가'를 검증하도록 단언을 좁혀 수정 후 PASS"
+    },
+    {
+      "check": "실 PostgreSQL 통합 스위트 전체(교차 회귀 포함)",
+      "command": "cd services/backend && KG_TEST_DATABASE_URL=postgres://postgres@127.0.0.1:55432/kgtest npm run test:integration",
+      "result": "PASS",
+      "evidence": "ledger.integration 6/6, local-db.integration 33/33, oauth.integration 14/14 pass. test:integration 스크립트에 oauth 스위트를 추가함"
+    },
+    {
+      "check": "수용1: kakao·naver start가 인가 URL+state를 반환하고 oauth_flows에 10분 만료 flow 저장",
+      "command": "KG_TEST_DATABASE_URL=... node --test tests/oauth.integration.test.ts",
+      "result": "PASS",
+      "evidence": "[수용1] kakao/naver 각각 200, state 43자, expiresInSeconds=600, authorizationUrl의 state 일치, client_secret 미포함, DB row의 expires_at이 now()+9~11분 구간, consumed_at NULL"
+    },
+    {
+      "check": "수용1(apple): start가 인가 URL+state를 반환하고 DB에 flow가 남는다",
+      "command": "KG_TEST_DATABASE_URL=... node --test tests/oauth.integration.test.ts",
+      "result": "FAIL",
+      "evidence": "[수용1] apple start는 503 PROVIDER_SCHEMA_PENDING이고 oauth_flows에 apple 행 0건. DB 제약 확인: oauth_flows_provider_check 및 social_links_provider_check = CHECK(provider = ANY (ARRAY['google','kakao','naver']))"
+    },
+    {
+      "check": "수용2: state 재사용·만료·provider 불일치 콜백 거부",
+      "command": "KG_TEST_DATABASE_URL=... node --test tests/oauth.integration.test.ts",
+      "result": "PASS",
+      "evidence": "재사용 → 401 OAUTH_STATE_INVALID + consumed_at 기록, 만료 → 401 OAUTH_STATE_INVALID, kakao state로 naver 콜백 → 401이면서 해당 flow는 consumed_at NULL 유지(정당 provider 콜백은 이후 200)"
+    },
+    {
+      "check": "수용3: 자격증명 미설정 provider는 503, auth/config는 connected:false로 일치",
+      "command": "KG_TEST_DATABASE_URL=... node --test tests/oauth.integration.test.ts",
+      "result": "PASS",
+      "evidence": "providers 없는 app에서 kakao/naver/apple start 모두 503 PROVIDER_NOT_CONFIGURED, oauth_flows 증가 0, /v1/auth/config oauth.providers = [[kakao,false],[naver,false],[apple,false]], stateTtlSeconds=600"
+    },
+    {
+      "check": "수용4: 같은 (provider, providerUserId) 재로그인 시 새 회원 미생성",
+      "command": "KG_TEST_DATABASE_URL=... node --test tests/oauth.integration.test.ts",
+      "result": "PASS",
+      "evidence": "재로그인 outcome=AUTHENTICATED, member.id 동일, members count 불변, accessToken만 새로 발급 후 /v1/me 200으로 실데이터 조회. 같은 이메일·다른 provider는 별도 member/별도 customer_no"
+    },
+    {
+      "check": "수용5: v0.3 operation 인벤토리 ↔ 실제 라우트 일치(contract 테스트)",
+      "command": "node --test tests/contract/contract.test.ts && node --test tests/contract/oauth.test.ts",
+      "result": "PASS",
+      "evidence": "contract.test.ts가 oauth.ts의 실제 라우트 2개를 v0.3-only 인벤토리와 정확히 비교, oauth.test.ts가 두 operation의 params/query/response 스키마 컴파일 및 경로 존재를 확인"
+    },
+    {
+      "check": "PLAN이 지정한 `npm run test:contract`",
+      "command": "npm run test:contract",
+      "result": "NOT_RUN",
+      "evidence": "저장소에 해당 스크립트가 없다(루트 package.json 자체가 없고 services/backend에도 test:contract 없음). 대체 실행: node --test tests/contract/contract.test.ts tests/contract/oauth.test.ts (모두 PASS). 스크립트를 새로 만들면 공통 파일 변경이 커져 만들지 않았다."
+    },
+    {
+      "check": "apps/web 단위·타입체크",
+      "command": "cd apps/web && npm run typecheck && npm run test:unit",
+      "result": "NOT_RUN",
+      "evidence": "apps/web/node_modules가 없어(설치 미실행) 실행하지 않았다. WS-11은 web 소스를 수정하지 않았고, web 코드는 v0.3 operations를 id로 찾아 쓰므로 operation 추가에 영향받지 않는다. CI(development.yml)에서 실행된다."
+    },
+    {
+      "check": "Railway/Cloudflare 실제 배포 경유 거래 검증",
+      "command": "(실행 안 함)",
+      "result": "NOT_RUN",
+      "evidence": "이번 WS 규칙상 push/배포/원격 쓰기 금지. 로컬 PostgreSQL(127.0.0.1:55432/kgtest)까지만 검증했다."
+    }
+  ],
+  "contractChanges": [
+    "contracts/auth-membership.v0.3.json — operations에 oauthStart(POST /v1/auth/oauth/:provider/start), oauthCallback(GET /v1/auth/oauth/:provider/callback) 2개 순수 추가(기존 5개 불변). 응답/오류 코드/의미론 선언 포함.",
+    "contracts/auth-membership.v0.3.json — authConfig 200 응답에 oauth 블록(providers[].connected, stateTtlSeconds=600, startPath, callbackPath) 추가. additionalProperties:false 이므로 이 블록의 필드 변경은 계약 변경이다.",
+    "v0.2 파일은 수정하지 않았다(sha256 baseContract 값 유지, contract.test.ts가 검증)."
+  ],
+  "migrations": [],
+  "open": [
+    "apple provider CHECK 확장에 필요한 마이그레이션 번호 배정(WS-11에 번호 미지정). 배정 전까지 apple start는 503 PROVIDER_SCHEMA_PENDING.",
+    "Apple form_post: 첫 로그인 name은 id_token이 아니라 POST 폼(user 필드)으로만 오고, 현재 콜백은 GET만 받는다(PLAN 지정). Apple 실사용을 위해 POST 콜백 + user 파싱을 계약에 추가할지 사용자 결정 필요.",
+    "실제 카카오/네이버/애플 앱 등록·심사·자격증명 발급은 PLAN이 범위 밖으로 명시. 운영/dev 배포에는 KG_OAUTH_{KAKAO,NAVER,APPLE}_{ENABLED,CLIENT_ID,CLIENT_SECRET,REDIRECT_URI}와 32자 이상 KG_IDENTITY_HMAC_KEY 주입이 필요하며 redirect URI 호스트는 dev-kimgosu.mintech.ai(https)만 허용된다.",
+    "v0.3 authConfig 200의 required에 policySnapshot이 들어 있어 metadata=policy-v0.3 옵트인 없이는 응답 전체가 v0.3 스키마를 만족하지 않는다(WS-11 이전부터의 결함). WS-11은 oauth 블록만 v0.3 서브스키마로 검증하고 나머지는 v0.2 baseline으로 검증했다. 계약 자체를 고칠지는 별도 결정."
+  ],
+  "risks": [
+    "auth/config의 connected:true는 자격증명 유무만 반영하고 스키마 준비 여부는 반영하지 않는다. apple에 자격증명을 넣으면 connected:true인데 start는 503 PROVIDER_SCHEMA_PENDING이 되어 클라이언트가 오류를 만난다.",
+    "Apple 신규 가입은 스키마가 열려도 name 부재로 409 PROFILE_INCOMPLETE가 될 수 있다(추측으로 이름을 채우지 않도록 설계). POST 콜백·user 파싱 없이는 Apple 가입 완결 불가.",
+    "state는 콜백에서 code 교환 전에 소비되므로 provider 교환 실패 시 사용자는 start부터 다시 해야 한다(1회용 요구사항에 따른 의도된 동작이나 UX 재시도 비용이 있다).",
+    "로컬 테스트 DB(kgtest)에 합성 회원 6행이 남아 있다. 스위트가 시작 시 truncate하므로 재실행은 멱등이지만 외부 데이터는 건드리지 않았다.",
+    "POST /v1/auth/* 는 기존 IP 기준 60회/분 스로틀이 start에 적용되지만 콜백 GET에는 스로틀이 없다(state 검증이 1차 방어).",
+    "apps/web·AOS·iOS 클라이언트는 이 신규 경로를 아직 호출하지 않는다(WS-17/18 범위). 즉 로그인 UI 관점에서는 미연결 상태다."
+  ],
+  "next": [
+    "오케스트레이터: WS-11용 마이그레이션 번호 배정 → 003 스타일 부분 ALTER로 oauth_flows/social_links provider CHECK에 'apple' 추가 → oauth.integration.test.ts의 apple 기대값을 200 + flow 저장으로 교체 후 재실행.",
+    "Apple 콜백을 GET만 둘지, POST(form_post) 콜백과 user 필드 파싱을 계약에 추가할지 결정.",
+    "WS-17/18: 앱 로그인 화면을 POST /v1/auth/oauth/:provider/start → 브라우저/ASWebAuthenticationSession → 콜백 결과 세션으로 연결하고 토큰은 Keychain/Keystore에 저장.",
+    "병합 전 재실행 명령: (1) cd services/backend && npx tsc --noEmit (2) npm test (3) node --test tests/contract/contract.test.ts (4) node --test tests/contract/oauth.test.ts (5) node --test tests/policy/metadata.test.ts (6) KG_TEST_DATABASE_URL=<loopback> npm run test:integration."
+  ]
+}

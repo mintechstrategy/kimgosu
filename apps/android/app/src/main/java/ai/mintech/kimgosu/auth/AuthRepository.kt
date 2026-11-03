@@ -78,8 +78,14 @@ class MembershipHttp(private val context: Context? = null) : AuthTransport {
             connection.setRequestProperty("Accept", "application/json")
             connection.setRequestProperty("Cache-Control", "no-store")
             token?.let { connection.setRequestProperty("Authorization", "Bearer $it") }
-            body?.let {
-                connection.doOutput = true; connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+            // Every write is JSON. Declared even without a body, and a bodiless write sends `{}`:
+            // Android's HTTP stack otherwise defaults POST to application/x-www-form-urlencoded
+            // (415), and an empty body under a JSON content type is rejected as 400
+            // (both observed on POST /v1/auth/logout).
+            val payload = body ?: if (method == "GET") null else JSONObject()
+            if (method != "GET") connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+            payload?.let {
+                connection.doOutput = true
                 connection.outputStream.use { out -> out.write(it.toString().toByteArray(Charsets.UTF_8)) }
             }
             val status = connection.responseCode

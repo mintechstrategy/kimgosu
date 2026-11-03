@@ -1,0 +1,89 @@
+{
+  "ws": "WS-15",
+  "status": "DONE",
+  "summary": "원장 참여자 전용 채팅 저장·조회 API(마이그레이션 010_chat_messages.sql, POST/GET /v1/ledgers/:id/messages, before 커서·limit 상한 100·본문 2000자)를 구현했고, 클린 DB에 마이그레이션을 재적용한 뒤 실 PostgreSQL 통합 46건(chat 7·ledger 6·local-db 33)·유닛 23건·contract 15건·tsc를 이 세션에서 직접 재실행해 전부 통과했으며, 삭제 정책은 지시대로 OPEN으로 남겼다.",
+  "changedFiles": [
+    "services/backend/migrations/010_chat_messages.sql",
+    "services/backend/src/chat.ts",
+    "services/backend/src/app.ts",
+    "services/backend/tests/chat.integration.test.ts",
+    "services/backend/package.json",
+    "records/parallel-10/WS-15/RESULT.json"
+  ],
+  "verification": [
+    {
+      "check": "TypeScript 타입 검사",
+      "command": "cd services/backend && npx tsc --noEmit",
+      "result": "PASS",
+      "evidence": "출력 없음, exit=0 (node v26.7.0, 설치된 node_modules 사용, 프로젝트 engines '>=24 <25'와의 차이는 경고에 그침)"
+    },
+    {
+      "check": "마이그레이션 클린 DB 재적용 (001~007 + 010)",
+      "command": "createdb kgtest_ws15_verify && psql -v ON_ERROR_STOP=1 -f migrations/{001,002,003,004,005,006,007,010}",
+      "result": "PASS",
+      "evidence": "빈 DB에서 8개 파일 모두 오류 없이 적용. \\d 확인: chat_messages 컬럼 id/ledger_id/sender_id/body/created_at/read_at/deleted_at, PK·FK(ledgers ON DELETE CASCADE, members)·CHECK(length(trim(body)) 1..2000)·인덱스 chat_message_page(ledger_id, created_at DESC, id DESC) 생성. 검증 후 임시 DB kgtest_ws15_verify 삭제"
+    },
+    {
+      "check": "신규 채팅 통합 테스트 (실 PostgreSQL, 클린 DB)",
+      "command": "cd services/backend && KG_TEST_DATABASE_URL=postgres://postgres@127.0.0.1:55432/kgtest_ws15_verify node --test tests/chat.integration.test.ts",
+      "result": "PASS",
+      "evidence": "tests 7 / pass 7 / fail 0 — 비참여자 조회·전송 404 LEDGER_NOT_FOUND(저장 0건), 익명 401, 미존재 원장 404, 2001자·빈문자열·공백만 400 / 2000자 201, 전송→DB 재조회 영속성 및 고객 양방향 전송, before 커서 12건 5개 페이지 중복·누락 0(동일 created_at 3건 연속성 포함), limit 101·0 → 400, 타 원장/미존재 커서 → 400 INVALID_CURSOR, DELETE·PATCH 404 ROUTE_NOT_FOUND 및 deleted_at 갱신 0건"
+    },
+    {
+      "check": "npm run test:integration 전체 (ledger+local-db+chat, 실 PostgreSQL)",
+      "command": "cd services/backend && KG_TEST_DATABASE_URL=postgres://postgres@127.0.0.1:55432/kgtest_ws15_verify npm run test:integration",
+      "result": "PASS",
+      "evidence": "exit=0 — ledger 6/6, local-db 33/33, chat 7/7 (합 46건, fail 0)"
+    },
+    {
+      "check": "기존 유닛 테스트 회귀",
+      "command": "cd services/backend && npm test",
+      "result": "PASS",
+      "evidence": "tests 23 / pass 23 / fail 0"
+    },
+    {
+      "check": "계약 테스트 회귀",
+      "command": "node --test tests/contract/contract.test.ts",
+      "result": "PASS",
+      "evidence": "tests 15 / pass 15 / fail 0. 단 이 테스트의 라우트 인벤토리는 app.ts·auth.ts만 스캔하므로 chat.ts 라우트는 검사 대상이 아니다(risks 참조)"
+    },
+    {
+      "check": "공용 로컬 테스트 DB(kgtest_ws15) 재실행",
+      "command": "cd services/backend && KG_TEST_DATABASE_URL=postgres://postgres@127.0.0.1:55432/kgtest_ws15 node --test tests/chat.integration.test.ts",
+      "result": "PASS",
+      "evidence": "tests 7 / pass 7 / fail 0. 실행 후 chat_messages 잔여 행 0건 확인"
+    },
+    {
+      "check": "GitHub–Railway–Cloudflare 실제 거래 검증",
+      "command": "(없음)",
+      "result": "NOT_RUN",
+      "evidence": "이 작업 단위는 커밋·push·배포가 금지되어 새 API가 어떤 배포에도 반영되지 않았다. 로컬 PostgreSQL에서만 적용·검증했다. 개발 DB 적용과 Cloudflare 경유 실제 거래 검증은 오케스트레이터/사용자 승인 후 별도 수행 필요"
+    }
+  ],
+  "contractChanges": [],
+  "migrations": [
+    "services/backend/migrations/010_chat_messages.sql"
+  ],
+  "open": [
+    "메시지 삭제 정책 미확정(F5 상충): deleted_at 컬럼만 추가했고 삭제·필터 API를 만들지 않았다. 확정 시 '누가, 언제, 어떤 범위로 삭제하고 상대방 화면·보존기간에 어떻게 반영하는지'를 사용자 결정으로 받아야 한다",
+    "읽음 표시: read_at 컬럼은 PLAN 스키마대로 두었지만 갱신 경로/API가 없다(읽음 표시 정책 미확정)",
+    "채팅 API의 contracts/ 등재 여부 미정: 현재 계약은 auth-membership 계열뿐이고 원장·채팅 계약 파일이 없다. 라우트 인벤토리 스캔 범위(app.ts·auth.ts)도 확장이 필요해 이 WS에서는 contracts/를 수정하지 않았다",
+    "010 마이그레이션의 Railway 개발 DB 적용은 사용자/오케스트레이터 승인 항목(이 작업에서는 로컬 테스트 DB에만 적용)"
+  ],
+  "risks": [
+    "contract 라우트 인벤토리 테스트(tests/contract/contract.test.ts)는 app.ts·auth.ts만 정규식으로 스캔한다. ledger.ts·chat.ts처럼 분리된 라우터는 자동 검증되지 않으므로, 계약 인벤토리 일치를 이 WS 결과로 주장할 수 없다",
+    "실시간 전달(WebSocket/SSE)이 없어 상대방 새 메시지는 재조회로만 확인된다. PLAN에서 이번 범위 제외",
+    "로컬 테스트 DB를 다른 WS가 TRUNCATE 하면 간섭하므로 전용 DB(kgtest_ws15, 임시 kgtest_ws15_verify)에서 검증했다. 오케스트레이터 재실행 시에도 KG_TEST_DATABASE_URL=postgres://postgres@127.0.0.1:55432/kgtest_ws15 를 지정해야 같은 결과가 나온다",
+    "본문 길이는 ajv maxLength(코드포인트)와 DB CHECK length()(문자) 조합이며 서로게이트 쌍(이모지 등)에서는 두 기준이 1글자 차이날 수 있다. 기존 ledger_notes와 동일한 관례를 따랐다",
+    "원장(ledgers)에 상태 컬럼이 없어 '종료된 거래의 채팅 차단' 같은 정책 훅이 없다. 필요해지면 별도 정책 결정이 선행되어야 한다",
+    "테스트는 시작 시 관련 테이블을 TRUNCATE하고 after 훅에서 chat_messages만 삭제한다. 테스트 DB 외 데이터에는 영향이 없으나 같은 DB를 다른 용도로 쓰면 초기화된다",
+    "services/backend/node_modules는 .gitignore 대상이며 커밋 대상이 아니다"
+  ],
+  "next": [
+    "메시지 실시간 전달(WebSocket 또는 SSE) 설계·구현은 다음 웨이브 후보",
+    "삭제 정책 확정 후 삭제 API와 조회 필터, 상대방 화면 반영 규칙 구현",
+    "read_at 갱신(읽음 표시) 정책 확정 및 API 추가",
+    "오케스트레이터: KG_TEST_DATABASE_URL=postgres://postgres@127.0.0.1:55432/kgtest_ws15 로 통합 테스트 재실행 후 병합 판단, 010 마이그레이션의 개발 DB 적용과 실제 거래 검증은 별도 승인",
+    "앱/웹 채팅 화면은 이 API로 연결(프론트 로컬 DB 저장 금지)"
+  ]
+}
