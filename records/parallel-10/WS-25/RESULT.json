@@ -1,0 +1,105 @@
+{
+  "ws": "WS-25",
+  "status": "DONE",
+  "summary": "채팅 메시지 삭제 정책(본인 메시지만 삭제 가능, 상대방에게는 deleted:true·body:null 자리 유지)을 DELETE /v1/ledgers/:id/messages/:messageId와 조회 가시성 필터로 구현하고, 실 PostgreSQL 통합 테스트 12건으로 수용 기준 5항목을 모두 검증했다(타인 메시지 403, 재삭제는 409 MESSAGE_ALREADY_DELETED로 단일 선택·문서화, 페이지네이션 total 조회자별 일관).",
+  "changedFiles": [
+    "services/backend/src/chat.ts",
+    "services/backend/tests/chat.integration.test.ts"
+  ],
+  "verification": [
+    {
+      "check": "백엔드 타입체크",
+      "command": "cd services/backend && npx tsc --noEmit",
+      "result": "PASS",
+      "evidence": "exit 0, 출력 없음(변경 후 2회 실행 모두 통과)"
+    },
+    {
+      "check": "백엔드 유닛 테스트(기존 회귀)",
+      "command": "cd services/backend && npm test",
+      "result": "PASS",
+      "evidence": "tests 23 / pass 23 / fail 0"
+    },
+    {
+      "check": "채팅 통합 스위트(실 PostgreSQL, 신규 삭제 테스트 포함)",
+      "command": "cd services/backend && KG_TEST_DATABASE_URL=postgres://postgres@127.0.0.1:55432/kgtest_ws25b node --test tests/chat.integration.test.ts",
+      "result": "PASS",
+      "evidence": "tests 12 / pass 12 / fail 0. 기존 7건(비참여자 404, 본문 검증, 영속성, 커서 페이지네이션, limit 상한, INVALID_CURSOR) 회귀 포함 + 신규 5건"
+    },
+    {
+      "check": "수용1: 본인 메시지 삭제 후 본인 조회에서 사라진다",
+      "command": "KG_TEST_DATABASE_URL=... node --test tests/chat.integration.test.ts",
+      "result": "PASS",
+      "evidence": "'본인 메시지 삭제 → 본인 조회에서 사라지고 deleted_at만 설정된다' 통과. DELETE 200, 응답 deleted=true/body=null, 이후 GET messages=[]·total=0, DB row.deleted_at NOT NULL"
+    },
+    {
+      "check": "수용2: 상대방 조회에서는 deleted:true로 남는다",
+      "command": "KG_TEST_DATABASE_URL=... node --test tests/chat.integration.test.ts",
+      "result": "PASS",
+      "evidence": "'상대방 조회에서는 삭제된 메시지가 deleted:true·body:null 자리로 남는다' 통과. 상대방 GET에서 2건(생존 1 + tombstone 1), tombstone은 id/senderId/createdAt/deletedAt 유지, body=null, total=2"
+    },
+    {
+      "check": "수용3: 타인 메시지 삭제 시도가 403",
+      "command": "KG_TEST_DATABASE_URL=... node --test tests/chat.integration.test.ts",
+      "result": "PASS",
+      "evidence": "'타인 메시지는 403, 비참여자는 404...' 통과. 403 MESSAGE_NOT_OWNED, 대상 행 deleted_at NULL 유지(거부 시 무변경). 비참여자는 404 LEDGER_NOT_FOUND(원장 존재 은닉), 없는 메시지·다른 원장 메시지는 404 MESSAGE_NOT_FOUND, 비로그인 401 AUTH_REQUIRED, uuid 형식 오류 400 INVALID_REQUEST"
+    },
+    {
+      "check": "수용4: 이미 삭제된 메시지 재삭제가 일관된 단일 코드",
+      "command": "KG_TEST_DATABASE_URL=... node --test tests/chat.integration.test.ts",
+      "result": "PASS",
+      "evidence": "409 MESSAGE_ALREADY_DELETED로 고정(404 대신 선택, chat.ts 헤더 주석에 근거 기록). 재삭제는 audit 추가 없음(audit 1건 유지). 동시 삭제 2건 동시 요청도 200/409로 갈리고 audit 1건"
+    },
+    {
+      "check": "수용5: 페이지네이션 총 개수가 삭제 후에도 일관적",
+      "command": "KG_TEST_DATABASE_URL=... node --test tests/chat.integration.test.ts",
+      "result": "PASS",
+      "evidence": "6건 중 본인 1건 삭제 시 삭제자 total 6→5이고 limit=2 페이징으로 실제 수집된 id가 5건(중복 0, 삭제분 미포함)으로 total과 일치. 상대 total은 6 유지(자리 보존). 이후 상대가 자기 메시지 삭제 시 각 조회자 total 5/5, tombstone은 상대 화면에만 존재"
+    },
+    {
+      "check": "audit_log 기록(본문 미기록)",
+      "command": "KG_TEST_DATABASE_URL=... node --test tests/chat.integration.test.ts",
+      "result": "PASS",
+      "evidence": "삭제 1건당 audit 1건: actor_member_id=삭제자, action=MESSAGE_DELETED, target_type=chat_message, target_id=메시지 id, detail={ledgerId}. detail 및 전체 행 JSON에 본문 문자열이 없음을 단언"
+    },
+    {
+      "check": "실 PostgreSQL 전체 통합 스위트 회귀",
+      "command": "cd services/backend && KG_TEST_DATABASE_URL=postgres://postgres@127.0.0.1:55432/kgtest_ws25b npm run test:integration",
+      "result": "PASS",
+      "evidence": "3회 중 2회 전부 통과(ledger 6/6, experts 10/10, local-db 33/33, quotes 7/7, chat 12/12, reviews 12/12, oauth 14/14, register 9/9 = 103 tests, exit 0). 2회차에는 ledger 스위트가 파일 단위로 실패(9.6s, 4 테스트 중 3 통과)했고 단독 재실행 및 3회차 전체 실행에서는 6/6 통과 — 간헐적이며 WS-25 변경과 무관(아래 risks 참조)"
+    },
+    {
+      "check": "계약·정책 회귀",
+      "command": "node --test tests/contract/contract.test.ts tests/contract/oauth.test.ts && node --test tests/policy/metadata.test.ts",
+      "result": "PASS",
+      "evidence": "contract+oauth 20/20 pass, policy metadata 35/35 pass. 계약 인벤토리 테스트는 app.ts/auth.ts/oauth.ts만 소스 열거하므로 chat.ts 신규 라우트로 깨지지 않음(WS-27이 chat.v0.1.json에 등재 필요)"
+    },
+    {
+      "check": "로컬 테스트 DB 격리",
+      "command": "127.0.0.1:55432 클러스터에 kgtest_ws25 / kgtest_ws25b 별도 DB 생성 후 001~011 적용",
+      "result": "PASS",
+      "evidence": "127.0.0.1:55432 loopback 전용. 다른 WS의 kgtest, kgtest_ws15/16/19 DB는 건드리지 않음. 테스트는 각 스위트 before()에서 자체 TRUNCATE"
+    }
+  ],
+  "contractChanges": [],
+  "migrations": [],
+  "open": [
+    "삭제된 메시지 본문은 DB chat_messages.body에 그대로 남는다(소프트 삭제). 보존기간·파기·복구 정책은 PLAN 지시대로 만들지 않았고 OPEN이다. 즉 '삭제'는 조회 차단이지 데이터 파기가 아니다.",
+    "재삭제 응답 코드는 409 MESSAGE_ALREADY_DELETED로 확정(404 대신). 다른 클라이언트가 404를 기대하면 조정 필요.",
+    "GET 목록 응답에 total 필드를 추가했다(조회자별 가시성 기준). 수용 기준 '페이지네이션 총 개수 일관성'을 검증 가능하게 만들기 위한 추가이며, 기존 messages/nextCursor는 그대로다. 계약 정본에는 아직 없으므로 WS-27 chat.v0.1.json 등재 시 반영 필요.",
+    "메시지 read_at, 1:1 원장 외 그룹 채팅, 실시간 전달(WebSocket/SSE)은 이번 범위 밖.",
+    "프론트(앱·웹)는 아직 채팅 목록을 소비하지 않는다. 상대 화면의 '삭제된 메시지' 문구 표시는 API의 deleted:true/body:null을 받아 UI에서 처리할 별도 프론트 카드가 필요하다."
+  ],
+  "risks": [
+    "기존 experts.ts / ledger.ts 등 핸들러가 트랜잭션 내부에서 reply.send를 호출해, 클라이언트가 COMMIT 이전에 200/201을 받을 수 있다. 실측 프로브에서 POST 25건 중 2건이 '201 응답 직후 별도 연결 SELECT 불가'로 재현됐고, experts 스위트가 간헐 실패하는 원인으로 보인다. WS-25 파일(chat.ts)은 응답을 COMMIT 이후로 옮겼으나 다른 모듈은 손대지 않았다(범위 밖).",
+    "위와 같은 이유로 전체 통합 스위트가 간헐적으로 흔들린다(3회 중 1회 ledger 파일 단위 실패 후 재실행 통과). WS-25 자체 스위트는 12/12로 안정적이다.",
+    "삭제 이력은 audit_log에 남지만, 관리자 조회 UI/API는 이번 범위에 없다.",
+    "삭제된 본문이 DB에 남아 있으므로 개인정보 파기 요구가 생기면 별도 정책·마이그레이션이 필요하다."
+  ],
+  "next": [
+    "오케스트레이터: 병합 전 KG_TEST_DATABASE_URL을 지정해 npm run test:integration 재실행(특히 chat 12건).",
+    "WS-27에서 contracts/chat.v0.1.json 작성 시 DELETE /v1/ledgers/:id/messages/:messageId, GET 응답의 deleted 불리언과 total 필드, 오류 코드 MESSAGE_NOT_FOUND/MESSAGE_NOT_OWNED/MESSAGE_ALREADY_DELETED를 실제 핸들러 기준으로 등재.",
+    "프론트 카드: 채팅 목록에서 deleted=true 항목을 '삭제된 메시지'로 표시하고 본인 메시지에만 삭제 액션 노출(데이터는 백엔드 API만 사용, 로컬 DB 저장 금지).",
+    "별도 카드 후보: experts/ledger/quotes 등 기존 핸들러의 '트랜잭션 내부 응답 전송'을 COMMIT 이후로 통일(간헐 통합 테스트 실패의 구조적 원인).",
+    "사용자 결정 필요: 삭제된 본문의 보존기간·파기 시점(현재 OPEN)."
+  ]
+}

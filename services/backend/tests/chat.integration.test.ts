@@ -238,13 +238,245 @@ test('알 수 없거나 다른 원장의 커서는 400 INVALID_CURSOR', async ()
   assert.equal(unknown.json().error.code, 'INVALID_CURSOR');
 });
 
-test('삭제 API는 OPEN — 삭제 엔드포인트가 존재하지 않는다', async () => {
-  const id = (await pool.query(`SELECT id FROM kg_membership.chat_messages WHERE ledger_id=$1 LIMIT 1`, [LEDGER])).rows[0].id;
-  for (const method of ['DELETE', 'PATCH'] as const) {
-    const res = await app.inject({ method, url: `/v1/ledgers/${LEDGER}/messages/${id}`, headers: bearer(EXPERT.token) });
-    assert.equal(res.statusCode, 404, `${method} must not be implemented`);
-    assert.equal(res.json().error.code, 'ROUTE_NOT_FOUND');
+test('본인 메시지 삭제 → 본인 조회에서 사라지고 deleted_at만 설정된다 (audit_log에 본문 없음)', async () => {
+  await pool.query(`DELETE FROM kg_membership.chat_messages WHERE ledger_id=$1`, [LEDGER]);
+  await pool.query(`DELETE FROM kg_membership.audit_log WHERE target_type='chat_message'`);
+
+  const sent = await app.inject({
+    method: 'POST', url: `/v1/ledgers/${LEDGER}/messages`, headers: bearer(EXPERT.token),
+    payload: { body: '삭제할 메시지' },
+  });
+  assert.equal(sent.statusCode, 201);
+  assert.equal(sent.json().deleted, false);
+  const id = sent.json().id;
+
+  const res = await app.inject({ method: 'DELETE', url: `/v1/ledgers/${LEDGER}/messages/${id}`, headers: bearer(EXPERT.token) });
+  assert.equal(res.statusCode, 200);
+  const body = res.json();
+  assert.equal(body.id, id);
+  assert.equal(body.senderId, EXPERT.id);
+  assert.equal(body.deleted, true);
+  assert.equal(body.body, null, '삭제 응답은 본문을 반환하지 않는다');
+  assert.ok(body.deletedAt);
+
+  const mine = await app.inject({ method: 'GET', url: `/v1/ledgers/${LEDGER}/messages`, headers: bearer(EXPERT.token) });
+  assert.equal(mine.statusCode, 200);
+  assert.deepEqual(mine.json().messages, [], '본인 조회에서 사라진다');
+  assert.equal(mine.json().total, 0);
+
+  // Soft delete only: the row and its text are retained (retention/restore is OPEN).
+  const row = (await pool.query(
+    `SELECT deleted_at, body, sender_id FROM kg_membership.chat_messages WHERE id=$1`, [id],
+  )).rows[0];
+  assert.ok(row.deleted_at, 'deleted_at이 설정된다');
+  assert.equal(row.sender_id, EXPERT.id);
+  assert.equal(row.body, '삭제할 메시지', '물리 삭제는 하지 않는다(보존 정책 OPEN)');
+
+  const auditRows = (await pool.query(
+    `SELECT actor_member_id, action, target_type, target_id, detail
+       FROM kg_membership.audit_log WHERE action='MESSAGE_DELETED' ORDER BY id`,
+  )).rows;
+  assert.equal(auditRows.length, 1, '삭제 1건당 audit 1건');
+  assert.equal(auditRows[0].actor_member_id, EXPERT.id);
+  assert.equal(auditRows[0].target_type, 'chat_message');
+  assert.equal(auditRows[0].target_id, id);
+  assert.equal(auditRows[0].detail.ledgerId, LEDGER);
+  assert.equal(JSON.stringify(auditRows[0].detail).includes('삭제할 메시지'), false, 'audit에 본문이 남지 않는다');
+  assert.equal(JSON.stringify(auditRows[0]).includes('삭제할 메시지'), false);
+});
+
+test('상대방 조회에서는 삭제된 메시지가 deleted:true·body:null 자리로 남는다', async () => {
+  await pool.query(`DELETE FROM kg_membership.chat_messages WHERE ledger_id=$1`, [LEDGER]);
+
+  const kept = await app.inject({
+    method: 'POST', url: `/v1/ledgers/${LEDGER}/messages`, headers: bearer(EXPERT.token),
+    payload: { body: '남는 메시지' },
+  });
+  const gone = await app.inject({
+    method: 'POST', url: `/v1/ledgers/${LEDGER}/messages`, headers: bearer(EXPERT.token),
+    payload: { body: '지워질 메시지' },
+  });
+  const del = await app.inject({ method: 'DELETE', url: `/v1/ledgers/${LEDGER}/messages/${gone.json().id}`, headers: bearer(EXPERT.token) });
+  assert.equal(del.statusCode, 200);
+
+  const seen = await app.inject({ method: 'GET', url: `/v1/ledgers/${LEDGER}/messages`, headers: bearer(CUSTOMER.token) });
+  assert.equal(seen.statusCode, 200);
+  const messages = seen.json().messages as Array<Record<string, unknown>>;
+  assert.equal(messages.length, 2, '상대방에게는 자리가 유지된다');
+  assert.equal(seen.json().total, 2);
+
+  const tombstone = messages.find(m => m.id === gone.json().id)!;
+  assert.equal(tombstone.deleted, true);
+  assert.equal(tombstone.body, null, '상대방에게 본문이 노출되지 않는다');
+  assert.equal(tombstone.senderId, EXPERT.id);
+  assert.ok(tombstone.deletedAt);
+  assert.ok(tombstone.createdAt);
+
+  const live = messages.find(m => m.id === kept.json().id)!;
+  assert.equal(live.deleted, false);
+  assert.equal(live.body, '남는 메시지');
+});
+
+test('타인 메시지는 403, 비참여자는 404, 다른 원장·없는 메시지는 404 (삭제는 무변경)', async () => {
+  await pool.query(`DELETE FROM kg_membership.chat_messages WHERE ledger_id=$1`, [LEDGER]);
+
+  const mine = await app.inject({
+    method: 'POST', url: `/v1/ledgers/${LEDGER}/messages`, headers: bearer(CUSTOMER.token),
+    payload: { body: '고객 메시지' },
+  });
+  const messageId = mine.json().id;
+
+  const foreign = await app.inject({ method: 'DELETE', url: `/v1/ledgers/${LEDGER}/messages/${messageId}`, headers: bearer(EXPERT.token) });
+  assert.equal(foreign.statusCode, 403);
+  assert.equal(foreign.json().error.code, 'MESSAGE_NOT_OWNED');
+
+  const outsider = await app.inject({ method: 'DELETE', url: `/v1/ledgers/${LEDGER}/messages/${messageId}`, headers: bearer(OUTSIDER.token) });
+  assert.equal(outsider.statusCode, 404);
+  assert.equal(outsider.json().error.code, 'LEDGER_NOT_FOUND', '비참여자에게 원장 존재를 알리지 않는다');
+
+  const unknown = await app.inject({ method: 'DELETE', url: `/v1/ledgers/${LEDGER}/messages/${randomUUID()}`, headers: bearer(CUSTOMER.token) });
+  assert.equal(unknown.statusCode, 404);
+  assert.equal(unknown.json().error.code, 'MESSAGE_NOT_FOUND');
+
+  // A message id that belongs to another ledger must not be deletable through this one.
+  const other = await app.inject({
+    method: 'POST', url: `/v1/ledgers/${OTHER_LEDGER}/messages`, headers: bearer(EXPERT.token),
+    payload: { body: '다른 원장 소속' },
+  });
+  const crossLedger = await app.inject({
+    method: 'DELETE', url: `/v1/ledgers/${LEDGER}/messages/${other.json().id}`, headers: bearer(EXPERT.token),
+  });
+  assert.equal(crossLedger.statusCode, 404);
+  assert.equal(crossLedger.json().error.code, 'MESSAGE_NOT_FOUND');
+
+  const untouched = (await pool.query(
+    `SELECT deleted_at FROM kg_membership.chat_messages WHERE id = ANY($1::uuid[])`, [[messageId, other.json().id]],
+  )).rows;
+  assert.equal(untouched.length, 2);
+  for (const row of untouched) assert.equal(row.deleted_at, null, '거부된 삭제는 아무것도 바꾸지 않는다');
+
+  const anonymous = await app.inject({ method: 'DELETE', url: `/v1/ledgers/${LEDGER}/messages/${messageId}` });
+  assert.equal(anonymous.statusCode, 401);
+  assert.equal(anonymous.json().error.code, 'AUTH_REQUIRED');
+
+  const notUuid = await app.inject({ method: 'DELETE', url: `/v1/ledgers/${LEDGER}/messages/not-a-uuid`, headers: bearer(CUSTOMER.token) });
+  assert.equal(notUuid.statusCode, 400);
+  assert.equal(notUuid.json().error.code, 'INVALID_REQUEST');
+
+  const patch = await app.inject({ method: 'PATCH', url: `/v1/ledgers/${LEDGER}/messages/${messageId}`, headers: bearer(CUSTOMER.token) });
+  assert.equal(patch.statusCode, 404, '수정 엔드포인트는 만들지 않는다');
+  assert.equal(patch.json().error.code, 'ROUTE_NOT_FOUND');
+});
+
+test('이미 삭제된 메시지 재삭제는 409 MESSAGE_ALREADY_DELETED (일관된 단일 선택)', async () => {
+  await pool.query(`DELETE FROM kg_membership.chat_messages WHERE ledger_id=$1`, [LEDGER]);
+  const sent = await app.inject({
+    method: 'POST', url: `/v1/ledgers/${LEDGER}/messages`, headers: bearer(EXPERT.token),
+    payload: { body: '한 번만 삭제' },
+  });
+  const id = sent.json().id;
+
+  const first = await app.inject({ method: 'DELETE', url: `/v1/ledgers/${LEDGER}/messages/${id}`, headers: bearer(EXPERT.token) });
+  assert.equal(first.statusCode, 200);
+
+  const second = await app.inject({ method: 'DELETE', url: `/v1/ledgers/${LEDGER}/messages/${id}`, headers: bearer(EXPERT.token) });
+  assert.equal(second.statusCode, 409);
+  assert.equal(second.json().error.code, 'MESSAGE_ALREADY_DELETED');
+
+  const auditCount = (await pool.query(
+    `SELECT count(*)::int AS n FROM kg_membership.audit_log WHERE action='MESSAGE_DELETED' AND target_id=$1`, [id],
+  )).rows[0].n;
+  assert.equal(auditCount, 1, '실패한 재삭제는 audit을 추가하지 않는다');
+});
+
+test('페이지네이션 total이 삭제 후에도 조회자별로 일관적이다', async () => {
+  await pool.query(`DELETE FROM kg_membership.chat_messages WHERE ledger_id=$1`, [LEDGER]);
+
+  // 6 messages: EXPERT sends 0,2,4 and CUSTOMER sends 1,3,5.
+  const ids: string[] = [];
+  for (let i = 0; i < 6; i += 1) {
+    const who = i % 2 === 0 ? EXPERT : CUSTOMER;
+    const res = await app.inject({
+      method: 'POST', url: `/v1/ledgers/${LEDGER}/messages`, headers: bearer(who.token),
+      payload: { body: `총개수 ${i}` },
+    });
+    assert.equal(res.statusCode, 201);
+    ids.push(res.json().id);
   }
-  const deleted = await pool.query(`SELECT count(*)::int AS n FROM kg_membership.chat_messages WHERE deleted_at IS NOT NULL`);
-  assert.equal(deleted.rows[0].n, 0, 'nothing may soft-delete a message until the policy is decided');
+
+  const before = await app.inject({ method: 'GET', url: `/v1/ledgers/${LEDGER}/messages`, headers: bearer(EXPERT.token) });
+  assert.equal(before.json().total, 6);
+  const customerBefore = await app.inject({ method: 'GET', url: `/v1/ledgers/${LEDGER}/messages`, headers: bearer(CUSTOMER.token) });
+  assert.equal(customerBefore.json().total, 6);
+
+  // EXPERT deletes their own message #4.
+  const del = await app.inject({ method: 'DELETE', url: `/v1/ledgers/${LEDGER}/messages/${ids[4]}`, headers: bearer(EXPERT.token) });
+  assert.equal(del.statusCode, 200);
+
+  // Sender: total drops by one and matches what paging can actually return.
+  const mine = await app.inject({ method: 'GET', url: `/v1/ledgers/${LEDGER}/messages`, headers: bearer(EXPERT.token) });
+  assert.equal(mine.json().total, 5);
+
+  const collected: string[] = [];
+  let cursor: string | null = null;
+  for (let page = 0; page < 10; page += 1) {
+    const url: string = `/v1/ledgers/${LEDGER}/messages?limit=2${cursor ? `&before=${cursor}` : ''}`;
+    const res = await app.inject({ method: 'GET', url, headers: bearer(EXPERT.token) });
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.json().total, 5, 'total은 페이지마다 동일하다');
+    collected.push(...res.json().messages.map((m: { id: string }) => m.id));
+    cursor = res.json().nextCursor;
+    if (!cursor) break;
+  }
+  assert.equal(collected.length, 5, 'total과 실제 수집 건수가 일치한다');
+  assert.equal(new Set(collected).size, 5, '페이지 간 중복이 없다');
+  assert.equal(collected.includes(ids[4]!), false, '삭제한 본인 메시지는 페이지에 나오지 않는다');
+
+  // Counterpart: same physical rows, tombstone counted, total unchanged.
+  const theirs = await app.inject({ method: 'GET', url: `/v1/ledgers/${LEDGER}/messages?limit=100`, headers: bearer(CUSTOMER.token) });
+  assert.equal(theirs.json().total, 6);
+  assert.equal(theirs.json().messages.length, 6);
+  const tomb = theirs.json().messages.find((m: { id: string }) => m.id === ids[4]);
+  assert.equal(tomb.deleted, true);
+  assert.equal(tomb.body, null);
+
+  // The counterpart deletes their own message #5. For the expert that row stays
+  // as a tombstone, while the expert's own deleted #4 stays hidden: 6 - 1 = 5,
+  // and the count still equals the number of rows paging returns.
+  const delOther = await app.inject({ method: 'DELETE', url: `/v1/ledgers/${LEDGER}/messages/${ids[5]}`, headers: bearer(CUSTOMER.token) });
+  assert.equal(delOther.statusCode, 200);
+  const expertAgain = await app.inject({ method: 'GET', url: `/v1/ledgers/${LEDGER}/messages`, headers: bearer(EXPERT.token) });
+  assert.equal(expertAgain.json().total, 5, '상대 삭제는 자리(tombstone)로 남아 내 수를 줄이지 않고, 내 삭제만 빠진다');
+  assert.equal(expertAgain.json().messages.length, 5);
+  const expertTombstones = expertAgain.json().messages.filter((m: { deleted: boolean }) => m.deleted);
+  assert.equal(expertTombstones.length, 1);
+  assert.equal(expertTombstones[0].id, ids[5]);
+  assert.equal(expertTombstones[0].body, null);
+  const customerAgain = await app.inject({ method: 'GET', url: `/v1/ledgers/${LEDGER}/messages`, headers: bearer(CUSTOMER.token) });
+  assert.equal(customerAgain.json().total, 5, '본인 삭제만 본인 수에서 빠진다');
+  assert.equal(customerAgain.json().messages.length, 5);
+});
+
+test('동시 삭제 요청은 한 번만 성공하고 audit도 1건이다', async () => {
+  await pool.query(`DELETE FROM kg_membership.chat_messages WHERE ledger_id=$1`, [LEDGER]);
+  const sent = await app.inject({
+    method: 'POST', url: `/v1/ledgers/${LEDGER}/messages`, headers: bearer(EXPERT.token),
+    payload: { body: '동시 삭제 대상' },
+  });
+  const id = sent.json().id;
+
+  const results = await Promise.all([
+    app.inject({ method: 'DELETE', url: `/v1/ledgers/${LEDGER}/messages/${id}`, headers: bearer(EXPERT.token) }),
+    app.inject({ method: 'DELETE', url: `/v1/ledgers/${LEDGER}/messages/${id}`, headers: bearer(EXPERT.token) }),
+  ]);
+  assert.deepEqual(results.map(r => r.statusCode).sort(), [200, 409]);
+  const failed = results.find(r => r.statusCode === 409)!;
+  assert.equal(failed.json().error.code, 'MESSAGE_ALREADY_DELETED');
+
+  const auditCount = (await pool.query(
+    `SELECT count(*)::int AS n FROM kg_membership.audit_log WHERE action='MESSAGE_DELETED' AND target_id=$1`, [id],
+  )).rows[0].n;
+  assert.equal(auditCount, 1);
+  const row = (await pool.query(`SELECT deleted_at FROM kg_membership.chat_messages WHERE id=$1`, [id])).rows[0];
+  assert.ok(row.deleted_at);
 });

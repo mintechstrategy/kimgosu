@@ -17,20 +17,52 @@ import { ApiError } from './security.ts';
  *     The server resolves that id inside the same ledger and returns strictly
  *     older rows using a tuple comparison; this makes paging free of duplicates
  *     and gaps.
- *   * Deletion policy is undecided (F5 conflict) => the column exists and is
- *     returned as `deletedAt`, but nothing in this router writes or filters on
- *     it. Making `deleted_at` hide content would be an unapproved policy.
+ *   * Deletion policy (PLAN-WAVE3 WS-25, decided by the user): a member may
+ *     delete only their own message. A deleted message disappears from the
+ *     sender's own list, while the other participant keeps the row as a
+ *     tombstone: `{ deleted: true, body: null }`. The body text is never
+ *     returned to the other participant, and the audit entry records ids only,
+ *     never the body. Re-deleting an already deleted message is 409
+ *     `MESSAGE_ALREADY_DELETED` (deliberately chosen instead of 404 so a
+ *     repeated request is distinguishable from a wrong id).
+ *   * `total` counts the rows visible to the caller (own tombstones excluded),
+ *     so the number never disagrees with what paging can return.
+ *   * Retention / restoration of deleted bodies is OPEN and deliberately not
+ *     implemented: `deleted_at` is set, the text stays in the column.
  */
 
 const MAX_BODY_LENGTH = 2000;
 const MAX_LIMIT = 100;
 const DEFAULT_LIMIT = 50;
 
-const messageSelect = `SELECT id, ledger_id AS "ledgerId", sender_id AS "senderId", body,
-    created_at AS "createdAt", read_at AS "readAt", deleted_at AS "deletedAt"
-  FROM kg_membership.chat_messages`;
+// `deleted` is derived, not stored: the column is `deleted_at`. The body of a
+// deleted message is replaced by null here so the text cannot leak to the other
+// participant through any read path.
+const messageColumns = `id, ledger_id AS "ledgerId", sender_id AS "senderId",
+    CASE WHEN deleted_at IS NULL THEN body ELSE NULL END AS "body",
+    (deleted_at IS NOT NULL) AS "deleted",
+    created_at AS "createdAt", read_at AS "readAt", deleted_at AS "deletedAt"`;
+const messageSelect = `SELECT ${messageColumns} FROM kg_membership.chat_messages`;
+
+// Visibility for one viewer: live rows plus the *other* side's tombstones. The
+// viewer's own deleted messages are excluded from their list (WS-25 policy).
+const visibleTo = `(deleted_at IS NULL OR sender_id <> $2)`;
 
 const ledgerParams = { type: 'object', required: ['id'], additionalProperties: false, properties: { id: { type: 'string', format: 'uuid' } } };
+const messageParams = {
+  type: 'object', required: ['id', 'messageId'], additionalProperties: false,
+  properties: { id: { type: 'string', format: 'uuid' }, messageId: { type: 'string', format: 'uuid' } },
+};
+
+async function audit(sql: Sql, actor: unknown, action: string, targetId: string, detail: Record<string, unknown>) {
+  // Ids and classification only. The message body is never written to the audit
+  // log, in line with the WS-25 requirement.
+  await sql.query(
+    `INSERT INTO kg_membership.audit_log(actor_member_id,action,target_type,target_id,detail)
+     VALUES($1,$2,'chat_message',$3,$4)`,
+    [actor, action, targetId, JSON.stringify(detail)],
+  );
+}
 
 export function registerChatRoutes(app: FastifyInstance, db: Sql, authenticate: Authenticate) {
   const requireMember = async (request: FastifyRequest, reply: FastifyReply) => {
@@ -63,18 +95,21 @@ export function registerChatRoutes(app: FastifyInstance, db: Sql, authenticate: 
     // A body of only whitespace passes minLength but violates the table's
     // trim() CHECK, so it is refused here as a client error instead of a 500.
     if (!request.body.body.trim()) throw new ApiError(400, 'MESSAGE_BODY_INVALID');
-    return db.transaction(async sql => {
+    // The response is sent only after COMMIT: sending inside the transaction
+    // would let a client read back before the row is durable (the same race that
+    // makes other suites flaky).
+    const message = await db.transaction(async sql => {
       await requireParticipant(sql, request.params.id, auth.memberId);
-      const message = (await sql.query(
+      const inserted = (await sql.query(
         `INSERT INTO kg_membership.chat_messages(id,ledger_id,sender_id,body)
          VALUES($1,$2,$3,$4)
-         RETURNING id, ledger_id AS "ledgerId", sender_id AS "senderId", body,
-                   created_at AS "createdAt", read_at AS "readAt", deleted_at AS "deletedAt"`,
+         RETURNING ${messageColumns}`,
         [randomUUID(), request.params.id, auth.memberId, request.body.body],
       )).rows[0];
       await sql.query(`UPDATE kg_membership.ledgers SET updated_at=now() WHERE id=$1`, [request.params.id]);
-      return reply.code(201).send(message);
+      return inserted;
     });
+    return reply.code(201).send(message);
   });
 
   app.get<{ Params: { id: string }; Querystring: { before?: string; limit?: string } }>('/v1/ledgers/:id/messages', {
@@ -111,17 +146,63 @@ export function registerChatRoutes(app: FastifyInstance, db: Sql, authenticate: 
 
     const rows = (await db.query(
       `${messageSelect}
-        WHERE ledger_id=$1${cursor ? ' AND (created_at, id) < ($2::timestamptz, $3::uuid)' : ''}
+        WHERE ledger_id=$1 AND ${visibleTo}${cursor ? ' AND (created_at, id) < ($3::timestamptz, $4::uuid)' : ''}
         ORDER BY created_at DESC, id DESC
-        LIMIT $${cursor ? 4 : 2}`,
+        LIMIT $${cursor ? 5 : 3}`,
       cursor
-        ? [request.params.id, cursor.createdAt, cursor.id, limit + 1]
-        : [request.params.id, limit + 1],
+        ? [request.params.id, auth.memberId, cursor.createdAt, cursor.id, limit + 1]
+        : [request.params.id, auth.memberId, limit + 1],
     )).rows;
+
+    // Counted with the same visibility predicate as the page query, so `total`
+    // can never disagree with what paging actually returns.
+    const total = Number((await db.query(
+      `SELECT count(*)::int AS "total" FROM kg_membership.chat_messages
+        WHERE ledger_id=$1 AND ${visibleTo}`,
+      [request.params.id, auth.memberId],
+    )).rows[0]?.total ?? 0);
 
     const hasMore = rows.length > limit;
     const messages = hasMore ? rows.slice(0, limit) : rows;
     const last = messages[messages.length - 1];
-    return { messages, nextCursor: hasMore && last ? String(last.id) : null };
+    return { messages, total, nextCursor: hasMore && last ? String(last.id) : null };
+  });
+
+  // WS-25: a member may delete only their own message. Non-participants get the
+  // same 404 LEDGER_NOT_FOUND as everywhere else in this router, so the ledger's
+  // existence is not disclosed. Someone else's message is 403 (the row is known
+  // to the caller already through the list).
+  app.delete<{ Params: { id: string; messageId: string } }>('/v1/ledgers/:id/messages/:messageId', {
+    schema: { params: messageParams },
+  }, async (request, reply) => {
+    const auth = await requireMember(request, reply); if (!auth) return;
+    const deleted = await db.transaction(async sql => {
+      await requireParticipant(sql, request.params.id, auth.memberId);
+      const message = (await sql.query(
+        `SELECT id, sender_id AS "senderId", deleted_at AS "deletedAt"
+           FROM kg_membership.chat_messages
+          WHERE id=$1 AND ledger_id=$2
+          FOR UPDATE`,
+        [request.params.messageId, request.params.id],
+      )).rows[0];
+      if (!message) throw new ApiError(404, 'MESSAGE_NOT_FOUND');
+      if (String(message.senderId) !== String(auth.memberId)) throw new ApiError(403, 'MESSAGE_NOT_OWNED');
+      // Re-delete is 409 (documented choice): the id resolves, so a retry is
+      // distinguished from a wrong id rather than reported as missing.
+      if (message.deletedAt !== null) throw new ApiError(409, 'MESSAGE_ALREADY_DELETED');
+
+      const row = (await sql.query(
+        `UPDATE kg_membership.chat_messages SET deleted_at=now()
+          WHERE id=$1 RETURNING ${messageColumns}`,
+        [request.params.messageId],
+      )).rows[0];
+      // Ids only: the body is intentionally absent from the audit trail.
+      await audit(sql, auth.memberId, 'MESSAGE_DELETED', request.params.messageId, {
+        ledgerId: request.params.id,
+      });
+      return row;
+    });
+    // Sent after COMMIT so an immediate re-read cannot miss the deletion.
+    return reply.code(200).send(deleted);
   });
 }
