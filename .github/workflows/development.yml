@@ -42,7 +42,7 @@ jobs:
       # Must run after the backend install: the web unit tests resolve ajv
       # through ../../services/backend/package.json.
       - name: Membership web typecheck, unit tests and build
-        run: npm run typecheck && npm run test:unit && npm run build
+        run: npm ci --ignore-scripts && npm run typecheck && npm run test:unit && npm run build
         working-directory: apps/web
       - name: Membership v0.2 contract regression
         run: node --test engineering/auth-integration-02/contract.test.ts
