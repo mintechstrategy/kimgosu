@@ -1,0 +1,100 @@
+{
+  "ws": "WS-19",
+  "status": "DONE",
+  "summary": "관리자 콘솔 API(회원 목록·상세·제재·해제, 서버 role_grants 판정)와 운영 웹 화면을 구현하고 로컬 PostgreSQL 통합 테스트 6종·웹 빌드·실브라우저 E2E로 검증했다.",
+  "changedFiles": [
+    "services/backend/src/admin.ts",
+    "services/backend/src/app.ts",
+    "services/backend/tests/admin.integration.test.ts",
+    "apps/web/admin.html",
+    "apps/web/vite.config.ts",
+    "apps/web/src/admin/main.ts",
+    "apps/web/src/admin/api.ts",
+    "apps/web/src/admin/AdminApp.vue",
+    "apps/web/tests/unit/admin-api.test.ts"
+  ],
+  "verification": [
+    {
+      "check": "백엔드 타입 검사",
+      "command": "cd services/backend && npx tsc --noEmit",
+      "result": "PASS",
+      "evidence": "출력 없음, 종료 코드 0"
+    },
+    {
+      "check": "백엔드 유닛 테스트 전체",
+      "command": "cd services/backend && npm test",
+      "result": "PASS",
+      "evidence": "tests 23 / pass 23 / fail 0"
+    },
+    {
+      "check": "계약 테스트(auth-membership v0.2 operation 인벤토리 포함)",
+      "command": "cd tests/contract && node --test contract.test.ts",
+      "result": "PASS",
+      "evidence": "tests 15 / pass 15 / fail 0 (라우트 추가로 기존 계약 응답 불변식 회귀 없음)"
+    },
+    {
+      "check": "관리자 API 실 PostgreSQL 통합 테스트(비관리자 403, 검색·페이지네이션, 제재→해제 이력·감사 로그, PII 마스킹)",
+      "command": "cd services/backend && KG_TEST_DATABASE_URL=postgres://postgres@127.0.0.1:55432/kgtest node --test tests/admin.integration.test.ts",
+      "result": "PASS",
+      "evidence": "tests 6 / pass 6 / fail 0 — ①비인증 401, CS·일반 403(응답에 members 미포함·restrictions 0행) ②클라이언트 위조 헤더(x-member-role/x-admin) 403 ③목록 5행·이메일 마스킹·전화 원문 없음·검색(이름/고객번호)·limit=2 3페이지 중복 없음 ④상세에 동의·원장·제재 이력 ⑤restrict 201 후 /v1/me status=RESTRICTED, 중복 409, 감사 로그 MEMBER_RESTRICTED ⑥release 200 후 ACTIVE 복귀, 이력 유지(revoked_at), 감사 로그 MEMBER_RELEASED·해제 사유 노출, 재해제 409"
+    },
+    {
+      "check": "기존 원장/합의 통합 테스트 회귀",
+      "command": "cd services/backend && KG_TEST_DATABASE_URL=postgres://postgres@127.0.0.1:55432/kgtest node --test tests/ledger.integration.test.ts",
+      "result": "PASS",
+      "evidence": "tests 6 / pass 6 / fail 0"
+    },
+    {
+      "check": "웹 유닛 테스트 전체(관리자 API 클라이언트 신규 7종 포함)",
+      "command": "cd apps/web && npm run test:unit",
+      "result": "PASS",
+      "evidence": "tests 221 / pass 221 / fail 0 — 허용 origin 제한, 토큰 미저장(localStorage 등 부재), Bearer/credentials omit/no-store/redirect error, 오류 코드 매핑·미지 코드 미반영, 응답 스키마 검증, restrict/release 요청 본문"
+    },
+    {
+      "check": "웹 빌드(타입 검사 + 번들, admin.html 산출)",
+      "command": "cd apps/web && npm run build",
+      "result": "PASS",
+      "evidence": "vue-tsc 통과, vite build 성공 — dist/admin.html 0.60 kB, dist/assets/admin-*.js 18.63 kB 생성"
+    },
+    {
+      "check": "실 브라우저 E2E(시스템 Chrome + 로컬 백엔드 + 로컬 PostgreSQL, 운영 콘솔 조작)",
+      "command": "VITE_API_BASE_URL=http://127.0.0.1:4401 npx vite --port 4198 로 개발서버 기동 후 node <scratch>/ws19-e2e2.mjs",
+      "result": "PASS",
+      "evidence": "연결 화면 렌더 → 운영자 토큰 연결(GET /v1/admin/members 200) → 검색 total=1 → 상세(동의/원장/제재 이력) → 제재(POST .../restrict 201, 화면 '이용 제한', 이력 '유효') → 해제(POST .../release 200, 화면 '이용 가능', 이력 '해제 사유: 소명 확인(E2E)') → DB 재조회 restrictions 1행(revoked_at 기록)·audit_log MEMBER_RESTRICTED/MEMBER_RELEASED 확인, page error 0. 스크린샷: /Users/mintech-mac/.hermes/profiles/kg-09/cache/scratch/ws19-admin-restricted.png, ws19-admin-released.png. 콘솔 404 1건은 favicon 요청."
+    },
+    {
+      "check": "테스트 데이터 정리 확인",
+      "command": "psql 없이 node pg로 kgtest 재조회",
+      "result": "PASS",
+      "evidence": "E2E·통합 테스트 종료 후 members(nickname in 운영검증,제재검증)=0, restrictions=0, audit_log(reason like %E2E%)=0"
+    },
+    {
+      "check": "원격 쓰기 git push/PR/커밋·Railway/Cloudflare 배포·개발환경 실제 거래 검증",
+      "command": "실행하지 않음(작업 지시로 금지)",
+      "result": "NOT_RUN",
+      "evidence": "지시에 따라 커밋·push·gh·railway·cf 쓰기를 수행하지 않았다. 따라서 dev-kimgosu/Cloudflare 경유 실제 거래 검증은 미실시이며 로컬 검증 결과를 배포 증거로 대체하지 않는다."
+    }
+  ],
+  "contractChanges": [],
+  "migrations": [],
+  "open": [
+    "관리자 라우트 4종(GET /v1/admin/members, GET /v1/admin/members/:id, POST /v1/admin/members/:id/restrict, POST /v1/admin/members/:id/release)이 contracts/auth-membership.v0.3.json operation 인벤토리에 없다. 계약 등재 여부와 스키마 확정은 사용자/오케스트레이터 결정 필요(이번 WS는 계약 파일을 수정하지 않았다).",
+    "운영 콘솔 로그인 화면이 없다. 현재는 운영자 세션 토큰을 직접 입력한다. 운영자 전용 로그인(소셜+ADMIN 검증) UI를 별도 WS로 만들지 결정 필요.",
+    "전화번호 마스킹: members 테이블에는 전화 원문이 없고 phone_digest만 저장(002). 따라서 목록의 phoneMasked는 구조적으로 항상 null이며 '뒷자리 마스킹'을 표시할 원문 자체가 없다. 전화번호 표시가 필요하면 마스킹 저장 컬럼 신설(마이그레이션 번호 배정)이 선행되어야 한다.",
+    "restrictions 테이블에 해제자(revoked_by)·해제 사유 컬럼이 없다(001). 해제 사유는 audit_log(MEMBER_RELEASED, detail.restrictionId)에서 조회해 화면에 표시하도록 구현했다. 제재 row 자체에 사유/해제자를 두려면 마이그레이션 번호 배정 필요.",
+    "운영(prod) 환경과 실제 관리자 계정 권한 부여 절차(ADMIN role_grant 발급 경로)는 이번 범위 밖이며 별도 승인 필요."
+  ],
+  "risks": [
+    "관리자 권한은 매 요청 role_grants(role_id='ADMIN', revoked_at IS NULL, 유효 기간) 재검증으로만 판정한다. CS 역할도 콘솔 전체가 403이며 CS 전용 축소 권한은 구현하지 않았다.",
+    "제재는 members.status를 변경하지 않고 restrictions 활성 행으로 유효 상태를 계산한다(목록/상세/`/v1/me` 일관). 다만 다른 WS가 members.status만 보고 권한을 판정하면 불일치가 생길 수 있다 — 공통 판정식 사용 권고.",
+    "검색은 이름·닉네임·이메일·고객번호 ILIKE(이스케이프 처리)와 상태 필터만 지원한다. 대량 회원에서의 인덱스 부재로 속도 저하 가능(현 규모에서는 문제 없음).",
+    "감사 로그 기록은 트랜잭션 내 INSERT지만 audit_log에는 UPDATE 권한만 부여되어 있고 삭제 권한은 없다. 운영자가 제재를 반복하면 restrictions 행이 누적된다(의도된 이력 보존).",
+    "웹 화면은 운영자 토큰을 메모리에만 보관하므로 새로고침 시 재입력이 필요하다(의도된 보안 선택, 사용성 비용 있음)."
+  ],
+  "next": [
+    "오케스트레이터가 이 작업트리에서 `npx tsc --noEmit`, `npm test`, 계약 테스트, `tests/admin.integration.test.ts`, `apps/web npm run build`를 다시 실행해 병합 후보 판정.",
+    "관리자 라우트를 contracts/auth-membership.v0.3.json operation 인벤토리에 등재할지 결정하고, 등재 시 계약 테스트에 admin operation을 추가.",
+    "운영자 전용 로그인/세션 발급 UI와 ADMIN role_grant 발급 관리자 경로를 후속 WS로 배정.",
+    "개발환경(Railway API + Cloudflare 경유) 실제 거래 검증은 배포 권한이 있는 단계에서 별도 수행 — 현재 결과는 로컬 검증까지다."
+  ]
+}

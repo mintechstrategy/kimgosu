@@ -5,6 +5,7 @@ import { ApiError } from './security.ts';
 import { registerAuthRoutes } from './auth.ts';
 import { registerLedgerRoutes } from './ledger.ts';
 import { registerDevLoginRoutes } from './dev-login.ts';
+import { registerAdminRoutes } from './admin.ts';
 import type { AuthOptions } from './providers.ts';
 import { POLICY_METADATA, loadPolicySnapshot, requiredReadyKindsForGrant } from './policy.ts';
 
@@ -167,6 +168,7 @@ export function buildApp(db: Sql, release: string, options: AuthOptions = {}) {
   });
   registerAuthRoutes(app, db, authenticate, options);
   registerLedgerRoutes(app, db, authenticate);
+  registerAdminRoutes(app, db, authenticate);
   if (options.devLogin) registerDevLoginRoutes(app, db);
   return app;
 }
