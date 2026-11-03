@@ -9,6 +9,7 @@
   "scripts": {
     "check": "tsc --noEmit",
     "test": "node --test src/*.test.ts",
+    "test:integration": "node --test tests/*.integration.test.ts",
     "start": "node src/server.ts"
   },
   "dependencies": {
