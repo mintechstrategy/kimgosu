@@ -1,0 +1,79 @@
+{
+  "wsId": "WS-26",
+  "status": "DONE",
+  "summary": "리뷰 정책(완료 후 30일 이내 작성, 본문 선택 1~2000자, 공개 조회는 authorNickname만, 관리자 숨김/해제+사유+audit_log)을 마이그레이션 014_review_window.sql(정의된 번호만 사용)과 services/backend/src/reviews.ts·admin.ts 로 구현했고, 실제 PostgreSQL(127.0.0.1:55432/kgtest) 에서 014 를 적용(재실행 멱등 확인)한 뒤 reviews 통합 스위트 20건(기존 12 + WS-26 8)을 4회 연속 전부 통과시켰다. 수용 기준 5항목은 모두 실제 요청/응답과 DB 재조회로 확인했다: 31일 후 403 REVIEW_WINDOW_CLOSED, 29일 후 201, 공개 목록 응답에 member id·이메일·전화 필드가 아예 없음(키 집합 고정 검증), 관리자 숨김 후 목록·요약에서 제외되고 hidden_reason 저장 + REVIEW_HIDDEN audit, 기존 리뷰 회귀 12건 통과. npx tsc --noEmit exit 0, npm test 23/23. 작업트리 밖 원격 쓰기·커밋은 하지 않았다.",
+  "changedFiles": [
+    "services/backend/migrations/014_review_window.sql (신규, PLAN 지정 번호. reviews.hidden_reason text NULL 추가 + review_hidden_reason_requires_hidden CHECK(hidden_reason IS NULL OR hidden_at IS NOT NULL) 를 DO 블록으로 멱등 추가. 컬럼 주석 포함. 기존 행·인덱스·권한은 변경 없음)",
+    "services/backend/src/reviews.ts (+28/-4. ① 작성 경로: 최신 COMPLETED agreement 의 completed_at 이 now() - 30일 이후인지 SQL 에서 판정해 false 면 403 REVIEW_WINDOW_CLOSED(미완료는 기존대로 REVIEW_NOT_ELIGIBLE). ② 공개 목록 /v1/experts/:id/reviews: publicReviewSelect 로 투영을 id·rating·body·createdAt·authorNickname 5개 키로 고정 — authorId/targetId/ledgerId/email/phone 은 SELECT 단계에서 제외. /v1/me/reviews 는 본인 인증 데이터라 기존 reviewSelect 유지)",
+    "services/backend/src/admin.ts (+70. POST /v1/admin/reviews/:id/hide, POST /v1/admin/reviews/:id/unhide. requireAdmin(role_grants 기반) 재사용, 사유 2~500자 필수, hide 는 404 REVIEW_NOT_FOUND / 409 REVIEW_ALREADY_HIDDEN, unhide 는 409 REVIEW_NOT_HIDDEN, 두 동작 모두 audit_log 에 REVIEW_HIDDEN·REVIEW_UNHIDDEN(target_type='review', 본문 미기록, unhide detail 에 previousHiddenReason 기록))",
+    "services/backend/tests/reviews.integration.test.ts (+218. WS-26 시나리오 8건 추가: 31일/29일 경계, 미완료 구분, 공개 투영 검증, 관리자 권한 403, 사유 누락 400, 숨김+목록·요약 제외+audit, 해제+audit. 설정: ADMIN role_grant seed, 29/31일 전 completed_at agreement seed. 기존 1건의 authorName → authorNickname 단언만 새 계약에 맞게 수정)",
+    "[환경 준비, 커밋 대상 아님] .local-toolchains -> ../kimgosu/.local-toolchains 심볼릭 링크(untracked). worktree 에 node24/postgresql 바이너리가 없어 scripts/local-db.sh 규약 경로에 연결만 했다. 소스 변경 아님",
+    "[DB 상태, 소스 아님] 로컬 테스트 클러스터 kgtest 에 014_review_window.sql 적용(2회 실행, 2회차는 NOTICE 후 성공)"
+  ],
+  "verification": [
+    {
+      "command": "cd services/backend && npx tsc --noEmit",
+      "exit": 0,
+      "output": "출력 없음(에러 0). tsconfig include 는 src/**·scripts/** 이므로 tests/ 는 대상 아님(기존과 동일 범위)."
+    },
+    {
+      "command": "cd services/backend && npm test",
+      "exit": 0,
+      "output": "tests 23 / pass 23 / fail 0 (기존 단위 스위트, 변경 없음)"
+    },
+    {
+      "command": "cd services/backend && KG_TEST_DATABASE_URL=postgres://postgres@127.0.0.1:55432/kgtest node --test tests/reviews.integration.test.ts",
+      "exit": 0,
+      "output": "테스트 파일을 총 4회 실행했고 매회 tests 20 / pass 20 / fail 0. 내역: 기존 12건 통과(미완료 403, 비참여자 403, 무세션 401, rating 범위 400, 중복 409, 상호 작성, hidden 필터, 페이지네이션, 자기리뷰 구조적 불가, unknown expert 404, /v1/me/reviews 분리, 생성 audit) + WS-26 8건 통과(31일 403 REVIEW_WINDOW_CLOSED 및 저장 0건, 29일 201 및 DB 재조회 일치, 미완료는 REVIEW_NOT_ELIGIBLE, 공개 투영 키 집합 정확히 5개·응답 원문에 expert/customer uuid·'authorId'·'targetId'·'ledgerId'·'@dev.invalid'·'phone' 문자열 없음, 비관리자 403 ADMIN_REQUIRED·무세션 401, 사유 1자 400, 숨김 200 후 hidden_at/hidden_reason 저장·공개 목록 및 summary.count 1 감소·audit REVIEW_HIDDEN(actor=admin), 중복 숨김 409·없는 리뷰 404, 해제 후 hidden_at NULL·목록 복귀·audit REVIEW_UNHIDDEN(previousHiddenReason 보존), 중복 해제 409)"
+    },
+    {
+      "command": "cd services/backend && KG_TEST_DATABASE_URL=... node --test tests/ledger.integration.test.ts / experts / chat / admin / register / local-db",
+      "exit": 0,
+      "output": "ledger 6/6, experts 10/10, chat 7/7, admin 6/6, register 9/9, local-db 33/33 pass (fail 0). 리뷰 변경은 이 라우트들의 응답 형태를 바꾸지 않는다."
+    },
+    {
+      "command": "cd services/backend && KG_TEST_DATABASE_URL=... node --test tests/quotes.integration.test.ts",
+      "exit": 0,
+      "output": "첫 순차 스윕에서는 pass 7 / fail 1(실패 1건)이 보고되었고, 이후 단독 재실행 3회는 모두 tests 7 / pass 7 / fail 0. 원인은 확정하지 못했다(공유 kgtest 를 다른 wave-3 작업트리가 동시에 TRUNCATE 하는 정황). quotes 코드 경로는 이번 변경과 무관하다."
+    },
+    {
+      "command": "cd services/backend && KG_TEST_DATABASE_URL=... node --test tests/oauth.integration.test.ts",
+      "exit": 1,
+      "output": "13/14 통과, 실패 1건: '[수용1] apple start는 현재 스키마(oauth_flows provider CHECK)에서 503 PROVIDER_SCHEMA_PENDING' 기대 503, 실제 200. 원인 확인: 공유 테스트 DB 의 oauth_flows provider CHECK 가 이미 apple 을 포함(WS-21 이 012 를 같은 kgtest 에 적용). 즉 실패는 WS-26 변경이 아니라 공유 DB 스키마 선행 변경 때문이며, 이 테스트는 012 적용 전 스키마를 전제한다. WS-26 파일은 oauth 경로를 건드리지 않았다."
+    },
+    {
+      "command": ".local-toolchains/postgresql-18.6/install/bin/psql -h 127.0.0.1 -p 55432 -U postgres -d kgtest -v ON_ERROR_STOP=1 -f services/backend/migrations/014_review_window.sql (2회 실행)",
+      "exit": 0,
+      "output": "1회차: BEGIN/SET/ALTER TABLE/COMMENT/DO/COMMIT. 2회차: NOTICE 'column \"hidden_reason\" of relation \"reviews\" already exists, skipping' 후 ALTER TABLE/COMMENT/DO/COMMIT, exit 0 → 재실행 안전. 적용 후 \\d kg_membership.reviews 로 hidden_reason text NULL 컬럼과 CHECK review_hidden_reason_requires_hidden 존재 확인, 기존 인덱스/제약/FK 유지 확인"
+    },
+    {
+      "command": "psql 트랜잭션 내 review_hidden_reason_requires_hidden 위반 시도 후 ROLLBACK",
+      "exit": 0,
+      "output": "visible 행에 hidden_reason 만 넣은 INSERT 가 'new row for relation \"reviews\" violates check constraint \"review_hidden_reason_requires_hidden\"' 로 거부됨을 확인하고 ROLLBACK. 이후 SELECT count(*) FROM reviews = 0 으로 테스트 잔여 행 없음 확인"
+    }
+  ],
+  "notRun": [
+    "Railway 개발계·Cloudflare 실제 거래 검증: 이 WS 지시범위가 아니고 원격 쓰기 금지 조건이라 실행하지 않았다. 검증은 로컬 PostgreSQL 클러스터(kgtest)에 한정된다.",
+    "운영/개발 DB 에 014 적용: 마이그레이션 파일만 작성했고 로컬 테스트 클러스터 외에는 적용하지 않았다.",
+    "정확히 30일 경계(완료 후 30일 ±수 초)의 초 단위 판정: 29일·31일 고정 픽스처로만 확인했다. exactly 30.0일은 코드상 'closed'(strict >)로 처리되지만 실측하지 않았다.",
+    "브라우저·앱(웹 관리자 콘솔, AOS/iOS) 화면에서의 숨김/해제 UX: 백엔드 API 검증만 수행했고 프론트 연결은 범위 밖이다.",
+    "동시 숨김/해제 경합(두 운영자가 같은 리뷰를 동시에 hide): FOR UPDATE 직렬화를 구현했으나 true 동시 실행은 재현하지 않았다.",
+    "계약 파일(contracts/) 갱신: WS-27 소관이라 건드리지 않았다."
+  ],
+  "risks": [
+    "공개 리뷰 응답의 계약 변경(호환성): /v1/experts/:id/reviews 의 필드 authorName 을 authorNickname 으로 바꾸고 authorId·targetId·ledgerId 를 제거했다. 이 worktree 안에서 소비자 코드는 발견되지 않았지만(웹/앱은 이 저장소 밖), 이미 배포된 클라이언트가 authorName 을 읽고 있으면 이름이 비어 보인다. 앱/웹 동시 배포 조율이 필요하다.",
+    "unhide 에도 사유를 필수로 요구했다(PLAN 은 hide 에만 '사유 필수'를 명시). admin.ts 의 기존 restrict/release 가 모두 사유를 요구하는 관례를 따랐고 audit 에 이유를 남기기 위한 결정이다. PLAN 해석과 다르면 계약 확정 시 조정이 필요하다(OPEN).",
+    "공유 테스트 DB 오염: 127.0.0.1:55432/kgtest 는 wave-3 여러 작업트리가 동시에 쓰며 각 스위트가 시작 시 TRUNCATE 한다. 실제로 oauth 스위트 실패(012 선적용)와 quotes 1회 플레이크가 관측됐다. WS-26 은 별도 DB/포트를 만들지 않았다.",
+    "30일 창 판정은 DB now() 기준이며 경계값은 strict >(완료 후 정확히 30일이면 마감). 시간대/clock skew 는 서버 단일 시계 전제라 문제 없지만, 완료 시각이 나중에 보정되면 작성 가능 기간도 함께 이동한다.",
+    "/v1/me/reviews 는 본인 인증 응답이라 여전히 authorId·targetId 를 포함한다. PLAN 의 '공개 조회' 범위를 공개(비인증) 목록으로 해석했다. /v1/me/reviews 도 축약해야 한다면 별도 결정이 필요하다(OPEN).",
+    "숨김은 hidden_at 마커만 세우고 본문을 남긴다. 삭제·보존기간 정책은 이 카드 범위가 아니며 만들지 않았다.",
+    "리뷰 작성 자격은 '같은 ledger 의 COMPLETED agreement 존재 + 30일 이내'다. 동일 ledger 에 COMPLETED agreement 가 여러 건이면 가장 최근 completed_at 을 기준으로 창을 판정한다(ORDER BY completed_at DESC)."
+  ],
+  "nextActions": [
+    "부모: WS-26 산출물 수용 후 동일 후보·동일 수용 기준으로 대응 QA(자체 QA 아님)를 배정한다.",
+    "WS-27(계약서): reviews.v0.1.json 에 공개 조회 응답 필드(authorNickname, authorId/targetId 부재), 403 REVIEW_WINDOW_CLOSED / REVIEW_NOT_ELIGIBLE 구분, admin hide/unhide(사유 필수, 404/409) 를 실제 라우트에서 읽어 등재한다.",
+    "앱/웹: authorName → authorNickname 개명과 숨김/해제 관리자 UI 를 각각 별도 카드로 반영하고, 프론트는 로컬 DB 저장 없이 이 API 로만 연결한다.",
+    "마이그레이션 014 를 개발계 DB 에 적용하는 절차와 되돌림(DROP COLUMN hidden_reason, DROP CONSTRAINT review_hidden_reason_requires_hidden)은 배포 카드에서 실행한다.",
+    "공유 kgtest 동시 사용 문제: wave-3 종료 후 작업트리별 전용 DB/포트로 분리할지 사용자/부모가 결정한다(현재 oauth 스위트가 012 선적용으로 실패 중)."
+  ]
+}
