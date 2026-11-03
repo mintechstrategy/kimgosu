@@ -30,6 +30,52 @@ async function recordGrants(sql: Sql, memberId: unknown, accepted: { kind: strin
     await sql.query(`INSERT INTO kg_membership.consent_events(member_id,document_id,action,request_id) VALUES($1,$2,'GRANTED',$3)`, [memberId, d.id, randomUUID()]);
   }
 }
+export async function ticket(sql: Sql, raw: string) {
+  const row = (await sql.query(`SELECT * FROM kg_membership.registration_tickets WHERE ticket_digest=$1 AND expires_at>now() AND consumed_at IS NULL FOR UPDATE`, [digest(raw)])).rows[0];
+  if (!row) throw new ApiError(401, 'REGISTRATION_INVALID'); return row;
+}
+export interface RegistrationInput {
+  registrationTicket: string; name: string; email: string;
+  expertRequested: boolean; consents: { kind: string; version: string }[];
+  expectedPolicyRevision?: string;
+}
+// The single write path for a new membership: verified registration ticket ->
+// principal/social link -> member -> consent events -> session. Both
+// /v1/auth/signup (contract v0.2) and /v1/auth/register (readiness-gated) call
+// this, so the two entry points cannot drift apart.
+export async function finalizeRegistration(sql: Sql, input: RegistrationInput) {
+  // Fence policy DML before ticket/member/advisory locks; held through commit/rollback.
+  await sql.query('LOCK TABLE kg_membership.policy_documents IN SHARE MODE');
+  const t = await ticket(sql, input.registrationTicket);
+  if (!t.phone_digest || !t.phone_verified_at) throw new ApiError(409, 'PHONE_VERIFICATION_REQUIRED');
+  if (!input.name.trim()) throw new ApiError(400, 'INVALID_REQUEST');
+  await sql.query(`SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, [t.provider + ':' + t.subject_digest]);
+  let principalId = (await sql.query(`SELECT principal_id FROM kg_membership.social_links WHERE provider=$1 AND subject_digest=$2`, [t.provider, t.subject_digest])).rows[0]?.principal_id;
+  if (!principalId) {
+    principalId = randomUUID(); await sql.query(`INSERT INTO kg_membership.principals(id) VALUES($1)`, [principalId]);
+    await sql.query(`INSERT INTO kg_membership.social_links(provider,subject_digest,principal_id) VALUES($1,$2,$3)`, [t.provider, t.subject_digest, principalId]);
+  }
+  await sql.query(`SELECT id FROM kg_membership.principals WHERE id=$1 FOR UPDATE`, [principalId]);
+  await sql.query(`SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, ['signup-phone:' + t.phone_digest]);
+  const old = (await sql.query(`SELECT id,withdrawn_at,rejoin_after>now() AS waiting,rejoin_after AS "rejoinAfter",now() AS "serverTime" FROM kg_membership.members WHERE principal_id=$1 ORDER BY created_at DESC,id DESC`, [principalId])).rows;
+  if (old.some(m => !m.withdrawn_at)) throw new ApiError(409, 'ALREADY_REGISTERED');
+  const rejectWaiting = (members: Row[]) => {
+    const waiting = members.filter(m => m.waiting).sort((a, b) => new Date(String(b.rejoinAfter)).getTime() - new Date(String(a.rejoinAfter)).getTime());
+    if (waiting[0]) throw new ApiError(409, 'REJOIN_WAIT_REQUIRED', { rejoinAfter: new Date(String(waiting[0].rejoinAfter)).toISOString(), serverTime: new Date(String(waiting[0].serverTime)).toISOString() });
+  };
+  rejectWaiting(old);
+  const phone = (await sql.query(`SELECT principal_id,withdrawn_at,rejoin_after>now() AS waiting,rejoin_after AS "rejoinAfter",now() AS "serverTime" FROM kg_membership.members WHERE phone_digest=$1`, [t.phone_digest])).rows;
+  if (phone.some(m => !m.withdrawn_at)) throw new ApiError(409, 'PHONE_ALREADY_REGISTERED');
+  if (phone.some(m => m.principal_id !== principalId)) throw new ApiError(409, 'IDENTITY_RECOVERY_REQUIRED');
+  rejectWaiting(phone);
+  const restricted = (await sql.query(`SELECT id FROM kg_membership.restrictions WHERE principal_id=$1 AND revoked_at IS NULL AND starts_at<=now() AND (ends_at IS NULL OR ends_at>now())`, [principalId])).rows.length > 0;
+  const memberId = randomUUID();
+  await sql.query(`INSERT INTO kg_membership.members(id,principal_id,name,email,nickname,status,expert_active,phone_digest,age14_confirmed_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,now())`, [memberId, principalId, input.name.trim(), input.email, '고수' + opaque().slice(0, 8).replace(/[-_]/g, 'A'), 'ACTIVE', input.expertRequested && !restricted, t.phone_digest]);
+  await recordGrants(sql, memberId, input.consents, input.expectedPolicyRevision);
+  await sql.query(`INSERT INTO kg_membership.notification_preferences(member_id) VALUES($1)`, [memberId]);
+  await sql.query(`UPDATE kg_membership.registration_tickets SET consumed_at=now() WHERE ticket_digest=$1`, [t.ticket_digest]);
+  return { outcome: 'REGISTERED', session: await issueSession(sql, memberId) };
+}
 async function requireCurrentConsents(sql: Sql, memberId: unknown) {
   const docs = await currentDocuments(sql);
   for (const kind of requiredGrantKinds) {
@@ -43,10 +89,6 @@ export function registerAuthRoutes(app: FastifyInstance, db: Sql, authenticate: 
   const providers = options.providers ?? {};
   const needKey = () => { if (!options.identityKey || options.identityKey.length < 32) throw new ApiError(503, 'IDENTITY_CONFIGURATION_REQUIRED'); return options.identityKey; };
   const phoneDigest = (phone: string) => mac(needKey(), 'phone', phone);
-  async function ticket(sql: Sql, raw: string) {
-    const row = (await sql.query(`SELECT * FROM kg_membership.registration_tickets WHERE ticket_digest=$1 AND expires_at>now() AND consumed_at IS NULL FOR UPDATE`, [digest(raw)])).rows[0];
-    if (!row) throw new ApiError(401, 'REGISTRATION_INVALID'); return row;
-  }
   app.post<{ Body: { provider: ProviderId; codeChallenge: string } }>('/v1/auth/social/start', { schema: body({ provider: { type: 'string', enum: ['google', 'kakao', 'naver'] }, codeChallenge: tokenSchema }) }, async (req) => {
     const p = providers[req.body.provider]; if (!p) throw new ApiError(503, 'PROVIDER_NOT_CONFIGURED'); needKey();
     const state = opaque();
@@ -129,39 +171,7 @@ export function registerAuthRoutes(app: FastifyInstance, db: Sql, authenticate: 
     if (!result) throw new ApiError(400, 'SMS_CODE_INVALID_OR_EXPIRED'); return { verified: true };
   });
   app.post<{ Body: { registrationTicket: string; name: string; email: string; age14Confirmed: boolean; expertRequested: boolean; consents: { kind: string; version: string }[]; expectedPolicyRevision?: string } }>('/v1/auth/signup', { schema: body({ registrationTicket: tokenSchema, name: string(1, 100), email: { type: 'string', maxLength: 254, pattern: '^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$' }, age14Confirmed: { const: true }, expertRequested: { type: 'boolean' }, consents: documentInput, expectedPolicyRevision: revisionSchema }, ['registrationTicket', 'name', 'email', 'age14Confirmed', 'expertRequested', 'consents']) }, async req => {
-    return db.transaction(async sql => {
-      // Fence policy DML before ticket/member/advisory locks; held through commit/rollback.
-      await sql.query('LOCK TABLE kg_membership.policy_documents IN SHARE MODE');
-      const t = await ticket(sql, req.body.registrationTicket);
-      if (!t.phone_digest || !t.phone_verified_at) throw new ApiError(409, 'PHONE_VERIFICATION_REQUIRED');
-      if (!req.body.name.trim()) throw new ApiError(400, 'INVALID_REQUEST');
-      await sql.query(`SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, [t.provider + ':' + t.subject_digest]);
-      let principalId = (await sql.query(`SELECT principal_id FROM kg_membership.social_links WHERE provider=$1 AND subject_digest=$2`, [t.provider, t.subject_digest])).rows[0]?.principal_id;
-      if (!principalId) {
-        principalId = randomUUID(); await sql.query(`INSERT INTO kg_membership.principals(id) VALUES($1)`, [principalId]);
-        await sql.query(`INSERT INTO kg_membership.social_links(provider,subject_digest,principal_id) VALUES($1,$2,$3)`, [t.provider, t.subject_digest, principalId]);
-      }
-      await sql.query(`SELECT id FROM kg_membership.principals WHERE id=$1 FOR UPDATE`, [principalId]);
-      await sql.query(`SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, ['signup-phone:' + t.phone_digest]);
-      const old = (await sql.query(`SELECT id,withdrawn_at,rejoin_after>now() AS waiting,rejoin_after AS "rejoinAfter",now() AS "serverTime" FROM kg_membership.members WHERE principal_id=$1 ORDER BY created_at DESC,id DESC`, [principalId])).rows;
-      if (old.some(m => !m.withdrawn_at)) throw new ApiError(409, 'ALREADY_REGISTERED');
-      const rejectWaiting = (members: Row[]) => {
-        const waiting = members.filter(m => m.waiting).sort((a, b) => new Date(String(b.rejoinAfter)).getTime() - new Date(String(a.rejoinAfter)).getTime());
-        if (waiting[0]) throw new ApiError(409, 'REJOIN_WAIT_REQUIRED', { rejoinAfter: new Date(String(waiting[0].rejoinAfter)).toISOString(), serverTime: new Date(String(waiting[0].serverTime)).toISOString() });
-      };
-      rejectWaiting(old);
-      const phone = (await sql.query(`SELECT principal_id,withdrawn_at,rejoin_after>now() AS waiting,rejoin_after AS "rejoinAfter",now() AS "serverTime" FROM kg_membership.members WHERE phone_digest=$1`, [t.phone_digest])).rows;
-      if (phone.some(m => !m.withdrawn_at)) throw new ApiError(409, 'PHONE_ALREADY_REGISTERED');
-      if (phone.some(m => m.principal_id !== principalId)) throw new ApiError(409, 'IDENTITY_RECOVERY_REQUIRED');
-      rejectWaiting(phone);
-      const restricted = (await sql.query(`SELECT id FROM kg_membership.restrictions WHERE principal_id=$1 AND revoked_at IS NULL AND starts_at<=now() AND (ends_at IS NULL OR ends_at>now())`, [principalId])).rows.length > 0;
-      const memberId = randomUUID();
-      await sql.query(`INSERT INTO kg_membership.members(id,principal_id,name,email,nickname,status,expert_active,phone_digest,age14_confirmed_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,now())`, [memberId, principalId, req.body.name.trim(), req.body.email, '고수' + opaque().slice(0, 8).replace(/[-_]/g, 'A'), 'ACTIVE', req.body.expertRequested && !restricted, t.phone_digest]);
-      await recordGrants(sql, memberId, req.body.consents, req.body.expectedPolicyRevision);
-      await sql.query(`INSERT INTO kg_membership.notification_preferences(member_id) VALUES($1)`, [memberId]);
-      await sql.query(`UPDATE kg_membership.registration_tickets SET consumed_at=now() WHERE ticket_digest=$1`, [t.ticket_digest]);
-      return { outcome: 'REGISTERED', session: await issueSession(sql, memberId) };
-    });
+    return db.transaction(sql => finalizeRegistration(sql, req.body));
   });
   app.post<{ Body: { refreshToken: string } }>('/v1/auth/refresh', { schema: body({ refreshToken: tokenSchema }) }, async req => {
     const result = await db.transaction(async sql => {
