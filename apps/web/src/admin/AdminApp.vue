@@ -1,15 +1,9 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref } from 'vue';
-import { AdminApiError, createAdminApi, type AdminMemberRow, type MemberDetail, type MemberStatus } from './api';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
+import { AdminApiError, type AdminApi, type AdminMemberRow, type AdminOperator, type MemberDetail, type MemberStatus } from './api';
 
-const props = defineProps<{ baseUrl?: string }>();
-const api = createAdminApi(props.baseUrl ?? (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? 'https://api-dev-kimgosu.mintech.ai');
-
-// The token stays in component memory only: no Web Storage, cookie or URL.
-const tokenInput = ref('');
-const connected = ref(false);
-const connectError = ref('');
-const accessDenied = ref(false);
+const props = defineProps<{ api: AdminApi; operator?: AdminOperator }>();
+const emit = defineEmits<{ 'logged-out': []; 'session-expired': [message: string] }>();
 
 const rows = ref<AdminMemberRow[]>([]);
 const page = ref(1);
@@ -26,6 +20,7 @@ const detail = ref<MemberDetail>();
 const detailLoading = ref(false);
 const detailError = ref('');
 const actionMessage = ref('');
+const signingOut = ref(false);
 
 const dialog = ref<HTMLDialogElement>();
 const dialogType = ref<'restrict' | 'release'>('restrict');
@@ -33,6 +28,7 @@ const form = ref({ reason: '', endsAt: '' });
 const submitting = ref(false);
 const actionError = ref('');
 
+const api = props.api;
 const hasLiveRestriction = computed(() => detail.value?.restrictions.some(r => r.active) === true);
 const title = computed(() => (detail.value ? `회원 상세 · ${detail.value.member.nickname}` : '회원 조회'));
 
@@ -40,37 +36,28 @@ function messageFor(e: unknown): string {
   if (!(e instanceof AdminApiError)) return '처리하지 못했습니다. 잠시 후 다시 시도해주세요.';
   switch (e.code) {
     case 'ADMIN_REQUIRED': return '관리자 권한이 없습니다. 서버가 ADMIN 역할 부여를 확인하지 못했습니다.';
+    case 'ADMIN_SESSION_REQUIRED': return '운영자 세션이 아닙니다. 로그인 화면에서 다시 로그인해주세요.';
     case 'AUTH_REQUIRED':
-    case 'SESSION_INVALID': return '세션이 만료됐거나 유효하지 않습니다. 운영자 세션으로 다시 접속해주세요.';
+    case 'SESSION_INVALID': return '세션이 만료됐거나 유효하지 않습니다. 다시 로그인해주세요.';
     case 'MEMBER_NOT_FOUND': return '회원을 찾을 수 없습니다.';
     case 'MEMBER_WITHDRAWN': return '탈퇴한 회원은 제재할 수 없습니다.';
     case 'ALREADY_RESTRICTED': return '이미 유효한 이용 제한이 있습니다. 해제 후 다시 제재할 수 있습니다.';
     case 'NOT_RESTRICTED': return '해제할 유효한 이용 제한이 없습니다.';
-    case 'INVALID_TOKEN': return '세션 토큰 형식이 올바르지 않습니다.';
     case 'TIMEOUT': return '응답 시간이 초과됐습니다. 처리 결과가 불확실하므로 목록을 다시 조회해 확인해주세요.';
     case 'NETWORK_ERROR': return '서버에 연결하지 못했습니다. 네트워크와 배포 상태를 확인해주세요.';
     default: return '요청을 처리하지 못했습니다. 목록을 다시 조회해 현재 상태를 확인해주세요.';
   }
 }
 
-function resetSession() {
-  api.clearToken();
-  connected.value = false;
-  tokenInput.value = '';
+/** Session gone (expired, revoked, or the ADMIN grant withdrawn): back to login. */
+function endSession(e: unknown) {
+  api.clearSession();
   rows.value = []; listLoaded.value = false; detail.value = undefined; selectedId.value = null;
-}
-
-async function connect() {
-  connectError.value = ''; accessDenied.value = false;
-  try { api.setToken(tokenInput.value.trim()); }
-  catch (e) { connectError.value = messageFor(e); return; }
-  tokenInput.value = '';
-  connected.value = true;
-  await loadList(1);
+  emit('session-expired', messageFor(e));
 }
 
 async function loadList(target = page.value) {
-  if (!api.hasToken()) return;
+  if (!api.hasSession()) { emit('session-expired', '세션이 없습니다. 다시 로그인해주세요.'); return; }
   listLoading.value = true; listError.value = ''; listLoaded.value = false;
   try {
     const result = await api.members({ query: query.value, status: statusFilter.value, page: target, limit: 20 });
@@ -81,8 +68,7 @@ async function loadList(target = page.value) {
     listLoaded.value = true;
   } catch (e) {
     listLoaded.value = false; rows.value = [];
-    if (e instanceof AdminApiError && e.code === 'ADMIN_REQUIRED') { accessDenied.value = true; resetSession(); return; }
-    if (e instanceof AdminApiError && ['AUTH_REQUIRED', 'SESSION_INVALID'].includes(e.code)) { resetSession(); }
+    if (e instanceof AdminApiError && ['AUTH_REQUIRED', 'SESSION_INVALID', 'ADMIN_SESSION_REQUIRED', 'ADMIN_REQUIRED'].includes(e.code)) { endSession(e); return; }
     listError.value = messageFor(e);
   } finally { listLoading.value = false; }
 }
@@ -95,7 +81,7 @@ async function loadDetail(id: string, keepMessage = false) {
   try {
     detail.value = await api.member(id);
   } catch (e) {
-    if (e instanceof AdminApiError && ['AUTH_REQUIRED', 'SESSION_INVALID'].includes(e.code)) resetSession();
+    if (e instanceof AdminApiError && ['AUTH_REQUIRED', 'SESSION_INVALID', 'ADMIN_SESSION_REQUIRED', 'ADMIN_REQUIRED'].includes(e.code)) { endSession(e); return; }
     detailError.value = messageFor(e);
   } finally { detailLoading.value = false; }
 }
@@ -133,12 +119,23 @@ async function submitAction() {
     // The confirmation message survives this refresh (keepMessage).
     await Promise.all([loadDetail(id, true), loadList(page.value)]);
   } catch (e) {
-    if (e instanceof AdminApiError && ['AUTH_REQUIRED', 'SESSION_INVALID'].includes(e.code)) { resetSession(); return; }
+    if (e instanceof AdminApiError && ['AUTH_REQUIRED', 'SESSION_INVALID', 'ADMIN_SESSION_REQUIRED', 'ADMIN_REQUIRED'].includes(e.code)) { endSession(e); return; }
     actionError.value = messageFor(e);
   } finally { submitting.value = false; }
 }
 
-onBeforeUnmount(() => { resetSession(); api.clearToken(); });
+async function signOut() {
+  if (signingOut.value) return;
+  signingOut.value = true;
+  try { await api.logout(); } finally {
+    signingOut.value = false;
+    rows.value = []; detail.value = undefined; selectedId.value = null;
+    emit('logged-out');
+  }
+}
+
+onMounted(() => { void loadList(1); });
+onBeforeUnmount(() => { api.clearSession(); });
 
 const date = (value: string | null) => value && Number.isFinite(Date.parse(value))
   ? new Intl.DateTimeFormat('ko-KR', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Seoul' }).format(new Date(value)) + ' KST'
@@ -150,28 +147,11 @@ const statusLabel = (value: MemberStatus) => value === 'ACTIVE' ? '이용 가능
   <header class="console-header">
     <h1>김고수 운영 콘솔</h1>
     <p class="meta">회원·원장 조회와 이용 제한 — 관리자 전용</p>
-    <button v-if="connected" class="text" type="button" @click="resetSession">세션 해제</button>
+    <p class="who" v-if="operator">{{ operator.nickname }} · #{{ operator.customerNumber }}</p>
+    <button class="text" type="button" :disabled="signingOut" @click="signOut">{{ signingOut ? '로그아웃 중…' : '로그아웃' }}</button>
   </header>
 
   <main class="console" :aria-busy="listLoading || detailLoading || submitting">
-    <section v-if="!connected" class="card" aria-labelledby="connect-title">
-      <h2 id="connect-title">운영자 세션 연결</h2>
-      <p>서버가 발급한 운영자 세션 토큰을 입력하세요. 토큰은 이 화면 메모리에만 보관하며 브라우저 저장소·URL·로그에 남기지 않습니다. 새로고침하면 다시 입력해야 합니다.</p>
-      <p class="notice">관리자 역할은 서버가 <code>role_grants</code>로 판정합니다. 권한이 없으면 모든 조회·제재가 403으로 거부됩니다.</p>
-      <form class="stack" @submit.prevent="connect">
-        <label for="token">운영자 세션 토큰</label>
-        <input id="token" v-model="tokenInput" type="password" autocomplete="off" spellcheck="false" placeholder="Bearer 없이 토큰 값만 입력">
-        <p v-if="connectError" role="alert" class="error">{{ connectError }}</p>
-        <button class="primary" type="submit" :disabled="tokenInput.trim().length < 32">연결</button>
-      </form>
-    </section>
-
-    <section v-else-if="accessDenied" class="card" role="alert">
-      <h2>관리자 권한이 없습니다</h2>
-      <p>이 계정에는 유효한 ADMIN 역할 부여가 없습니다. CS 등 다른 역할로는 이 콘솔을 사용할 수 없습니다. 권한 부여는 별도 승인 절차가 필요합니다.</p>
-    </section>
-
-    <template v-else>
       <nav class="toolbar" aria-label="회원 검색">
         <form class="search" @submit.prevent="search">
           <label for="query">검색어</label>
@@ -279,7 +259,6 @@ const statusLabel = (value: MemberStatus) => value === 'ACTIVE' ? '이용 가능
           <p class="meta">해제 사유는 감사 로그(audit_log)에 운영자와 함께 기록됩니다.</p>
         </template>
       </section>
-    </template>
   </main>
 
   <dialog ref="dialog" aria-labelledby="dialog-title" @close="actionError = ''">
@@ -305,9 +284,10 @@ const statusLabel = (value: MemberStatus) => value === 'ACTIVE' ? '이용 가능
 
 <style scoped>
 :global(body) { margin: 0; background: #f4f6f8; color: #172033; font-family: 'Pretendard', system-ui, -apple-system, sans-serif; }
-.console-header { display: flex; align-items: baseline; gap: 16px; padding: 20px 32px; background: #101a2b; color: #fff; }
+.console-header { display: flex; align-items: baseline; gap: 16px; padding: 20px 32px; background: #101a2b; color: #fff; flex-wrap: wrap; }
 .console-header h1 { font-size: 20px; margin: 0; }
 .console-header .meta { color: #9fb0c9; margin: 0; }
+.console-header .who { margin: 0 0 0 auto; font-size: 14px; color: #cfe0ff; }
 .console { max-width: 1120px; margin: 0 auto; padding: 24px 32px 96px; }
 .card { background: #fff; border: 1px solid #d8e0e8; border-radius: 14px; padding: 24px; margin-top: 20px; }
 .stack { display: grid; gap: 10px; }

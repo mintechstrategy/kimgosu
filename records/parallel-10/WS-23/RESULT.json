@@ -1,0 +1,143 @@
+{
+  "ws": "WS-23",
+  "status": "DONE",
+  "summary": "관리자 콘솔 전용 로그인(POST /v1/admin/session, 서버의 ADMIN role_grants 재검증·별도 scope·5회 실패 잠금·audit_log)과 웹 /admin/login 로그인 화면(토큰 붙여넣기 제거, 로그아웃·만료 시 로그인 복귀)을 구현하고, 로컬 PostgreSQL 통합 테스트 8종·기존 백엔드 통합 10종·웹 유닛 230종·웹 빌드·실브라우저 E2E 12항목으로 검증했다.",
+  "changedFiles": [
+    "services/backend/src/admin-session.ts",
+    "services/backend/src/admin-session.test.ts",
+    "services/backend/src/admin.ts",
+    "services/backend/src/app.ts",
+    "services/backend/src/security.ts",
+    "services/backend/tests/admin-session.integration.test.ts",
+    "services/backend/tests/admin.integration.test.ts",
+    "apps/web/src/admin/api.ts",
+    "apps/web/src/admin/login.ts",
+    "apps/web/src/admin/AdminShell.vue",
+    "apps/web/src/admin/AdminLogin.vue",
+    "apps/web/src/admin/AdminApp.vue",
+    "apps/web/src/admin/main.ts",
+    "apps/web/vite.config.ts",
+    "apps/web/public/_redirects",
+    "apps/web/tests/unit/admin-api.test.ts",
+    "apps/web/tests/unit/admin-login.test.ts",
+    "records/parallel-10/WS-23/e2e/ws23-e2e.mjs",
+    "records/parallel-10/WS-23/e2e-results.json",
+    "records/parallel-10/WS-23/e2e-api-calls.json",
+    "records/parallel-10/WS-23/screens/01-login.png",
+    "records/parallel-10/WS-23/screens/02-login-denied-non-admin.png",
+    "records/parallel-10/WS-23/screens/03-console-member-list.png",
+    "records/parallel-10/WS-23/screens/04-console-member-detail.png",
+    "records/parallel-10/WS-23/screens/05-after-logout.png",
+    "records/parallel-10/WS-23/screens/06-reentry-blocked.png",
+    "records/parallel-10/WS-23/screens/07-login-locked.png",
+    "records/parallel-10/WS-23/RESULT.json"
+  ],
+  "verification": [
+    {
+      "check": "백엔드 타입 검사",
+      "command": "cd services/backend && npx tsc --noEmit",
+      "result": "PASS",
+      "evidence": "출력 없음, 종료 코드 0"
+    },
+    {
+      "check": "백엔드 유닛 테스트(잠금 리미터·토큰 scope 헬퍼 신규 3종 포함)",
+      "command": "cd services/backend && npm test",
+      "result": "PASS",
+      "evidence": "tests 26 / pass 26 / fail 0 — admin-session.test.ts 3종(prefix·5회 잠금·성공 리셋/윈도 만료) 포함"
+    },
+    {
+      "check": "관리자 로그인 실 PostgreSQL 통합 테스트(신규)",
+      "command": "cd services/backend && KG_TEST_DATABASE_URL=postgres://postgres@127.0.0.1:55432/kgtest_ws23 node --test tests/admin-session.integration.test.ts",
+      "result": "PASS",
+      "evidence": "tests 8 / pass 8 / fail 0 — ①비관리자(CS·일반) 토큰 교환 403 ADMIN_REQUIRED·세션 미생성 ②ADMIN 교환 201 adm_ 토큰·sessions 행은 digest로만 저장·원문 미저장 ③관리자 라우트 4종이 멤버토큰에 403 ADMIN_SESSION_REQUIRED·비인증 401 ④관리자 토큰은 /v1/me·/v1/me/consents·/v1/auth/logout에서 401, 재교환 400 ⑤로그아웃 후 /v1/admin/session·라우트 401 ⑥ADMIN grant 회수 시 이미 발급된 세션도 403·재발급 403 ⑦만료 세션 401 ⑧같은 클라이언트 5회 실패 후 429 ADMIN_LOGIN_LOCKED(retry-after 헤더)·audit_log ADMIN_LOGIN_FAILED/BLOCKED 기록·다른 클라이언트는 영향 없음"
+    },
+    {
+      "check": "기존 관리자 통합 테스트 회귀(운영자 세션 경유로 갱신)",
+      "command": "cd services/backend && KG_TEST_DATABASE_URL=postgres://postgres@127.0.0.1:55432/kgtest_ws23 node --test tests/admin.integration.test.ts",
+      "result": "PASS",
+      "evidence": "tests 6 / pass 6 / fail 0 — 목록·페이지네이션·상세·제재/해제·감사로그·권한거부 모두 관리자 토큰 경유. 멤버토큰 거부 코드는 ADMIN_REQUIRED→ADMIN_SESSION_REQUIRED로 갱신"
+    },
+    {
+      "check": "백엔드 통합 회귀 8종(원장·전문가·로컬DB·견적·채팅·리뷰·OAuth·가입)",
+      "command": "cd services/backend && KG_TEST_DATABASE_URL=... node --test tests/{ledger,experts,local-db,quotes,chat,reviews,oauth,register}.integration.test.ts",
+      "result": "PASS",
+      "evidence": "ledger 6/6, experts 10/10, local-db 33/33, quotes 7/7, chat 7/7, reviews 12/12, oauth 14/14, register 9/9 — fail 0. authenticate가 adm_ 토큰을 거부하도록 바뀐 뒤에도 기존 멤버 경로 회귀 없음"
+    },
+    {
+      "check": "계약 테스트(operation 인벤토리 포함)",
+      "command": "cd tests/contract && node --test contract.test.ts",
+      "result": "PASS",
+      "evidence": "tests 15 / pass 15 / fail 0"
+    },
+    {
+      "check": "웹 타입 검사",
+      "command": "cd apps/web && npm run typecheck",
+      "result": "PASS",
+      "evidence": "vue-tsc --noEmit 종료 코드 0"
+    },
+    {
+      "check": "웹 유닛 테스트(로그인/로그아웃/세션/잠금 신규 9종 포함)",
+      "command": "cd apps/web && npm run test:unit",
+      "result": "PASS",
+      "evidence": "tests 230 / pass 230 / fail 0 — admin-api 12종(로그인 본문 교환·비관리자 403·잠금 429·malformed envelope 미신뢰·로그아웃 실패 시에도 세션 폐기·session 검증), admin-login 5종(provider 정직한 상태·404→빈 목록·토큰 형식·범위 밖 slot 사전 거부)"
+    },
+    {
+      "check": "웹 빌드(타입 검사 + 번들)",
+      "command": "cd apps/web && npm run build",
+      "result": "PASS",
+      "evidence": "vue-tsc 통과, vite build 성공 — dist/admin.html 0.60 kB, dist/assets/admin-*.js 27.76 kB, dist/_redirects에 /admin/login·/admin/* 매핑 포함"
+    },
+    {
+      "check": "웹 기존 멤버앱 브라우저 회귀 25종",
+      "command": "cd apps/web && WEB_LOCAL_ONLY=1 WEB_EVIDENCE_DIR=/tmp/ws23-browser/ npm run test:browser",
+      "result": "PASS",
+      "evidence": "results.json total 25 / passed 25 / failed 0 (기본 origin 빌드로 재빌드 후 실행, CSP·키보드·반응형 포함)"
+    },
+    {
+      "check": "관리자 콘솔 실브라우저 E2E(Chromium + 로컬 buildApp 백엔드 + 로컬 PostgreSQL)",
+      "command": "node records/parallel-10/WS-23/e2e/ws23-e2e.mjs",
+      "result": "PASS",
+      "evidence": "12/12 PASS — /admin/login 렌더(테스터 2계정, 비밀번호/토큰 입력 0개, 소셜 미연결 정직 표시) → 비관리자 로그인 시 POST /v1/admin/session 403 + 로그인 화면 유지 → 관리자 로그인 201 후 /admin/에서 GET /v1/admin/members 200·4행 렌더 → 상세 200 → 로그아웃 200 후 목록 제거·/admin/login 복귀 → /admin/ 재진입 차단('운영자 세션이 없습니다') → 5회 실패 후 429 잠금 문구 → pageerror 0. 스크린샷 records/parallel-10/WS-23/screens/ 7장, 상세 API 호출 로그 e2e-api-calls.json"
+    },
+    {
+      "check": "E2E 테스트 데이터 정리",
+      "command": "E2E 스크립트 finally에서 재조회",
+      "result": "PASS",
+      "evidence": "cleanup {\"members\":0,\"principals\":0,\"sessions\":0,\"audit\":0,\"slots\":0} — 생성한 회원 4명·dev_test_accounts 2행·세션·audit_log 모두 삭제 확인"
+    },
+    {
+      "check": "원격 쓰기(git push/PR/커밋)·Railway/Cloudflare 배포·개발환경 실제 거래 검증",
+      "command": "실행하지 않음(작업 지시로 금지)",
+      "result": "NOT_RUN",
+      "evidence": "지시에 따라 커밋·push·gh·railway·cf 쓰기를 수행하지 않았다. 따라서 dev-kimgosu/Cloudflare 경유 실제 거래와 배포 후보 검증은 미실시이며, 위 로컬 검증을 배포 증거로 대체하지 않는다."
+    }
+  ],
+  "contractChanges": [
+    "라우트 신규 3개: POST /v1/admin/session, GET /v1/admin/session, POST /v1/admin/session/logout (contracts/ 파일은 WS-27 소유이므로 이 WS에서 등재하지 않았다).",
+    "관리자 라우트 인증 의미 변경: 멤버 세션 토큰으로 호출 시 403 ADMIN_REQUIRED → 403 ADMIN_SESSION_REQUIRED(scope 불일치). 관리자 scope인데 ADMIN grant가 없으면 403 ADMIN_REQUIRED 유지.",
+    "관리자 토큰을 멤버 라우트에 사용하면 401 SESSION_INVALID(양방향 scope 분리).",
+    "POST /v1/admin/session 응답: { adminToken, tokenType, expiresInSeconds(7200), expiresAt, operator{memberId,nickname,customerNumber} }. 실패 시 error.attemptsRemaining, 잠금 시 retryAfterSeconds와 Retry-After 헤더."
+  ],
+  "migrations": [],
+  "open": [
+    "소셜 로그인(카카오/네이버/Google) 완료 후 콘솔로 되돌아오는 웹 인계 경로가 미확정이다. 현재 POST /v1/auth/oauth/:provider/callback은 JSON을 반환하므로 브라우저가 API origin에 머문다. BFF+HttpOnly 쿠키 또는 콜백 전용 웹 페이지(토큰을 URL에 넣지 않는 방식) 중 선택이 필요하며, 결정 전까지 /admin/login은 소셜 버튼을 '준비 중'으로 정직하게 비활성 표시한다.",
+    "관리자 scope 표식이 토큰 prefix(adm_)에 있다. sessions.scope 컬럼이 더 명시적이지만 이번 WS에는 마이그레이션 번호가 배정되지 않아 스키마를 변경하지 않았다. 컬럼 도입은 번호 배정 후 별도 카드.",
+    "로그인 실패 카운터는 프로세스 메모리 기반이다(스키마 변경 없이 구현). 다중 인스턴스 배포에서는 인스턴스별로 잠금이 분리되므로 공유 저장소(Redis/DB) 도입 여부 결정 필요. 실패·잠금 이력 자체는 audit_log에 영구 기록된다.",
+    "관리자 라우트(기존 4 + 신규 3)가 contracts/auth-membership.* operation 인벤토리에 없다. WS-27 계약 등재 대상.",
+    "CS 역할 전용 축소 권한은 여전히 없다(CS도 403). 필요하면 별도 정책 확정 필요."
+  ],
+  "risks": [
+    "관리자 세션 TTL 2시간, refresh 없음. 만료 시 콘솔이 로그인 화면으로 돌아가고 재로그인이 필요하다(의도).",
+    "잠금 키는 클라이언트 IP의 솔트 해시다. 같은 NAT를 쓰는 운영자 여러 명이 한 명의 실패로 함께 5분 잠길 수 있다.",
+    "운영(prod)에는 테스터 로그인이 없고 소셜 인계도 미완이라, 현재 시점에 운영 환경에서 콘솔에 로그인할 경로가 없다. 배포 전 반드시 소셜 인계를 완료해야 한다.",
+    "멤버 토큰을 관리자 라우트에 쓰면 이제 403 ADMIN_SESSION_REQUIRED다(기존 ADMIN_REQUIRED). 이 코드를 검사하는 외부 클라이언트/문서가 있으면 갱신 필요.",
+    "관리자 토큰은 여전히 탭 메모리에만 있어 XSS에 대한 완전한 방어가 아니다. 배포 시 same-origin BFF + HttpOnly 쿠키 검토가 필요하다(기존 위험과 동일)."
+  ],
+  "next": [
+    "오케스트레이터가 이 작업트리에서 `cd services/backend && npx tsc --noEmit`, `npm test`, `KG_TEST_DATABASE_URL=postgres://postgres@127.0.0.1:55432/kgtest_ws23 node --test tests/admin-session.integration.test.ts`, 같은 DB로 `tests/admin.integration.test.ts`·`tests/oauth.integration.test.ts`·`tests/register.integration.test.ts`, `cd tests/contract && node --test contract.test.ts`, `cd apps/web && npm run typecheck && npm run test:unit && npm run build`을 다시 실행해 병합 판정.",
+    "E2E 재현: 로컬 PostgreSQL(55432)에서 `node records/parallel-10/WS-23/e2e/ws23-e2e.mjs` — 백엔드·preview 기동과 데이터 정리까지 스스로 수행한다(원격 접속 없음). 단, 웹은 `VITE_API_BASE_URL=http://127.0.0.1:4401`로 빌드된 dist를 대상으로 한다.",
+    "소셜 로그인 → 콘솔 세션 인계 방식 결정 후 /admin/login의 소셜 버튼을 실제 흐름으로 연결.",
+    "WS-27에서 /v1/admin/* 신규 3개 라우트와 오류 코드(ADMIN_SESSION_REQUIRED, ADMIN_LOGIN_LOCKED, attemptsRemaining)를 계약에 등재.",
+    "배포 후 개발환경(Railway API + Cloudflare 경유) 실제 로그인·조회 거래 검증은 배포 권한 단계에서 별도 수행."
+  ]
+}

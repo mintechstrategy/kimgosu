@@ -1,15 +1,17 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { randomUUID } from 'node:crypto';
 import type { Sql, Row } from './app.ts';
-import type { Authenticate } from './auth.ts';
+import { requireAdminScope } from './admin-session.ts';
 import { ApiError } from './security.ts';
 
 /**
  * Operator (admin) routes: member/ledger lookup and account restriction.
  *
- * Authority is decided here on the server from `role_grants`, never from a
- * client-sent flag. A member without a live ADMIN grant gets 403 before any
- * member data is read.
+ * Authority is decided here on the server, never from a client-sent flag, and
+ * requires an operator-scope session (`adm_…`) whose owner holds a live ADMIN
+ * `role_grants` row — both re-read on every request. A member session token gets
+ * 403 ADMIN_SESSION_REQUIRED (scope), an admin session without a live grant gets
+ * 403 ADMIN_REQUIRED (role); neither reads member data first.
  *
  * Restriction history lives in `kg_membership.restrictions` (active row while
  * `revoked_at IS NULL`); every restrict/release is also appended to
@@ -48,19 +50,9 @@ function cursor(value: unknown, fallback: number, min: number, max: number): num
   return Number.isSafeInteger(n) && n >= min && n <= max ? n : fallback;
 }
 
-export function registerAdminRoutes(app: FastifyInstance, db: Sql, authenticate: Authenticate) {
-  async function requireAdmin(request: FastifyRequest, reply: FastifyReply) {
-    const auth = await authenticate(request, reply);
-    if (!auth) return null;
-    const grant = await db.query(
-      `SELECT 1 FROM kg_membership.role_grants g
-        WHERE g.member_id=$1 AND g.role_id='ADMIN' AND g.revoked_at IS NULL
-          AND g.starts_at<=now() AND (g.ends_at IS NULL OR g.ends_at>now())`,
-      [auth.memberId],
-    );
-    if (!grant.rows[0]) { reply.code(403).send({ error: { code: 'ADMIN_REQUIRED' } }); return null; }
-    return auth;
-  }
+export function registerAdminRoutes(app: FastifyInstance, db: Sql) {
+  // Operator scope + live ADMIN grant; both re-read per request.
+  const requireAdmin = (request: FastifyRequest, reply: FastifyReply) => requireAdminScope(db, request, reply);
 
   app.get<{ Querystring: { query?: string; status?: string; page?: string; limit?: string } }>('/v1/admin/members', {
     schema: {
