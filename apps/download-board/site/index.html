@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<meta name="description" content="김고수 앱 다운로드">
+<title>김고수 앱 다운로드</title>
+<link rel="stylesheet" href="/styles.css">
+<script type="module" src="/app.mjs"></script>
+</head>
+<body>
+<a class="skip" href="#board">다운로드 목록으로</a>
+<header><div class="wrap bar"><a class="brand" href="/" aria-label="김고수 홈"><img class="brand-mark" src="/app-icon.png" alt=""><span>김고수</span></a></div></header>
+<main class="wrap">
+<section id="board" aria-labelledby="board-title">
+<h1 id="board-title">앱 다운로드 <span id="count">0</span></h1>
+<div class="toolbar">
+<div class="filters" role="group" aria-label="플랫폼 선택">
+<button type="button" data-platform="all" aria-pressed="true">전체</button>
+<button type="button" data-platform="aos" aria-pressed="false">AOS</button>
+<button type="button" data-platform="ios" aria-pressed="false">iOS</button>
+</div>
+<label class="search"><span class="sr-only">버전·변경사항 검색</span><input id="search" type="search" placeholder="검색" autocomplete="off"></label>
+</div>
+<div id="result" aria-live="polite"><p class="empty">불러오는 중…</p></div>
+<noscript><p class="error">목록을 보려면 JavaScript를 켜주세요.</p></noscript>
+</section>
+</main>
+</body>
+</html>
