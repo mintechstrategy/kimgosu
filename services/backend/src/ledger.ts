@@ -61,6 +61,40 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Sql, authenticate
     return { roles: [...new Set(roles)], grants: grants.rows };
   });
 
+  // 고객이 고수에게 거래를 시작하는 유일한 경로. 같은 상대와는 원장이 하나뿐이므로
+  // 두 번째 요청은 새로 만들지 않고 기존 원장을 돌려준다(스팸·중복 방지).
+  app.post<{ Body: { expertId: string; displayName?: string } }>('/v1/ledgers', {
+    schema: body({ expertId: idSchema, displayName: string(1, 50) }, ['expertId']),
+  }, async (request, reply) => {
+    const auth = await requireMember(request, reply); if (!auth) return;
+    if (request.body.expertId === auth.memberId) throw new ApiError(400, 'SELF_LEDGER_NOT_ALLOWED');
+
+    const expert = (await db.query(
+      `SELECT 1 FROM kg_membership.members WHERE id=$1 AND expert_active AND withdrawn_at IS NULL`,
+      [request.body.expertId],
+    )).rows[0];
+    if (!expert) throw new ApiError(404, 'EXPERT_NOT_FOUND');
+
+    const inserted = (await db.query(
+      `INSERT INTO kg_membership.ledgers(id,expert_member_id,customer_member_id,display_name)
+       VALUES($1,$2,$3,$4) ON CONFLICT (expert_member_id,customer_member_id) DO NOTHING
+       RETURNING id, created_at AS "createdAt"`,
+      [randomUUID(), request.body.expertId, auth.memberId, request.body.displayName ?? null],
+    )).rows[0];
+
+    if (!inserted) {
+      const existing = (await db.query(
+        `SELECT id, created_at AS "createdAt" FROM kg_membership.ledgers
+          WHERE expert_member_id=$1 AND customer_member_id=$2`,
+        [request.body.expertId, auth.memberId],
+      )).rows[0];
+      return reply.code(200).send({ id: existing.id, createdAt: existing.createdAt, created: false });
+    }
+
+    await audit(db, auth.memberId, 'LEDGER_OPENED', 'ledger', String(inserted.id), undefined, { expertId: request.body.expertId });
+    return reply.code(201).send({ id: inserted.id, createdAt: inserted.createdAt, created: true });
+  });
+
   // Ledgers are owned by the expert. A customer never lists other people's ledgers.
   app.get('/v1/ledgers', async (request, reply) => {
     const auth = await requireMember(request, reply); if (!auth) return;
