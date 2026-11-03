@@ -8,6 +8,7 @@ from pathlib import Path
 import plistlib
 import re
 import shutil
+import struct
 import subprocess
 import urllib.request
 import zipfile
@@ -21,6 +22,61 @@ REQUIRED_FIELDS=('stage','qaAccepted','candidate','qaCompletedAt','builtAt','art
                  'platform','kind','version','build','notes','qaResult','sourceManifest')
 def digest(p): return hashlib.sha256(p.read_bytes()).hexdigest()
 def load(p): return json.loads(Path(p).read_text())
+def apk_badging(aapt2,artifact):
+    if aapt2:
+        try: result=subprocess.run([aapt2,'dump','badging',str(artifact)],capture_output=True,text=True,check=True)
+        except (OSError,subprocess.CalledProcessError): result=None
+        if result is not None:
+            m=re.search(r"package: name='[^']+' versionCode='([^']+)' versionName='([^']+)'",result.stdout)
+            if m: return m.group(2),m.group(1)
+    return apk_manifest_version(artifact)
+# versionName/versionCode always come from the APK's own AndroidManifest.xml. aapt2 is used
+# when available; without it the AXML chunk is parsed directly, so the board can never display
+# a version that the artifact does not carry.
+AXML_VERSION_CODE,AXML_VERSION_NAME=0x0101021b,0x0101021c
+def axml_string_pool(data,off):
+    kind,header=struct.unpack_from('<HH',data,off)
+    if kind!=0x0001: raise ValueError('AndroidManifest.xml string pool is missing')
+    count,=struct.unpack_from('<I',data,off+8);flags,=struct.unpack_from('<I',data,off+16);start,=struct.unpack_from('<I',data,off+20)
+    utf8=bool(flags&0x100);strings=[]
+    for i in range(count):
+        p=off+start+struct.unpack_from('<I',data,off+header+i*4)[0]
+        if utf8:
+            n=data[p];p+=2 if n&0x80 else 1;n=data[p]
+            if n&0x80: n=((n&0x7f)<<8)|data[p+1];p+=2
+            else: p+=1
+            strings.append(data[p:p+n].decode('utf-8','replace'))
+        else:
+            n,=struct.unpack_from('<H',data,p);p+=2
+            if n&0x8000: n=((n&0x7fff)<<16)|struct.unpack_from('<H',data,p)[0];p+=2
+            strings.append(data[p:p+n*2].decode('utf-16-le','replace'))
+    size,=struct.unpack_from('<I',data,off+4)
+    return strings,off+size
+def apk_manifest_version(apk):
+    with zipfile.ZipFile(apk) as z: data=z.read('AndroidManifest.xml')
+    strings,off=axml_string_pool(data,8);ids=[]
+    if struct.unpack_from('<H',data,off)[0]==0x0180:
+        _kind,header,size=struct.unpack_from('<HHI',data,off)
+        ids=list(struct.unpack_from('<%dI'%((size-header)//4),data,off+header));off+=size
+    while off<len(data):
+        kind,_header,size=struct.unpack_from('<HHI',data,off)
+        if kind==0x0102:
+            attr_start,attr_size,attr_count=struct.unpack_from('<HHH',data,off+24)
+            found={}
+            for i in range(attr_count):
+                a=off+16+attr_start+i*attr_size
+                _ns,name,raw=struct.unpack_from('<III',data,a)
+                _tsize,_reserved,dtype,value=struct.unpack_from('<HBBI',data,a+12)
+                resource=ids[name] if name<len(ids) else 0
+                label=strings[name] if name<len(strings) else ''
+                if resource==AXML_VERSION_CODE or label=='versionCode': found['versionCode']=value
+                elif resource==AXML_VERSION_NAME or label=='versionName':
+                    if dtype==0x03 and value<len(strings): found['versionName']=strings[value]
+                    elif raw<len(strings): found['versionName']=strings[raw]
+            if 'versionCode' in found and 'versionName' in found:
+                return str(found['versionName']),str(found['versionCode'])
+        off+=size
+    raise ValueError('APK version metadata could not be read')
 def timestamp(text):
     d=datetime.fromisoformat(text.replace('Z','+00:00'))
     if d.tzinfo is None: raise ValueError('Timezone is required')
@@ -55,16 +111,18 @@ def prepare(record_path):
     kind=r['kind'];platform=r['platform']
     if kind=='android-apk' and platform=='aos':
         if artifact.suffix!='.apk': raise ValueError('APK required')
-        result=subprocess.run([r['aapt2'],'dump','badging',str(artifact)],capture_output=True,text=True,check=True)
-        m=re.search(r"package: name='[^']+' versionCode='([^']+)' versionName='([^']+)'",result.stdout)
-        if not m or (m.group(1),m.group(2))!=(build,version): raise ValueError('APK version differs from the release record')
+        apk_version,apk_build=apk_badging(r.get('aapt2'),artifact)
+        if (apk_build,apk_version)!=(build,version): raise ValueError('APK version differs from the release record')
+        version,build=apk_version,apk_build
         label='Android 개발용 APK';notice='Android 기기용 개발 빌드입니다. 기기의 설치 허용 안내를 확인하세요.'
     elif kind in ('ios-simulator','ios-device-ipa') and platform=='ios':
         with zipfile.ZipFile(artifact) as z:
             candidates=[n for n in z.namelist() if n.endswith('.app/Info.plist')]
             if len(candidates)!=1: raise ValueError('Exactly one app bundle required')
             info=plistlib.loads(z.read(candidates[0]))
-            if (str(info['CFBundleShortVersionString']),str(info['CFBundleVersion']))!=(version,build): raise ValueError('iOS bundle version differs')
+            bundle=(str(info['CFBundleShortVersionString']),str(info['CFBundleVersion']))
+            if bundle!=(version,build): raise ValueError('iOS bundle version differs')
+            version,build=bundle
             if kind=='ios-simulator':
                 if artifact.suffix!='.zip' or 'iPhoneSimulator' not in info.get('CFBundleSupportedPlatforms',[]): raise ValueError('Simulator ZIP required')
                 label='iOS Simulator ZIP';notice='Mac의 iOS 시뮬레이터 전용입니다. 실제 iPhone에는 설치할 수 없습니다.'
@@ -73,22 +131,29 @@ def prepare(record_path):
                 if not r.get('installationNotice'): raise ValueError('IPA installation/provisioning scope must be explicit')
                 label='iOS 서명 IPA';notice=r['installationNotice']
     else: raise ValueError('Unsupported platform/kind combination')
-    sha=digest(artifact);filename=f'kimgosu-{platform}-{version}-b{build}-{sha[:12]}{artifact.suffix}'
-    relative=f'downloads/v{version}/{filename}';target=SITE/relative;target.parent.mkdir(parents=True,exist_ok=True)
+    sha=digest(artifact)
+    # The hash is a manifest field, never part of the file name: a hash-bearing name
+    # made every re-publish a new path, which is what allowed duplicate entries to pile up.
+    relative=f'downloads/v{version}/kimgosu-{platform}-{version}-b{build}{artifact.suffix}'
+    target=SITE/relative
     data=load(SITE/'releases.json')
     published=[x for x in data.get('releases',[]) if x.get('platform')==platform and x.get('status')=='published']
-    # Accumulation is keyed on platform+version+build, not on the hash-bearing file name:
-    # a filename always embeds the hash, so a path lookup can never catch a re-publish.
+    # Accumulation is keyed on platform+version+build, not on the file path.
     same=[x for x in published if x.get('version')==version and str(x.get('build'))==build]
     if same:
         if any(x.get('sha256')!=sha for x in same):
             raise ValueError(f'{platform} {version} build {build} is already published with a different artifact; bump version/build instead of replacing it')
         entry=same[0]
-        if not target.exists(): shutil.copyfile(artifact,target)
-        elif digest(target)!=sha: raise ValueError('Published file was modified: '+relative)
+        # Already-published entries keep their original (immutable) path, including legacy
+        # entries whose file name still carries a hash prefix. Restore a lost file there.
+        existing=SITE/entry['file'].lstrip('/')
+        if not existing.exists():
+            existing.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(artifact,existing)
+        elif digest(existing)!=sha: raise ValueError('Published file was modified: '+entry['file'])
         return entry
     older=[x for x in published if x.get('version')==version and str(x.get('build','')).isdigit() and int(x['build'])>int(build)]
     if older: raise ValueError(f'{platform} {version} build {older[0]["build"]} is already published; refusing to add older build {build}')
+    target.parent.mkdir(parents=True,exist_ok=True)
     if target.exists() and digest(target)!=sha: raise ValueError('Never overwrite a published version')
     if not target.exists(): shutil.copyfile(artifact,target)
     entry={'platform':platform,'kind':kind,'kindLabel':label,'version':version,'build':build,'builtAt':r['builtAt'],'publishedAt':datetime.now(timezone.utc).isoformat(),'status':'published','qaStatus':'PASS','file':'/'+relative,'bytes':artifact.stat().st_size,'sha256':sha,'installationNotice':notice,'notes':r.get('notes',[])}
