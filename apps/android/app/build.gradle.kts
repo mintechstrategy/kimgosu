@@ -35,7 +35,7 @@ android {
     buildFeatures { compose = true; buildConfig = true }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     kotlinOptions { jvmTarget = "17" }
-    sourceSets.getByName("androidTest").assets.srcDir("../../../engineering/auth-v03-app-01/test-inputs")
+    sourceSets.getByName("androidTest").assets.srcDir("../../../records/engineering/auth-v03-app-01/test-inputs")
     sourceSets.getByName("main").assets.srcDir("../../mobile-shared/MobileAssets")
     sourceSets.getByName("main").res.srcDir(layout.buildDirectory.dir("generated/launcher"))
 }

@@ -31,4 +31,4 @@ JDK17·SDK35가 필요하다. 스크립트는 JAVA_HOME/ANDROID_HOME을 존중�
 - API 검증용 Debug 인수: iOS `--verify-api`, `--offline`, `--hold-splash`; Android boolean intent extras `verify_api`, `hold_splash`.
 - 화면 캡처는 테스트 전용 고정 스플래시 또는 전환 후 안정화된 실제 화면이다. 제품에 임의 지연 시간을 넣지 않는다.
 
-현재 실행 증거·검증한 패키지 해시·제약은 `engineering/app-launch-01/RESULT.json` 및 REPORT.md를 따른다. 최소 OS 전체 매트릭스, 실기기, 독립 UIUX QA와 출시 승인은 별도이며 현재 로컬 모바일 변경은 GitHub에 push하지 않았다.
+현재 실행 증거·검증한 패키지 해시·제약은 `records/engineering/app-launch-01/RESULT.json` 및 REPORT.md를 따른다. 최소 OS 전체 매트릭스, 실기기, 독립 UIUX QA와 출시 승인은 별도이며 현재 로컬 모바일 변경은 GitHub에 push하지 않았다.

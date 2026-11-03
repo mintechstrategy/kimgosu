@@ -4,7 +4,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { makeFixture } from './fixture.mjs';
 const root=fileURLToPath(new URL('../../',import.meta.url));
-const evidence=process.env.WEB_EVIDENCE_DIR || fileURLToPath(new URL('../../../../engineering/auth-core-repair-01/web/baseline-regression/',import.meta.url));
+const evidence=process.env.WEB_EVIDENCE_DIR || fileURLToPath(new URL('../../../../records/engineering/auth-core-repair-01/web/baseline-regression/',import.meta.url));
 const out=evidence+'browser';mkdirSync(out,{recursive:true});
 process.env.PLAYWRIGHT_BROWSERS_PATH=root+'.cache/ms-playwright';
 const { chromium } = await import('playwright');

@@ -18,7 +18,7 @@ import { dirname, join } from 'node:path';
 import pg from 'pg';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const POLICY_DIR = join(HERE, '../../../product/policies');
+const POLICY_DIR = join(HERE, '../../../records/product/policies');
 const VERSION = 'v0.1-draft';
 
 const DOCUMENTS = [

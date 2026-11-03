@@ -52,10 +52,11 @@ credentials.json
 # Internal coordination, review evidence and local toolchains are not source delivery.
 /.local-toolchains/
 /decisions/
-/engineering/
 /qa/
 /handoffs/
 /tasks/
 /design/
-/product/
 /AGENTS.md
+
+# Managed project records (policy originals, architecture authority, test inputs).
+# Tracked on purpose: these are referenced by code and by AGENTS.md.

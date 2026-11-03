@@ -17,7 +17,7 @@ PLAYWRIGHT_BROWSERS_PATH="$PWD/.cache/ms-playwright" npx playwright install chro
 npm run test:browser
 ```
 
-`test:browser`가 **격리 시험 동안만** `127.0.0.1:4178`에 빌드된 dist의 Vite preview를 실행하고 브라우저/preview를 finally에서 종료한다. 상시 서버·외부 게시가 아니다. 로그/스크린샷/결과는 `engineering/auth-three-tracks-01/web/`로 반환한다. 390×844/1440×1000/320×640 큰글자 및 키보드/다이얼로그 시험을 포함한다. 단위시험은 Node 내장 runner로 실행한다. fixture는 `tests/` 안에만 있고 제품이나 dist에 import하지 않는다. `npm run dev`는 별도 개발 편의를 위한 로컬 명령이며 이 작업에서 상시 서버로 남기지 않았다.
+`test:browser`가 **격리 시험 동안만** `127.0.0.1:4178`에 빌드된 dist의 Vite preview를 실행하고 브라우저/preview를 finally에서 종료한다. 상시 서버·외부 게시가 아니다. 로그/스크린샷/결과는 `records/engineering/auth-three-tracks-01/web/`로 반환한다. 390×844/1440×1000/320×640 큰글자 및 키보드/다이얼로그 시험을 포함한다. 단위시험은 Node 내장 runner로 실행한다. fixture는 `tests/` 안에만 있고 제품이나 dist에 import하지 않는다. `npm run dev`는 별도 개발 편의를 위한 로컬 명령이며 이 작업에서 상시 서버로 남기지 않았다.
 
 ## 제품 경로와 현재 동작
 
@@ -44,4 +44,4 @@ opaque bearer는 API client closure의 탭 메모리에만 보관한다. localSt
 
 부모 검토/게시 시 **`dist/` 내용만** 전달한다. `src/`, `tests/`, `node_modules/`, `.cache/`, engineering 증거/소스맵을 게시하지 않는다. 앱 스플래시 파일은 포함하지 않는다. `public/assets/`는 승인 아이콘·Pretendard 3종·공식 Google G만 포함한다. 원본과 출처 해시는 반환 manifest에 기록한다. Cloudflare Pages/DNS/API CORS/배포/Git index는 이 트랙에서 변경하지 않았다.
 
-실제 Cloudflare→Railway→DB 거래, OAuth/SMS, 원격 웹 게시 및 uiux 적합성 판정은 개발자 자체 시험과 별개다. 정확 후보와 다음 게이트는 `engineering/auth-three-tracks-01/web/RESULT.json`, `HANDOFF.md`, `candidate-manifest.json`을 따른다.
+실제 Cloudflare→Railway→DB 거래, OAuth/SMS, 원격 웹 게시 및 uiux 적합성 판정은 개발자 자체 시험과 별개다. 정확 후보와 다음 게이트는 `records/engineering/auth-three-tracks-01/web/RESULT.json`, `HANDOFF.md`, `candidate-manifest.json`을 따른다.

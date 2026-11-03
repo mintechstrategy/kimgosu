@@ -1,0 +1,155 @@
+{
+  "taskId": "KG-POLICY-DRAFT-01",
+  "status": "DRAFT_NOT_EFFECTIVE",
+  "version": "v0.1-draft",
+  "owner": "develop",
+  "at": "2026-11-03",
+  "purpose": "BLK-01 해소를 위한 정책 문서 4종 검토 초안. 승인 전 READY 전환 금지.",
+  "documents": [
+    {
+      "kind": "TERMS",
+      "file": "TERMS-v0.1-draft.md",
+      "title": "김고수 서비스 이용약관 (검토 초안 v0.1)",
+      "bytes": 8726,
+      "sha256": "b1880abe585ba1afb50fe48baf923e57bb839f60f28d530a89bfa7c8e8406a73"
+    },
+    {
+      "kind": "PRIVACY_CONSENT",
+      "file": "PRIVACY-CONSENT-v0.1-draft.md",
+      "title": "개인정보 수집·이용 동의 (검토 초안 v0.1)",
+      "bytes": 4215,
+      "sha256": "6ebdd945f6e3252b276149af9e71511634d15acf6846c145cabe3b1941f5be02"
+    },
+    {
+      "kind": "PRIVACY_POLICY",
+      "file": "PRIVACY-POLICY-v0.1-draft.md",
+      "title": "김고수 개인정보 처리방침 (검토 초안 v0.1)",
+      "bytes": 5631,
+      "sha256": "4ab77999de6d59aac52bd1a9187a6676fe9723c7c7e300d3a0ae00ec10f8ee90"
+    },
+    {
+      "kind": "MARKETING",
+      "file": "MARKETING-v0.1-draft.md",
+      "title": "마케팅 정보 수신 동의 (검토 초안 v0.1)",
+      "bytes": 2583,
+      "sha256": "816b1bc87b7a80cab1dd34ba66115f16a1e7ae190d4df72fc60f07acc6ff836f"
+    }
+  ],
+  "confirmedDecisionsReflected": [
+    "만 14세 이상 확인",
+    "이름·이메일 필수, 성별·연령대·생년월일 미수집",
+    "SMS 010 11자리, 5자리 인증번호, 60초 유효, 재발송 시 이전 코드 무효",
+    "고수 신청 후 즉시 활성화, 관리자 사전승인 없음",
+    "모드 전환은 권한 부여가 아님",
+    "재가입 시 새 고객번호 채번, 이전 번호 재사용 금지",
+    "이전 활동 자동 연결 없음",
+    "일반 탈퇴 후 30일 재가입 유예",
+    "유효 이용제한은 재가입에도 승계",
+    "상거래 자료 보존 목적은 거래상대방 보호",
+    "탈퇴 확정 시점부터 1년 보존, 재가입으로 기산점 불변",
+    "탈퇴자 대화는 상대방에게 잔존, 식별 불가 표시",
+    "탈퇴 시 전 세션 폐기",
+    "마케팅 동의와 앱 알림 스위치는 독립",
+    "결제·정산 미제공, 결제 화면은 시연",
+    "원본의 '모든 내역 삭제' 문구 사용 금지"
+  ],
+  "unresolvedMarkers": [
+    "사업자 정보(상호·대표자·사업자등록번호·주소·연락처)",
+    "시행일",
+    "개인정보 보호 책임자",
+    "제3자 제공 항목·제공받는 자·목적·기간",
+    "처리 위탁 수탁자·업무",
+    "국외 이전 국가·이전받는 자·항목·목적·방법·기간",
+    "자료별 법적 보존 근거·최소 범위·파기/익명화 기준",
+    "위반 유형별 제재 기간·단계, 이의 제기 처리 기한",
+    "자격 필요 분야 확인 기준",
+    "문자 발송 사업자·발신번호·비용",
+    "마케팅 발송 수단·철회 경로·야간 전송 동의",
+    "쿠키 사용 여부·항목·목적·거부 방법",
+    "관할 법원"
+  ],
+  "loading": {
+    "script": "services/backend/scripts/load-policy-drafts.mjs",
+    "dryRun": "node scripts/load-policy-drafts.mjs --dry-run",
+    "load": "DATABASE_URL=<dev-db-url> node scripts/load-policy-drafts.mjs",
+    "safety": "DRAFT로만 삽입. canConsent=false이므로 가입은 계속 차단됨. 기존 (kind,version) 행은 덮어쓰지 않음.",
+    "localVerification": {
+      "database": "PostgreSQL 18.6 loopback",
+      "result": "4건 DRAFT 삽입, canConsent=false 확인",
+      "at": "2026-11-03"
+    },
+    "devLoad": {
+      "status": "COMPLETED",
+      "at": "2026-11-03",
+      "method": "railway connect Postgres --tunnel-only (SSH key kimgosu-develop 등록 후)",
+      "inserted": [
+        { "kind": "TERMS", "id": 2 },
+        { "kind": "PRIVACY_CONSENT", "id": 3 },
+        { "kind": "PRIVACY_POLICY", "id": 4 },
+        { "kind": "MARKETING", "id": 5 }
+      ],
+      "liveVerification": {
+        "endpoint": "https://api-dev-kimgosu.mintech.ai/v1/policies",
+        "documents": 5,
+        "allDraft": true,
+        "anyCanConsent": false
+      },
+      "liveConfigVerification": {
+        "endpoint": "https://api-dev-kimgosu.mintech.ai/v1/auth/config",
+        "signupReady": false,
+        "note": "DRAFT이므로 가입은 의도대로 계속 차단됨"
+      },
+      "hashRoundTrip": {
+        "kind": "TERMS",
+        "apiBodySha256": "b1880abe585ba1afb50fe48baf923e57bb839f60f28d530a89bfa7c8e8406a73",
+        "recomputed": "b1880abe585ba1afb50fe48baf923e57bb839f60f28d530a89bfa7c8e8406a73",
+        "match": true
+      }
+    }
+  },
+  "promotion": {
+    "status": "COMPLETED",
+    "at": "2026-11-03T12:01:00+09:00",
+    "from": "DRAFT",
+    "to": "READY",
+    "values": {
+      "operator_name": "mintech",
+      "effective_at": "2026-11-03T00:00:00+09:00",
+      "approved_at": "2026-11-03T12:01:00+09:00"
+    },
+    "providedBy": "사용자 직접 입력",
+    "script": "services/backend/scripts/promote-policy-drafts.mjs",
+    "runner": "services/backend/scripts/dev-db.sh",
+    "documents": [
+      { "kind": "TERMS", "id": 2 },
+      { "kind": "PRIVACY_CONSENT", "id": 3 },
+      { "kind": "PRIVACY_POLICY", "id": 4 },
+      { "kind": "MARKETING", "id": 5 }
+    ],
+    "irreversible": true,
+    "irreversibilityNote": "READY 전환 시 content_sealed=true가 되어 본문·제목·버전·operator·시행일·승인일이 DB 트리거로 잠긴다. 내용 수정은 새 버전(v0.2 등) 발행으로만 가능하다.",
+    "liveVerification": {
+      "policiesEndpoint": {
+        "url": "https://api-dev-kimgosu.mintech.ai/v1/policies",
+        "readyDocuments": 4,
+        "canConsent": true,
+        "operator": "mintech",
+        "effectiveAt": "2026-11-02T15:00:00.000Z (= 2026-11-03T00:00 KST)"
+      },
+      "configEndpoint": {
+        "url": "https://api-dev-kimgosu.mintech.ai/v1/auth/config",
+        "signupReady": false,
+        "remainingBlockers": ["providers 3종 미연결", "sms 미연결", "identity key 미설정"]
+      },
+      "sealProof": {
+        "script": "services/backend/scripts/verify-policy-seal.mjs",
+        "result": "PASS",
+        "attempts": [
+          "body 변경 → SEALED_DOCUMENT_IMMUTABLE",
+          "operator_name 변경 → SEALED_DOCUMENT_IMMUTABLE",
+          "content_sealed 해제 → SEAL_METADATA_INTERNAL"
+        ]
+      }
+    }
+  }
+}
