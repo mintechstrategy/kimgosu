@@ -1,0 +1,100 @@
+{
+  "ws": "WS-24",
+  "status": "DONE",
+  "summary": "부가세 별도 표기·시급/총액 구분·TTL 7일 기본 30일 최대 정책을 013_quote_terms.sql과 POST/GET 견적 API에 구현하고, 실 PostgreSQL(55432 및 격리 클러스터)에서 신규 통합 테스트 8종과 기존 견적·합의·계약·스키마 회귀를 실제 실행해 모두 통과했다. 실제 개발계(GitHub–Railway–Cloudflare) 거래 검증은 원격 쓰기 금지로 NOT_RUN.",
+  "changedFiles": [
+    "services/backend/migrations/013_quote_terms.sql",
+    "services/backend/src/quotes.ts",
+    "services/backend/tests/quote-terms.integration.test.ts",
+    "services/backend/package.json"
+  ],
+  "verification": [
+    {
+      "check": "TypeScript 타입체크 (구현+테스트 파일 포함)",
+      "command": "cd services/backend && npx tsc --noEmit (node v24.22.2, PATH=.local-toolchains/node24)",
+      "result": "PASS",
+      "evidence": "출력 없음, exit 0"
+    },
+    {
+      "check": "기존 유닛 스위트",
+      "command": "cd services/backend && node --test src/*.test.ts",
+      "result": "PASS",
+      "evidence": "tests 23 / pass 23 / fail 0"
+    },
+    {
+      "check": "신규 견적 조건 통합 테스트 (실 PostgreSQL, PLAN 지정 127.0.0.1:55432/kgtest)",
+      "command": "KG_TEST_DATABASE_URL=postgres://postgres@127.0.0.1:55432/kgtest node --test tests/quote-terms.integration.test.ts",
+      "result": "PASS",
+      "evidence": "tests 8 / pass 8 / fail 0 (duration 15685ms). 검증 항목: expiresAt 미지정 시 응답·DB 저장값 모두 요청시각+7일(오차 5초 이내), 31일·365일 만료 요청 400 EXPIRY_EXCEEDS_MAX_TTL 및 30일-1분 요청 201, 과거 시각 400 INVALID_EXPIRY 및 거절 요청은 행을 남기지 않음, HOURLY에 hourly_rate 누락 400 HOURLY_RATE_REQUIRED·TOTAL에 hourly_rate 전달 400 HOURLY_RATE_NOT_ALLOWED·hourlyRate=0 400, DB에 price_type/hourly_rate/vat_included 실제 저장 확인, 1,000,000원 → 공급가 1,000,000·부가세 100,000·합계 1,100,000(생성 응답·목록 응답 동일), vatIncluded=true 1,100,000원 → 공급가 1,000,000·부가세 100,000·합계 1,100,000 및 DB 플래그 저장, 클라이언트가 보낸 totalAmount/vatAmount/supplyAmount/vatRate/currency 400 INVALID_REQUEST, 수락 시 생성되는 agreement summary가 '1,100,000원 (부가세 별도)', 마이그레이션 이전 방식으로 직접 INSERT한 행이 TOTAL·false·hourlyRate null로 읽힘, DB CHECK가 HOURLY 무시급·MEETING 타입·31일 만료 INSERT를 각각 거부"
+    },
+    {
+      "check": "같은 신규 스위트를 격리 클러스터에서도 재실행(다른 WS와의 DB 경합 배제)",
+      "command": "KG_TEST_DATABASE_URL=postgres://postgres@127.0.0.1:55924/kgtest node --test tests/quote-terms.integration.test.ts (scratch pgdata-ws24, 001-011+013 적용)",
+      "result": "PASS",
+      "evidence": "tests 8 / pass 8 / fail 0 — 55432 결과와 동일. 테스트 종료 후 스위트가 생성한 행을 삭제하고 잔여 0행을 단언"
+    },
+    {
+      "check": "기존 견적 회귀 (WS-14 스위트, 실 PostgreSQL)",
+      "command": "KG_TEST_DATABASE_URL=postgres://postgres@127.0.0.1:55432/kgtest node --test tests/quotes.integration.test.ts",
+      "result": "PASS",
+      "evidence": "tests 7 / pass 7 / fail 0 — 참여자 격리·만료·거절 종결·양측 확인 완료·audit 6종 모두 기존과 동일하게 통과(응답에 추가된 파생 필드로 인한 회귀 없음)"
+    },
+    {
+      "check": "기존 합의(agreement)·원장 회귀 (실 PostgreSQL)",
+      "command": "KG_TEST_DATABASE_URL=postgres://postgres@127.0.0.1:55432/kgtest node --test tests/ledger.integration.test.ts",
+      "result": "PASS",
+      "evidence": "tests 6 / pass 6 / fail 0 (agreement accept/complete, review eligibility, role grants 포함). 격리 클러스터(55924)에서도 6/6, 55432에서 체인(quote-terms→quotes→ledger) 재실행에서도 6/6. 단 한 번, 55432에서 quote-terms→quotes→ledger를 이어 돌린 실행에서 6건 전부 실패(0 pass)했고 같은 명령 재실행에서는 재현되지 않았다 — before 훅의 TRUNCATE가 공유 클러스터의 다른 세션 락을 기다리다 실패한 것으로 추정하며, 원인 로그를 확보하지 못해 미확정이다."
+    },
+    {
+      "check": "계약 회귀 (라우트 인벤토리·스키마)",
+      "command": "node --test tests/contract/contract.test.ts",
+      "result": "PASS",
+      "evidence": "tests 15 / pass 15 / fail 0 — 이번 변경은 라우트 추가/삭제가 없어 21개 operation 인벤토리 유지"
+    },
+    {
+      "check": "스키마 호환·local-db 통합 회귀(신규 컬럼 추가 영향)",
+      "command": "KG_TEST_DATABASE_URL=postgres://postgres@127.0.0.1:55924/kgtest node --test tests/local-db.integration.test.ts",
+      "result": "PASS",
+      "evidence": "tests 33 / pass 33 / fail 0 — 013은 컬럼·제약 추가만 하며 기존 스키마 검사 항목을 깨지 않음"
+    },
+    {
+      "check": "013 마이그레이션 재적용(멱등성)",
+      "command": "psql -h 127.0.0.1 -p 55924 -U postgres -d kgtest -v ON_ERROR_STOP=1 -f migrations/013_quote_terms.sql (2회차)",
+      "result": "PASS",
+      "evidence": "2회차는 'column ... already exists, skipping' NOTICE 3건만 출력하고 exit 0. DO 블록은 pg_constraint 존재 확인으로 제약 중복 생성을 건너뜀. 기존 행을 재라벨링하는 UPDATE는 의도적으로 두지 않아 HOURLY 견적을 덮어쓰지 않음"
+    },
+    {
+      "check": "GitHub–Railway–Cloudflare 실제 개발계 거래 검증",
+      "command": "(실행하지 않음 — PLAN 공통 규칙 2: 원격 쓰기·커밋·배포 금지)",
+      "result": "NOT_RUN",
+      "evidence": "push/PR/railway/cf 쓰기와 배포를 하지 않았으므로 dev-kimgosu.mintech.ai 경유 실제 거래(견적 제시→수락→재조회)는 이 WS에서 검증되지 않았다. 프로젝트 필수 완료 기준은 오케스트레이터 병합·배포 후 별도 확인이 필요하다."
+    }
+  ],
+  "contractChanges": [],
+  "migrations": [
+    "services/backend/migrations/013_quote_terms.sql"
+  ],
+  "open": [
+    "HOURLY 견적의 amount 의미: 이번 구현에서 amount는 HOURLY여도 '부가세 계산 기준이 되는 최종 거래금액'이며 hourly_rate는 별도 저장된다. 시간(시간 수) 필드가 없어 시급×시간 자동 계산은 하지 않는다. 시급만 제시하고 시간은 합의 후 정하는 기획이면 hours 계약·컬럼이 추가로 필요하다 — 사용자/기획 확인 필요.",
+    "vatIncluded=true 계산 규칙: amount를 지급 총액으로 보고 공급가=round(amount/1.1), 부가세=amount-공급가로 계산했다(1,100,000 → 909,091/190,909 아님, 1,000,000/100,000). 원 단위 정수 반올림이며 소수 처리 정책(절사/반올림)은 사용자 확정 전이다.",
+    "계약 정본(contracts/)에 견적 operation과 신규 필드(priceType·vatIncluded·hourlyRate·supplyAmount·vatAmount·totalAmount·vatRate·currency·VAT_RATE)가 아직 등재되지 않았다 — PLAN WS-27 범위.",
+    "웹/앱 화면의 '부가세 별도' 표기와 시급/총액 표시 UI는 이번 WS 범위가 아니다(프론트 미변경). API가 vatIncluded·vatRate·supplyAmount·vatAmount·totalAmount를 제공하므로 프론트는 이를 그대로 표시해야 한다.",
+    "기존 구조상 API가 트랜잭션 COMMIT 전에 응답을 반환한다(database.ts transaction). 그래서 생성 직후 다른 연결로 즉시 재조회하면 이전 상태가 보일 수 있다. 테스트는 짧은 폴링 헬퍼로 우회했고 제품 코드는 건드리지 않았다. 응답 후 커밋 순서 개선은 별도 카드가 필요하다."
+  ],
+  "risks": [
+    "services/backend/package.json의 test:integration 한 줄을 수정했다(quote-terms 스위트 추가). 같은 줄을 다른 WS가 동시에 고치면 병합 충돌 가능. .github/workflows/development.yml은 이미 01*_*.sql glob을 사용해 수정하지 않았다(013 자동 포함).",
+    "013은 로컬 테스트 클러스터에만 적용했다. Railway dev/운영 DB에는 적용하지 않았고, 배포 시점에 러너가 001→013을 순서대로 적용해야 한다(RUNNER-NOTES의 004 비멱등 문제는 별개 기존 사항).",
+    "quote_ttl_max_30_days CHECK는 NOT VALID로 추가했다. 기존 행(구 규칙의 임의 미래 만료)은 검증 대상에서 제외되어 남을 수 있고, 신규 INSERT/UPDATE에만 강제된다. 기존 데이터 정리는 하지 않았다.",
+    "최소 유효기간 60초 하한은 기존 동작을 유지했다(즉시 만료 요청은 400 INVALID_EXPIRY). 7일 기본값은 요청 시각(Date.now()) 기준이며 DB created_at은 수 밀리초 뒤이므로 30일 상한 CHECK와 충돌하지 않는다.",
+    "PLAN 지침대로 라우트 표기(/v1/ledgers 복수형 통일 등) 리팩터링은 하지 않았다. 견적 라우트는 기존 표기를 그대로 쓴다.",
+    "테스트는 55432(PLAN 지정)와 55924(격리 클러스터) 두 곳에서 통과했다. 55432는 공유 클러스터이므로 다른 WS가 같은 시각에 같은 테이블을 TRUNCATE하거나 트랜잭션을 열어 두면 오탐이 날 수 있다. 실제로 체인 실행 1회에서 ledger 스위트 6건이 전부 실패했고 같은 명령 재실행(3회)과 격리 클러스터 실행에서는 재현되지 않았다. 원인 로그를 확보하지 못해 원인은 미확정이며, 회귀 PASS의 근거는 격리 클러스터 재실행이다.",
+    "부가세율 10%는 상수(VAT_RATE=0.1)로 코드에 고정했다. 세율 변경(예: 간이과세·면세 품목) 대응은 이번 범위에 없다."
+  ],
+  "next": [
+    "오케스트레이터: 013_quote_terms.sql이 이번 작업에서 127.0.0.1:55432/kgtest에 실제 적용돼 있다(컬럼 3종 확인). 병합 후에는 `KG_TEST_DATABASE_URL=postgres://postgres@127.0.0.1:55432/kgtest node --test tests/quote-terms.integration.test.ts`와 `node --test tests/quotes.integration.test.ts`, `node --test tests/contract/contract.test.ts`를 다시 실행해 PASS를 독립 확인할 것.",
+    "WS-27(계약서 작성)에서 ledger-quotes.v0.1.json에 POST /v1/ledgers/:id/quotes의 신규 요청 필드와 파생 응답 필드를 실제 핸들러 스키마 근거로 등재할 것.",
+    "프론트(웹·AOS·iOS)는 견적 표시에서 vatIncluded=false일 때 '부가세 별도' 문구와 supplyAmount/vatAmount/totalAmount를 그대로 노출해야 한다. 별도 카드로 진행 필요.",
+    "개발계 배포 후 expert 제시(시급 견적 포함) → customer 수락 → /v1/ledgers/:id/quotes 재조회로 7일 만료·부가세 값 영속성까지 실제 거래로 확인할 것.",
+    "HOURLY의 시간 수(hours) 필요 여부와 VAT 반올림/부가세율 정책은 사용자 확인 대기 항목이다(open 참조)."
+  ]
+}
