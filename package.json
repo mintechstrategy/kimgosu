@@ -1,0 +1,14 @@
+{
+  "name": "kimgosu",
+  "private": true,
+  "description": "김고수 — 백엔드·웹·AOS·iOS 통합 검증 명령",
+  "scripts": {
+    "verify": "npm run verify:api && npm run verify:contract && npm run verify:web",
+    "verify:api": "cd services/backend && npm ci --ignore-scripts && npm run check && npm test",
+    "verify:contract": "node --test tests/contract/contract.test.ts tests/contract/oauth.test.ts tests/contract/ws27-contracts.test.ts tests/policy/metadata.test.ts",
+    "verify:web": "cd apps/web && npm ci --ignore-scripts && npm run typecheck && npm run test:unit && npm run build",
+    "verify:db": "cd services/backend && npm run test:integration",
+    "build:aos": "cd apps/android && ./gradlew :app:assembleDevDebug",
+    "build:ios": "cd apps/ios && xcodebuild -project Kimgosu.xcodeproj -scheme Kimgosu -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build"
+  }
+}
