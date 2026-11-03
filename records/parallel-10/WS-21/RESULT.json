@@ -1,0 +1,111 @@
+{
+  "ws": "WS-21",
+  "status": "DONE",
+  "summary": "Apple 로그인(마이그레이션 012_apple_provider.sql로 oauth_flows·social_links provider CHECK에 apple 추가, POST /v1/auth/oauth/apple/callback form_post 콜백, Apple JWKS 기반 RS256 서명·iss/aud/exp/nonce 검증, JWKS 실패 503, state 재사용·만료 400)을 구현했고, 전용 실 PostgreSQL DB(kgtest_ws21)에서 마이그레이션 001~012 적용·012 재적용 포함 통합 115건(apple 17 포함)·유닛 23건·계약 20건·정책 35건·tsc를 이 세션에서 직접 실행해 전부 통과했다.",
+  "changedFiles": [
+    "services/backend/migrations/012_apple_provider.sql",
+    "services/backend/src/apple.ts",
+    "services/backend/src/oauth.ts",
+    "services/backend/src/providers.ts",
+    "services/backend/src/app.ts",
+    "services/backend/tests/apple.integration.test.ts",
+    "services/backend/tests/oauth.integration.test.ts",
+    "services/backend/package.json",
+    "records/parallel-10/WS-21/RESULT.json"
+  ],
+  "verification": [
+    {
+      "check": "TypeScript 타입 검사",
+      "command": "cd services/backend && npx tsc --noEmit",
+      "result": "PASS",
+      "evidence": "출력 없음, exit=0 (node v26.7.0. package.json engines는 '>=24 <25'라 npm ci 시 EBADENGINE 경고만 발생하고 설치는 정상)"
+    },
+    {
+      "check": "마이그레이션 신규 클린 DB 전체 적용(001~012)",
+      "command": "node .ws21-migrate.mjs kgtest_ws21  (임시 헬퍼: CREATE DATABASE kgtest_ws21 후 migrations/*.sql 순차 적용, 실행 후 헬퍼는 저장소 밖 scratch로 이동)",
+      "result": "PASS",
+      "evidence": "빈 DB에서 001_membership ... 011_reviews, 012_apple_provider 까지 12개 파일 모두 오류 없이 적용. 적용 후 pg_constraint 확인: social_links_provider_check = CHECK(provider = ANY ARRAY['kakao','naver','google','apple']), oauth_flows_provider_check = CHECK(provider = ANY ARRAY['google','kakao','naver','apple']). 기존 행 삭제·변경 없음(DROP/ADD CONSTRAINT만 수행)"
+    },
+    {
+      "check": "012 재적용(멱등성)",
+      "command": "012_apple_provider.sql을 같은 DB에 2회 더 실행 후 제약 정의 조회",
+      "result": "PASS",
+      "evidence": "rerun 1 ok / rerun 2 ok, oauth_flows_provider_check가 apple 포함 4개 값으로 유지, oauth_flows 행 수 불변(0 — 테스트 시작 시 truncate된 상태)"
+    },
+    {
+      "check": "Apple 통합 테스트(실 PostgreSQL, 실제 RSA 키로 서명 검증)",
+      "command": "cd services/backend && KG_TEST_DATABASE_URL=postgres://postgres@127.0.0.1:55432/kgtest_ws21 node --test tests/apple.integration.test.ts",
+      "result": "PASS",
+      "evidence": "tests 17 / pass 17 / fail 0. [수용1] apple start 200 + 인가 URL·state + oauth_flows apple 행 저장(10분 만료), realProvider('apple')가 response_mode=form_post·nonce=state URL 생성 / [수용2] user.name 있음 → members.name='Minsoo Kim' 저장·social_links(provider=apple)·/v1/me 200, user 없는 재로그인 AUTHENTICATED·회원수 불변·이름 유지, user 없는 최초 로그인도 200 + 이메일 지역부 표시명 / [수용3] 다른 키로 서명(같은 kid) 401 SOCIAL_AUTH_FAILED·회원 미생성, 미등록 kid·alg=none·비JWT 401, aud/iss/exp/nonce/sub 불일치 각각 401 / [수용4] state 재사용 400 OAUTH_STATE_INVALID, 만료 state 400, kakao state 재사용 400이며 kakao flow 미소비 / JWKS 조회 실패 503 APPLE_JWKS_UNAVAILABLE / 미설정 provider 503, body 검증 실패 400(flow 미소비), 깨진 user JSON 400, charset 파라미터 허용·중복 필드 400, kakao GET 콜백 회귀 200"
+    },
+    {
+      "check": "실 PostgreSQL 통합 스위트 전체(전용 DB)",
+      "command": "cd services/backend && KG_TEST_DATABASE_URL=postgres://postgres@127.0.0.1:55432/kgtest_ws21 npm run test:integration",
+      "result": "PASS",
+      "evidence": "exit=0 — ledger 6/6, experts 10/10, local-db 33/33, quotes 7/7, chat 7/7, reviews 12/12, oauth 14/14, apple 17/17, register 9/9 (합 115건, fail 0). oauth 14/14는 kakao/naver 흐름 회귀 통과를 뜻한다"
+    },
+    {
+      "check": "백엔드 유닛 테스트 회귀",
+      "command": "cd services/backend && npm test",
+      "result": "PASS",
+      "evidence": "tests 23 / pass 23 / fail 0"
+    },
+    {
+      "check": "계약 회귀 v0.2 + v0.3",
+      "command": "node --test tests/contract/contract.test.ts && node --test tests/contract/oauth.test.ts",
+      "result": "PASS",
+      "evidence": "contract v0.2 tests 15 / pass 15 / fail 0, v0.3 oauth tests 5 / pass 5 / fail 0. 새 라우트를 oauth.ts가 아니라 apple.ts에 두어 contract.test.ts의 'oauth.ts 라우트는 정확히 2개' 단언과 v0.2 21개 인벤토리를 건드리지 않았다"
+    },
+    {
+      "check": "정책 메타데이터 회귀",
+      "command": "node --test tests/policy/metadata.test.ts",
+      "result": "PASS",
+      "evidence": "tests 35 / pass 35 / fail 0"
+    },
+    {
+      "check": "공용 테스트 DB(kgtest)에서의 교차 실행",
+      "command": "cd services/backend && npm run test:integration  (KG_TEST_DATABASE_URL=.../kgtest)",
+      "result": "FAIL",
+      "evidence": "공용 kgtest로 돌린 2회에서 experts 1건·local-db 7~13건 실패(예: local-db '기존 소셜 신원은 AUTHENTICATED로 세션을 발급한다'가 REGISTRATION_REQUIRED). 각 파일을 단독 실행하면 33/33·10/10 통과하고, 전용 DB(kgtest_ws21) 전체 스위트는 115/115 통과했다. 원인은 코드가 아니라 동시 실행 간섭으로 판단: 같은 시각 다른 워커(kg-09/WS-19 e2e 서버, WS-28 등)가 같은 호스트에서 테스트/서버를 돌려 load average가 300을 넘었고, 공용 kgtest를 여러 프로세스가 TRUNCATE하고 있었다. 즉 공용 DB 결과는 이 WS의 회귀 근거로 쓰지 않았다"
+    },
+    {
+      "check": "실제 Apple 자격증명/실 JWKS(appleid.apple.com) 대상 확인",
+      "command": "(없음)",
+      "result": "NOT_RUN",
+      "evidence": "Apple Developer client_id/secret·서비스 ID가 없어 실제 Apple 인가·실 JWKS 조회는 하지 않았다. 서명 검증 로직은 테스트가 생성한 실제 RSA 2048 키와 로컬 HTTP JWKS로 검증했다(위조 토큰 거부 포함). 실환경은 KG_OAUTH_APPLE_{ENABLED,CLIENT_ID,CLIENT_SECRET,REDIRECT_URI} 주입 후 별도 확인이 필요하다"
+    },
+    {
+      "check": "GitHub–Railway–Cloudflare 실제 거래 검증",
+      "command": "(없음)",
+      "result": "NOT_RUN",
+      "evidence": "이 작업 단위는 push·배포·원격 쓰기가 금지되어 있어 새 라우트는 어떤 배포에도 반영되지 않았다. 로컬 PostgreSQL까지만 검증했다"
+    }
+  ],
+  "contractChanges": [],
+  "migrations": [
+    "services/backend/migrations/012_apple_provider.sql"
+  ],
+  "open": [
+    "신규 POST /v1/auth/oauth/apple/callback은 계약 정본(contracts/)에 등재되지 않았다. auth-membership.v0.3.json은 WS-27/소유자 범위이고, 기존 계약 테스트는 app.ts·auth.ts·oauth.ts만 스캔하므로 apple.ts 라우트는 자동 인벤토리 검증 대상이 아니다. 웨이브 4에서 계약 등재 + 인벤토리 테스트 확장 필요",
+    "registration_tickets.provider CHECK는 PLAN이 지정한 두 테이블(oauth_flows·social_links)이 아니어서 손대지 않았다. Apple 신원으로 /v1/register(가입 티켓) 경로를 쓰려면 별도 마이그레이션과 결정이 필요하다",
+    "user 필드가 없는 Apple 최초 로그인에서 이름이 id_token에 없어, 이메일 지역부를 표시명으로 쓰도록 정했다. 다른 규칙(예: 고정 기본 이름, 가입 후 이름 입력 단계)을 원하면 정책 결정 필요",
+    "012는 로컬/전용 테스트 DB(kgtest, kgtest_ws21)에만 적용했다. Railway 개발 DB 적용은 오케스트레이터/사용자 승인 항목",
+    "Apple 서버 간 토큰 교환(POST /auth/token)을 쓰는 GET 콜백 경로는 여전히 client_secret(Apple은 p8로 만든 ES256 client secret JWT)을 요구한다. 이번 카드의 form_post 경로는 교환 없이 id_token만 검증하므로 secret 생성기를 만들지 않았다"
+  ],
+  "risks": [
+    "form_post 콜백은 브라우저가 Apple에서 우리 API로 POST하는 실제 리다이렉트 흐름인데, 응답은 리다이렉트가 아니라 JSON(oauthCallback과 동일 형태)이다. 앱/웹 클라이언트가 브라우저 POST 결과를 어떻게 세션으로 받을지(중간 페이지·딥링크·JS fetch)는 이 카드 범위 밖이며 실제 Apple과의 브라우저 흐름은 미검증",
+    "state는 id_token 검증 전에 소비된다. 위조/만료 토큰으로 실패하면 사용자는 start부터 다시 해야 한다(1회용 요구사항에 따른 의도된 동작)",
+    "JWKS를 캐시하지 않고 콜백마다 조회한다(7초 타임아웃, 64KB 상한). Apple JWKS 지연 시 503 APPLE_JWKS_UNAVAILABLE로 실패하며 로그인 지연이 늘 수 있다",
+    "Apple이 email을 주지 않는 최초 로그인은 409 PROFILE_INCOMPLETE로 거부된다(이름과 달리 이메일은 추측 생성하지 않는다)",
+    "auth/config의 oauth 블록은 start/callbackPath만 노출한다. Apple의 POST 콜백 경로·response_mode는 클라이언트가 알아야 하는데 계약/설정 응답에 없다",
+    "POST /v1/auth/* 는 기존 IP당 60회/분 스로틀 대상이라 Apple 콜백도 같은 제한을 받는다(대량 재시도 시 429)",
+    "로컬 테스트 DB(kgtest)에 대량 부하·동시 실행 간섭으로 오탐 실패가 발생했다. 오케스트레이터가 재검증할 때는 전용 DB(예: postgres://postgres@127.0.0.1:55432/kgtest_ws21)를 쓰거나 다른 워커를 정지시켜야 같은 결과가 나온다",
+    "services/backend/node_modules는 .gitignore 대상이며 커밋 대상이 아니다. 이번에 npm ci로 재설치했다"
+  ],
+  "next": [
+    "오케스트레이터: 012를 개발 DB에 적용한 뒤 KG_OAUTH_APPLE_* 자격증명을 주입하고 실 Apple 인가 → POST 콜백 → 회원/세션 저장 → 재조회까지 실제 거래 검증",
+    "WS-27/후속: POST /v1/auth/oauth/apple/callback을 계약 정본에 등재하고 라우트 인벤토리 스캔 대상을 apple.ts 등 분리 라우터까지 확장",
+    "앱/웹: Apple 로그인 버튼 → start(state) → ASWebAuthenticationSession/SFSafariViewController → form_post 결과 처리 경로 연결(프론트 로컬 DB 저장 금지, 세션은 키체인/키스토어)",
+    "병합 전 재실행: (1) cd services/backend && npx tsc --noEmit (2) npm test (3) node --test tests/contract/contract.test.ts tests/contract/oauth.test.ts (4) node --test tests/policy/metadata.test.ts (5) KG_TEST_DATABASE_URL=<loopback 전용 DB> npm run test:integration"
+  ]
+}

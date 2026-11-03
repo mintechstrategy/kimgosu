@@ -5,6 +5,12 @@ export interface ProviderIdentity { subject: string; name?: string; email?: stri
 export interface OAuthProvider {
   authorize(state: string, codeChallenge: string): string;
   exchange(code: string, state: string, verifier: string): Promise<ProviderIdentity>;
+  /** id_token 의 aud 검증에 쓰는 공개 client_id. Apple POST 콜백이 사용한다. */
+  clientId?: string;
+  /** id_token 서명 검증용 JWKS 주소. 미지정 시 provider 기본값. */
+  jwksUrl?: string;
+  /** id_token iss 기대값. 미지정 시 provider 기본값. */
+  issuer?: string;
 }
 export interface SmsDelivery { send(phone: string, code: string): Promise<void> }
 export interface AuthOptions {
@@ -68,6 +74,9 @@ export function configuredProviders(env: NodeJS.ProcessEnv): Partial<Record<Prov
 export function realProvider(id: ProviderId, clientId: string, clientSecret: string, redirectUri: string): OAuthProvider {
   const endpoint = endpoints[id];
   return {
+    clientId,
+    jwksUrl: endpoint.jwks,
+    issuer: endpoint.issuer,
     authorize(state, codeChallenge) {
       const q = new URLSearchParams({ response_type: 'code', client_id: clientId, redirect_uri: redirectUri, state });
       if (endpoint.scope) q.set('scope', endpoint.scope);
