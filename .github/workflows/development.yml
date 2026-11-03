@@ -46,6 +46,8 @@ jobs:
         working-directory: apps/web
       - name: Membership v0.2 contract regression
         run: node --test tests/contract/contract.test.ts
+      - name: Membership v0.3 oauth contract regression
+        run: node --test tests/contract/oauth.test.ts
       - name: Membership v0.3 metadata regression (unchanged original assertions)
         run: node --test tests/policy/metadata.test.ts
       - name: Membership real PostgreSQL schema001-004 compatibility

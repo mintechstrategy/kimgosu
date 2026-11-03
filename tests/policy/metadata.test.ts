@@ -48,9 +48,13 @@ class SnapshotSql implements Sql {
 }
 const urls = ['/v1/auth/config?metadata=policy-v0.3', '/v1/policies?metadata=policy-v0.3', '/v1/policies/TERMS?metadata=policy-v0.3'];
 
-test('v0.3 all schemas compile and opt-in operation set is existing5; v0.2 contract hash unchanged', () => {
+test('v0.3 all schemas compile and opt-in operation set is existing5 + additive oauth2; v0.2 contract hash unchanged', () => {
   for (const o of contract.operations) { compile(o.responses['200']); if (o.requestSchema) compile(o.requestSchema); if (o.querySchema) compile(o.querySchema); }
-  assert.equal(contract.operations.length, 5);
+  // WS-11 은 기존 opt-in 5개를 건드리지 않고 oauth 2개(start/callback)만 순수 추가했다.
+  const metadataOps = contract.operations.filter((o: { id: string }) => !['oauthStart', 'oauthCallback'].includes(o.id));
+  assert.equal(metadataOps.length, 5);
+  assert.deepEqual(metadataOps.map((o: { id: string }) => o.id), ['authConfig', 'policies', 'policy', 'signup', 'consentsPost']);
+  assert.equal(contract.operations.length, 7);
   assert.equal(createHash('sha256').update(readFileSync(new URL('../../contracts/auth-membership.v0.2.json', import.meta.url))).digest('hex'), contract.baseContract.sha256);
   assert.equal(contract.status, 'LOCAL_CANDIDATE_NOT_DEPLOYED_NOT_POLICY_EFFECTIVE');
 });
