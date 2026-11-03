@@ -330,7 +330,13 @@ test('SMS 발송·확인·가입 경로가 마스킹 값만 저장한다', async
 test('관리자 목록·상세가 phoneMasked를 실제 값으로 반환하고, 없으면 null이다', async () => {
   assert.ok(registeredMemberId, '선행 가입 테스트가 회원을 만들어야 한다');
 
-  const list = await app.inject({ method: 'GET', url: '/v1/admin/members?limit=100', headers: bearer(ADMIN.token) });
+  // Admin routes take the operator session minted by POST /v1/admin/session
+  // (WS-23), not the member session token.
+  const exchanged = await app.inject({ method: 'POST', url: '/v1/admin/session', payload: { sessionToken: ADMIN.token } });
+  assert.equal(exchanged.statusCode, 201, exchanged.body);
+  const adminToken: string = exchanged.json().adminToken;
+
+  const list = await app.inject({ method: 'GET', url: '/v1/admin/members?limit=100', headers: bearer(adminToken) });
   assert.equal(list.statusCode, 200, list.body);
   const body = list.json();
   const signedUp = body.members.find((m: { id: string }) => m.id === registeredMemberId);
@@ -341,11 +347,11 @@ test('관리자 목록·상세가 phoneMasked를 실제 값으로 반환하고, 
   const legacy = body.members.find((m: { id: string }) => m.id === LEGACY.member);
   assert.equal(legacy.phoneMasked, null, '마스킹 값이 없는 기존 회원은 null');
 
-  const detail = await app.inject({ method: 'GET', url: `/v1/admin/members/${registeredMemberId}`, headers: bearer(ADMIN.token) });
+  const detail = await app.inject({ method: 'GET', url: `/v1/admin/members/${registeredMemberId}`, headers: bearer(adminToken) });
   assert.equal(detail.statusCode, 200, detail.body);
   assert.equal(detail.json().member.phoneMasked, MASKED_PHONE);
   assert.equal(JSON.stringify(detail.json()).includes(RAW_PHONE), false);
 
-  const legacyDetail = await app.inject({ method: 'GET', url: `/v1/admin/members/${LEGACY.member}`, headers: bearer(ADMIN.token) });
+  const legacyDetail = await app.inject({ method: 'GET', url: `/v1/admin/members/${LEGACY.member}`, headers: bearer(adminToken) });
   assert.equal(legacyDetail.json().member.phoneMasked, null);
 });
