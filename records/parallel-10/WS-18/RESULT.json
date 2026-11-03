@@ -1,0 +1,115 @@
+{
+  "ws": "WS-18",
+  "status": "DONE",
+  "summary": "AOS dev flavor에서 임시 로그인→서버 세션→GET /v1/me 실데이터가 A1 카드에 표시되고, Loading/Ready/Empty/실패(서버오류·네트워크) 4종을 에뮬레이터에서 확인했으며 clean assembleDevDebug 성공(무본문 POST가 415/400이던 결함 1건 수정).",
+  "changedFiles": [
+    "apps/android/app/src/main/java/ai/mintech/kimgosu/auth/AuthRepository.kt",
+    "apps/android/app/src/main/java/ai/mintech/kimgosu/MainActivity.kt",
+    "apps/android/app/src/main/java/ai/mintech/kimgosu/auth/ProfileModel.kt",
+    "records/parallel-10/WS-18/screens/01-dev-login.png",
+    "records/parallel-10/WS-18/screens/02-a1-profile-ready.png",
+    "records/parallel-10/WS-18/screens/03-a1-loading.png",
+    "records/parallel-10/WS-18/screens/04-a1-error.png",
+    "records/parallel-10/WS-18/screens/05-a1-empty.png",
+    "records/parallel-10/WS-18/screens/06-a1-network-failure.png",
+    "records/parallel-10/WS-18/RESULT.json"
+  ],
+  "verification": [
+    {
+      "check": "assembleDevDebug (clean 빌드, 현재 소스 전체 재컴파일)",
+      "command": "JAVA_HOME=…/jdk17/jdk-17.0.21+9/Contents/Home ANDROID_HOME=…/android-sdk gradle --no-daemon --max-workers=2 clean :app:assembleDevDebug",
+      "result": "PASS",
+      "evidence": "BUILD SUCCESSFUL in 22s / 39 actionable tasks: 39 executed. 산출물 app/build/outputs/apk/dev/debug/app-dev-debug.apk (14,751,547 bytes, 17:18 생성)"
+    },
+    {
+      "check": "dev flavor 식별자 분리 유지",
+      "command": "aapt2 dump badging app-dev-debug.apk | head -3",
+      "result": "PASS",
+      "evidence": "package: name='ai.mintech.kimgosu.dev' versionCode='1' versionName='0.1.0-dev' / minSdk 26 / targetSdk 35 (prod flavor ai.mintech.kimgosu 유지, build.gradle.kts 변경 없음)"
+    },
+    {
+      "check": "dev 로그인 → /v1/me 실데이터 표시",
+      "command": "adb install -r …; adb shell am start -n ai.mintech.kimgosu.dev/ai.mintech.kimgosu.MainActivity; adb shell uiautomator dump; adb exec-out screencap -p > 02-a1-profile-ready.png",
+      "result": "PASS",
+      "evidence": "임시 로그인 화면이 dev API /v1/auth/dev/accounts 목록을 표시(계정 20종) → '일반 사용자 01 (테스트01)' 선택 시 '로그인됨 · 테스트01 · 고객번호 13' → A1 카드에 동일 값 표시. 앱 내 HTTP 영수증 files/membership-http.jsonl: GET /v1/me 200 (cf-ray a549f058cef95168-HKG, 2026-11-03T08:16:48Z). 로컬 mock·로컬 DB 아님."
+    },
+    {
+      "check": "A1 상태 1/4 Loading",
+      "command": "adb shell am start -n … --el profile_loading_hold_ms 30000; uiautomator dump; screencap 03-a1-loading.png",
+      "result": "PASS",
+      "evidence": "카드 문구 '회원 정보를 불러오는 중…' + CircularProgressIndicator, 나머지 A1 콘텐츠 정상 노출"
+    },
+    {
+      "check": "A1 상태 2/4 Ready",
+      "command": "위 /v1/me 실데이터 확인과 동일 세션에서 screencap 02-a1-profile-ready.png",
+      "result": "PASS",
+      "evidence": "'테스트01' / '고객번호 13' (서버 응답 값 그대로. 닉네임·고객번호·expertActive는 응답 필드, 로컬 계산 없음)"
+    },
+    {
+      "check": "A1 상태 3/4 Empty",
+      "command": "마이페이지 → 로그아웃 확인 → uiautomator dump; screencap 05-a1-empty.png",
+      "result": "PASS",
+      "evidence": "로그아웃 시 POST /v1/auth/logout 200(서버 세션 폐기) → 직후 GET /v1/me 401 → A1 카드가 '로그인하면 회원 정보가 표시됩니다.' + '로그인' 버튼으로 전환"
+    },
+    {
+      "check": "A1 상태 4/4 실패(서버 오류)",
+      "command": "adb shell am start -n … --ez profile_server_error true; screencap 04-a1-error.png",
+      "result": "PASS",
+      "evidence": "'회원 정보를 불러오지 못했습니다. (QA_INJECTED_SERVER_ERROR)' + '다시 시도' 버튼. 주입은 BuildConfig.DEBUG에서만 동작"
+    },
+    {
+      "check": "A1 상태 4/4 실패(네트워크) 및 재시도 복구",
+      "command": "adb shell svc wifi/data disable → ping 실패 확인 → 마이 진입 후 BACK → A1 재조회; 이후 네트워크 복구 후 '다시 시도' 탭",
+      "result": "PASS",
+      "evidence": "ping: unknown host api-dev-kimgosu.mintech.ai 상태에서 카드가 '네트워크에 연결할 수 없습니다. 연결을 확인하고 다시 시도해주세요.' + '다시 시도'로 전환(screencap 06-a1-network-failure.png). 복구 후 재시도 탭 → GET /v1/me 200 → '테스트01 / 고객번호 13' 복귀"
+    },
+    {
+      "check": "프론트 로컬 DB 미사용",
+      "command": "adb shell run-as ai.mintech.kimgosu.dev ls -R . ; ls databases ; cat shared_prefs/auth_private.xml | grep -c eyJ",
+      "result": "PASS",
+      "evidence": "databases 디렉터리 없음(SQLite/Room 미사용). shared_prefs에는 Keystore(AES-GCM)로 봉인된 세션 1건(203 bytes)만 있고 JWT 평문 패턴('eyJ') 0건. files/에는 DEBUG 전용 launch-events.jsonl·membership-http.jsonl(경로·HTTP 상태만, 토큰 없음)"
+    },
+    {
+      "check": "결함 수정 검증: 무본문 POST /v1/auth/logout",
+      "command": "수정 전/후 앱에서 로그아웃 실행 후 files/membership-http.jsonl 확인 + curl 대조",
+      "result": "PASS",
+      "evidence": "수정 전 415(안드로이드 스택이 POST에 application/x-www-form-urlencoded 기본 부여) → Content-Type만 지정 시 400(빈 JSON 본문) → Content-Type: application/json + '{}' 본문 전송으로 200. curl 대조: form-urlencoded 415 / text/plain 401 / application/json -d '{}' 401(정상 인증 경로)"
+    },
+    {
+      "check": "기존 androidTest 계측 테스트 재실행",
+      "command": "(미실행) gradle :app:connectedDevDebugAndroidTest",
+      "result": "NOT_RUN",
+      "evidence": "이 카드 수용 기준이 아니고 웨이브1 인증 테스트 스위트로 기기 슬롯을 길게 점유함. 이번 검증은 clean 빌드 + 실 에뮬레이터 수동 시나리오로 수행. 오케스트레이터 재실행 시 이 항목은 별도 판정 필요"
+    },
+    {
+      "check": "iOS(WS-17) 대비 동등성 비교",
+      "command": "(미실행)",
+      "result": "NOT_RUN",
+      "evidence": "WS-17 산출물 소유는 이 작업 범위 밖. 동등성 판정은 uiux/오케스트레이터 몫"
+    },
+    {
+      "check": "스크린샷 픽셀 육안 검토",
+      "command": "(미실행)",
+      "result": "NOT_RUN",
+      "evidence": "6장 캡처 완료(320x640 PNG). 각 화면의 표시 내용은 uiautomator 텍스트 덤프로 확인했으나 이미지 자체의 시각·디자인 검토는 하지 않음(uiux QA 대상)"
+    }
+  ],
+  "contractChanges": [],
+  "migrations": [],
+  "open": [
+    "오프라인 콜드스타트 시 유효한 저장 세션이 있어도 A1이 아닌 인증 진입 화면('로그인/가입 · 카카오로 시작')이 표시된다. AuthModel.start()가 loadAccount() 성공 후에만 browsing=true로 바꾸는 웨이브1 동작 때문이며, 이번 카드에서 재설계하지 않았다. A1 네트워크 오류 상태 노출 방식에 대한 제품 판단 필요.",
+    "prod flavor(ai.mintech.kimgosu)는 소셜 로그인 미연결(WS-11) 상태이므로 로그인 경로가 없고 A1 카드는 Empty로 시작한다. prod 실기기 검증은 별도 승인·카드 필요.",
+    "Apple/Google 스토어 배포용 서명·릴리스 빌드 검증은 이번 범위 밖."
+  ],
+  "risks": [
+    "AuthRepository.kt의 Content-Type 변경은 모든 쓰기 요청에 적용된다. 이번에 실제 호출로 확인한 경로는 POST /v1/auth/logout(200)·dev 로그인·/v1/me 재조회이며, 동의 기록·알림 PATCH·SMS 등 다른 쓰기 엔드포인트는 이 변경 이후 재실행하지 않았다.",
+    "작업트리에 이미 있던 미커밋 변경(MainActivity.kt 수정 + ProfileModel.kt 신규)을 그대로 검토·검증했다. 내가 새로 작성한 것은 아니며 내용을 재작성하지 않았다.",
+    "검증은 AVD kg-env-resolve-02(320x640 논리 해상도, no-window) 1종에서만 수행했다. 다른 화면 크기·OS 버전·실기기 동등성은 확인하지 않았다.",
+    "dev 계정 세션(테스트01)은 로그아웃 테스트로 서버에서 폐기됐다. 합성 dev 데이터이며 추가 정리 대상 업무 데이터는 생성하지 않았다."
+  ],
+  "next": [
+    "uiux 대응 QA: 6장 스크린샷과 A1 4종 상태를 승인 디자인(decisions/kimgosu-design-v0.1) 및 iOS(WS-17) 결과와 동일 조건에서 비교 판정.",
+    "오케스트레이터: 이 트리에서 clean assembleDevDebug와 시나리오 재실행 후 병합 판단(현재 브랜치 ws/WS-18, 기준 origin/dev 8cc2058, 커밋 없음).",
+    "후속 카드 후보: 오프라인 콜드스타트 시 A1 네트워크 오류 노출 정책 확정 및 AuthModel 시작 경로 수정, 그리고 동의·알림 등 나머지 쓰기 엔드포인트 회귀."
+  ]
+}

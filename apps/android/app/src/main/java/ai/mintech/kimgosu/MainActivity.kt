@@ -142,14 +142,22 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         val model = ViewModelProvider(this)[LaunchModel::class.java]
         val auth = ViewModelProvider(this)[AuthModel::class.java]
+        val profile = ViewModelProvider(this)[ProfileModel::class.java]
         val hold = BuildConfig.DEBUG && intent.getBooleanExtra("hold_splash", false)
         val verify = BuildConfig.DEBUG && intent.getBooleanExtra("verify_api", false)
         val offlineTransport = BuildConfig.DEBUG && intent.getBooleanExtra("offline_transport", false)
+        if (BuildConfig.DEBUG) {
+            // QA-only: hold the loading state, or make the server answer 5xx, so the
+            // A1 states can be observed on a device. Release builds never assign these.
+            profile.qaLoadingHoldMillis = intent.getLongExtra("profile_loading_hold_ms", 0L)
+            profile.qaServerError = intent.getBooleanExtra("profile_server_error", false)
+        }
         setContent {
             // Social providers are not connected yet, so development builds start on
             // the temporary tester login. Production builds never see it.
             val devLoginRequired = remember { BuildConfig.API_BASE_URL.contains("dev-") }
-            var devReady by remember { mutableStateOf(!devLoginRequired) }
+            val storedSession = remember { runCatching { SecureSession(this@MainActivity).read() }.getOrNull() != null }
+            var devReady by remember { mutableStateOf(!devLoginRequired || storedSession) }
             val fonts = remember { FontFamily(Font("regular.otf", assets), Font("semibold.otf", assets, FontWeight.SemiBold), Font("bold.otf", assets, FontWeight.Bold)) }
             MaterialTheme(colorScheme = lightColorScheme(primary = Navy, onPrimary = Color.White, surface = Color.White, onSurface = Navy)) {
                 CompositionLocalProvider(LocalBrandFont provides fonts) {
@@ -175,10 +183,22 @@ class MainActivity : ComponentActivity() {
                         BackHandler { moveTaskToBack(true) }
                         AuthHost(auth) {
                             MainScreen(home, if (verify) model.apiStatus else null,
+                                profile = profile.state,
+                                onRetryProfile = { profile.refresh() },
+                                onProfileLogin = { devReady = false },
                                 onProtected = { auth.enter(ReturnTarget(screenId = "A1", targetId = it)) },
                                 onPolicy = { auth.handle(AuthEvent(AuthAction.OPEN_DOCUMENT, it)) })
                         }
                         LaunchedEffect(Unit) { model.event("main-visible") }
+                    }
+                    LaunchedEffect(devReady) { if (devReady) profile.refresh() }
+                    // Returning to A1 from an auth screen (including logout) re-reads /v1/me,
+                    // so a cleared session turns the card into Empty instead of stale data.
+                    val returnedHome = auth.browsing && auth.stack.isEmpty()
+                    LaunchedEffect(returnedHome) { if (returnedHome) profile.refresh() }
+                    // 401 on the stored session: drop it and return to the login screen.
+                    LaunchedEffect(profile.sessionExpired) {
+                        if (profile.sessionExpired) { profile.acknowledgeExpiry(); devReady = false }
                     }
                 }
             }
@@ -196,7 +216,9 @@ class MainActivity : ComponentActivity() {
     val bitmap = remember(name) { context.assets.open(name).use { BitmapFactory.decodeStream(it) }.asImageBitmap() }
     Image(bitmap, description, modifier, contentScale = ContentScale.Fit)
 }
-@Composable private fun MainScreen(home: Home, apiStatus: String?, onProtected: (String) -> Unit, onPolicy: (String) -> Unit) {
+@Composable private fun MainScreen(home: Home, apiStatus: String?, profile: ProfileState,
+                                   onRetryProfile: () -> Unit, onProfileLogin: () -> Unit,
+                                   onProtected: (String) -> Unit, onPolicy: (String) -> Unit) {
     var notice by rememberSaveable { mutableStateOf<String?>(null) }
     var popular by rememberSaveable { mutableIntStateOf(0) }
     val open: (String) -> Unit = { if (it in listOf("알림", "마이페이지", "마이", "내정보", "견적요청", "서비스등록", "채팅", "원장") || it.contains("요청") || it.contains("등록")) onProtected(it) else notice = it }
@@ -209,6 +231,7 @@ class MainActivity : ComponentActivity() {
                 }
                 IconButton(onClick = { open("알림") }, modifier = Modifier.size(48.dp)) { AssetImage("notification.png", "알림", Modifier.size(23.dp)) }
             }
+            ProfileCard(profile, onRetryProfile, onProfileLogin)
             Copy(home.text("introduction"), Modifier.fillMaxWidth().padding(top = 20.dp).testTag("main-introduction"), 20, true, align = TextAlign.Center)
             Row(Modifier.padding(top = 16.dp).fillMaxWidth().heightIn(min = 48.dp).border(1.dp, Border, RoundedCornerShape(6.dp))
                 .clickable { open("검색") }.padding(14.dp).testTag("search"), verticalAlignment = Alignment.CenterVertically) {
@@ -274,6 +297,50 @@ class MainActivity : ComponentActivity() {
         AlertDialog(onDismissRequest = { notice = null }, title = { Copy(title, size = 19, bold = true) },
             text = { Copy("이 기능은 다음 개발 단계에서 연결됩니다. 공개 탐색과 회원·정책 화면을 이용할 수 있습니다.") },
             confirmButton = { TextButton(onClick = { notice = null }) { Copy("확인") } })
+    }
+}
+@Composable private fun ProfileCard(state: ProfileState, onRetry: () -> Unit, onLogin: () -> Unit) {
+    val tag = when (state) {
+        ProfileState.Loading -> "profile-loading"
+        ProfileState.Empty -> "profile-empty"
+        is ProfileState.Failed -> "profile-error"
+        is ProfileState.Ready -> "profile-ready"
+    }
+    val signedIn = state is ProfileState.Ready
+    Column(Modifier.padding(top = 14.dp).fillMaxWidth().heightIn(min = 60.dp)
+        .background(if (signedIn) Soft else Color.White, RoundedCornerShape(6.dp))
+        .border(1.dp, if (signedIn) Soft else Border, RoundedCornerShape(6.dp))
+        .padding(horizontal = 14.dp, vertical = 12.dp).testTag(tag)) {
+        when (state) {
+            ProfileState.Loading -> Row(verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(Modifier.size(16.dp), color = Navy, strokeWidth = 2.dp)
+                Copy("회원 정보를 불러오는 중…", Modifier.padding(start = 10.dp), size = 13, color = Muted)
+            }
+            is ProfileState.Ready -> {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Copy(state.nickname, size = 16, bold = true)
+                    if (state.expert) Box(Modifier.padding(start = 8.dp).background(Lime, RoundedCornerShape(4.dp))
+                        .padding(horizontal = 6.dp, vertical = 2.dp)) { Copy("고수", size = 11, weight = FontWeight.SemiBold) }
+                    if (state.status == "RESTRICTED") Box(Modifier.padding(start = 8.dp).border(1.dp, Muted, RoundedCornerShape(4.dp))
+                        .padding(horizontal = 6.dp, vertical = 2.dp)) { Copy("이용 제한", size = 11, color = Muted) }
+                }
+                Copy(if (state.customerNumber.isBlank()) "고객번호 없음" else "고객번호 ${state.customerNumber}",
+                    Modifier.padding(top = 4.dp), size = 13, color = Muted)
+            }
+            ProfileState.Empty -> {
+                Copy("로그인하면 회원 정보가 표시됩니다.", size = 13, color = Muted)
+                TextButton(onClick = onLogin, modifier = Modifier.heightIn(min = 48.dp).testTag("profile-login")) {
+                    Copy("로그인", weight = FontWeight.SemiBold)
+                }
+            }
+            is ProfileState.Failed -> {
+                Copy(if (state.network) "네트워크에 연결할 수 없습니다. 연결을 확인하고 다시 시도해주세요."
+                    else "회원 정보를 불러오지 못했습니다. (${state.code})", size = 13, color = Muted)
+                TextButton(onClick = onRetry, modifier = Modifier.heightIn(min = 48.dp).testTag("profile-retry")) {
+                    Copy("다시 시도", weight = FontWeight.SemiBold)
+                }
+            }
+        }
     }
 }
 @Composable private fun Banner(text: String, action: String, open: (String) -> Unit) {
