@@ -77,7 +77,7 @@ export function registerExpertRoutes(app: FastifyInstance, db: Sql, authenticate
     schema: body({ introduction: string(1, 1000), career: string(1, 2000), activityRegion: string(1, 100) }, ['introduction', 'activityRegion']),
   }, async (request, reply) => {
     const auth = await requireExpert(request, reply); if (!auth) return;
-    return db.transaction(async sql => {
+    const profile = await db.transaction(async sql => {
       const created = (await sql.query(
         `INSERT INTO ${SCHEMA}.expert_profiles(member_id,introduction,career,activity_region)
          VALUES($1,$2,$3,$4)
@@ -86,11 +86,11 @@ export function registerExpertRoutes(app: FastifyInstance, db: Sql, authenticate
         [auth.memberId, request.body.introduction.trim(), request.body.career ?? null, request.body.activityRegion.trim()],
       )).rows[0];
       if (!created) throw new ApiError(409, 'EXPERT_PROFILE_EXISTS');
-      const profile = (await sql.query(
+      return (await sql.query(
         `SELECT ${profileSelect} FROM ${SCHEMA}.expert_profiles p WHERE p.member_id=$1`, [auth.memberId],
       )).rows[0];
-      return reply.code(201).send(profile);
     });
+    return reply.code(201).send(profile);
   });
 
   app.patch<{ Body: { introduction?: string; career?: string | null; activityRegion?: string } }>('/v1/expert/profile', {
@@ -128,7 +128,7 @@ export function registerExpertRoutes(app: FastifyInstance, db: Sql, authenticate
   }, async (request, reply) => {
     const auth = await requireExpert(request, reply); if (!auth) return;
     assertPrice(request.body.priceType, request.body.basePrice ?? null);
-    return db.transaction(async sql => {
+    const service = await db.transaction(async sql => {
       const profile = (await sql.query(
         `SELECT 1 FROM ${SCHEMA}.expert_profiles WHERE member_id=$1`, [auth.memberId],
       )).rows[0];
@@ -140,8 +140,9 @@ export function registerExpertRoutes(app: FastifyInstance, db: Sql, authenticate
           request.body.priceType, request.body.basePrice ?? null, request.body.visibility ?? 'VISIBLE'],
       )).rows[0];
       await audit(sql, auth.memberId, 'EXPERT_SERVICE_CREATED', 'expert_service', String(service.id), null, { visibility: service.visibility });
-      return reply.code(201).send(service);
+      return service;
     });
+    return reply.code(201).send(service);
   });
 
   app.patch<{ Params: { id: string }; Body: { category?: string; title?: string; description?: string; priceType?: string; basePrice?: number | null; visibility?: string } }>('/v1/expert/services/:id', {
