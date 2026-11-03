@@ -1,0 +1,71 @@
+{
+  "scope": "REAL_BROWSER + REAL_BACKEND + REAL_LOCAL_POSTGRESQL (loopback only)",
+  "at": "2026-11-03T09:57:30.893Z",
+  "webOrigin": "http://127.0.0.1:4180",
+  "apiOrigin": "http://127.0.0.1:4401",
+  "database": "postgres://127.0.0.1:55432/kgtest_ws23",
+  "results": [
+    {
+      "name": "backend is listening on loopback with dev login enabled",
+      "status": "PASS",
+      "detail": "release=e2e-ws23"
+    },
+    {
+      "name": "/admin/login is served from the built console document",
+      "status": "PASS",
+      "detail": "vite preview served /admin/login as admin.html"
+    },
+    {
+      "name": "login screen renders at /admin/login",
+      "status": "PASS",
+      "detail": "heading \"운영자 로그인\", tester accounts 2, social section present"
+    },
+    {
+      "name": "the pasted-token input is gone and social login is reported honestly",
+      "status": "PASS",
+      "detail": "no token input; social providers reported as not connected"
+    },
+    {
+      "name": "a non-admin account is refused by the server (403) and stays on login",
+      "status": "PASS",
+      "detail": "POST /v1/admin/session → 403; message: 이 계정에는 유효한 관리자(ADMIN) 역할이 없습니다. 운영 콘솔은 ADMIN만 사용할 수 있습니다. 남은"
+    },
+    {
+      "name": "admin login reaches the console and loads the member list from the server",
+      "status": "PASS",
+      "detail": "4 rows, POST /v1/admin/session 201, GET /v1/admin/members 200, url /admin/"
+    },
+    {
+      "name": "member detail opens inside the console",
+      "status": "PASS",
+      "detail": "GET /v1/admin/members/:id → 200, 닉네임 표시"
+    },
+    {
+      "name": "logout returns to the login screen",
+      "status": "PASS",
+      "detail": "POST /v1/admin/session/logout → 200, 목록 제거, url /admin/login"
+    },
+    {
+      "name": "re-entering the console URL after logout is blocked",
+      "status": "PASS",
+      "detail": "reload of /admin/ → login screen with \"운영자 세션이 없습니다\""
+    },
+    {
+      "name": "five failed logins lock the client and say so",
+      "status": "PASS",
+      "detail": "attempt statuses 403,403,403,403,403,429; message: 로그인 시도가 잠겼습니다. 300초 후 다시 시도해주세요."
+    },
+    {
+      "name": "no browser runtime errors",
+      "status": "PASS",
+      "detail": "0 pageerror"
+    },
+    {
+      "name": "fixture cleanup",
+      "status": "PASS",
+      "detail": "{\"members\":0,\"principals\":0,\"sessions\":0,\"audit\":0,\"slots\":0}"
+    }
+  ],
+  "passed": 12,
+  "failed": 0
+}
