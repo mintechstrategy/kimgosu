@@ -1,0 +1,164 @@
+{
+  "ws": "WS-27",
+  "status": "DONE",
+  "summary": "신규 라우트 5종 계약(ledger-quotes/chat/reviews/admin/registration, 총 22 operation)을 실제 소스의 라우트 등록 코드와 핸들러 schema에서 작성하고, 계약 인벤토리 테스트 13건과 기존 계약 회귀 포함 33건을 실제로 실행해 전부 통과시켰다. 라우트 1개를 의도적으로 제거한 변이 실행에서 테스트가 FAIL하는 것까지 확인했다.",
+  "changedFiles": [
+    "contracts/ledger-quotes.v0.1.json",
+    "contracts/chat.v0.1.json",
+    "contracts/reviews.v0.1.json",
+    "contracts/admin.v0.1.json",
+    "contracts/registration.v0.1.json",
+    "tests/contract/ws27-contracts.test.ts"
+  ],
+  "contractChanges": [
+    {
+      "file": "contracts/ledger-quotes.v0.1.json",
+      "contractId": "KG-LEDGER-QUOTES-v0.1",
+      "operations": 11,
+      "routes": [
+        "GET /v1/me/roles",
+        "GET /v1/ledger",
+        "GET /v1/ledger/:id",
+        "POST /v1/ledger/:id/notes",
+        "POST /v1/agreements",
+        "POST /v1/agreements/:id/accept",
+        "POST /v1/agreements/:id/complete",
+        "POST /v1/ledgers/:id/quotes",
+        "GET /v1/ledgers/:id/quotes",
+        "POST /v1/quotes/:id/respond",
+        "POST /v1/quotes/:id/complete"
+      ],
+      "sources": ["services/backend/src/ledger.ts", "services/backend/src/quotes.ts"]
+    },
+    {
+      "file": "contracts/chat.v0.1.json",
+      "contractId": "KG-CHAT-v0.1",
+      "operations": 2,
+      "routes": ["POST /v1/ledgers/:id/messages", "GET /v1/ledgers/:id/messages"],
+      "sources": ["services/backend/src/chat.ts"]
+    },
+    {
+      "file": "contracts/reviews.v0.1.json",
+      "contractId": "KG-REVIEWS-v0.1",
+      "operations": 3,
+      "routes": ["POST /v1/ledgers/:id/reviews", "GET /v1/experts/:id/reviews", "GET /v1/me/reviews"],
+      "sources": ["services/backend/src/reviews.ts"]
+    },
+    {
+      "file": "contracts/admin.v0.1.json",
+      "contractId": "KG-ADMIN-v0.1",
+      "operations": 4,
+      "routes": [
+        "GET /v1/admin/members",
+        "GET /v1/admin/members/:id",
+        "POST /v1/admin/members/:id/restrict",
+        "POST /v1/admin/members/:id/release"
+      ],
+      "sources": ["services/backend/src/admin.ts"]
+    },
+    {
+      "file": "contracts/registration.v0.1.json",
+      "contractId": "KG-REGISTRATION-v0.1",
+      "operations": 2,
+      "routes": ["POST /v1/auth/register", "POST /v1/admin/policies/promote"],
+      "sources": ["services/backend/src/register.ts", "services/backend/src/admin-policy.ts"]
+    }
+  ],
+  "migrations": [],
+  "verification": [
+    {
+      "check": "5개 계약 파일 JSON Schema 유효성 (operation별 request/params/query/response/error body 컴파일)",
+      "command": "cd wt-WS-27 && npx tsx --test tests/contract/ws27-contracts.test.ts",
+      "result": "PASS",
+      "evidence": "테스트 13건 중 'ledger-quotes/chat/reviews/admin/registration: 계약이 JSON Schema로 유효하다' 5건 통과. Ajv 8(기존 contract.test.ts와 동일 옵션 allErrors/strict:false/unicodeRegExp)로 모든 서브스키마 compile 성공. 진단은 'unknown format uuid/date-time ignored' 경고뿐이며 이는 ajv-formats 미등록에 따른 기존 관례(기존 계약도 format 대신 pattern 사용)와 동일하다."
+    },
+    {
+      "check": "계약 operation 목록 = 실제 등록 라우트 (모듈별 양방향) + params/query/body 스키마가 핸들러 schema와 동일",
+      "command": "cd wt-WS-27 && npx tsx --test tests/contract/ws27-contracts.test.ts",
+      "result": "PASS",
+      "evidence": "각 계약의 sourceModules를 실제 Fastify 인스턴스에 register하고 onRoute 훅으로 라우트를 수집해 계약 operation 집합과 정렬 후 deepEqual. 템플릿 리터럴로 생성되는 /v1/agreements/:id/accept·complete도 수집됨(정규식 파싱 아님). 5개 계약 전부 통과. requestSchema/paramsSchema/querySchema는 route.schema.body/params/querystring과 deepEqual로 동일성 확인."
+    },
+    {
+      "check": "전체 앱(buildApp)에 22개 operation이 실제 등록됨",
+      "command": "동일 테스트 — '전체 앱(buildApp)에 22개 operation이 실제로 등록되어 있다'",
+      "result": "PASS",
+      "evidence": "buildApp(doubleSql, 'ws27-contract') 후 app.ready() 상태에서 22개 (method,path) 전부 app.hasRoute()===true."
+    },
+    {
+      "check": "계약 간 중복 없음 + 계약에 없는 라이브 라우트는 문서화된 목록뿐",
+      "command": "동일 테스트 — '5개 계약은 서로 겹치지 않고, 계약에 없는 라우트는 문서화된 목록뿐이다'",
+      "result": "PASS",
+      "evidence": "claimed 22건 unique. buildApp.printRoutes 트리를 평탄화한 전체 인벤토리(52건)에서 5개 계약 + auth-membership v0.2/v0.3 + GET /health + OPTIONS * 를 제외한 잔여가 experts 도메인 6건(POST/PATCH /v1/expert/profile, POST /v1/expert/services, PATCH /v1/expert/services/:id, GET /v1/experts, GET /v1/experts/:id)과 정확히 일치."
+    },
+    {
+      "check": "검증력 증명 — 라우트를 하나 빼면 테스트가 실패하는가",
+      "command": "contracts/chat.v0.1.json에서 messageList operation을 제거한 뒤 npx tsx --test tests/contract/ws27-contracts.test.ts 실행 → 원본 복원",
+      "result": "PASS",
+      "evidence": "변이 실행: tests 13, pass 11, fail 2, 종료코드 1. 실패 2건 = 'chat: operation 목록 = 실제 등록 라우트 (양방향)' (AssertionError: chat inventory mismatch) 및 파급된 '5개 계약은 서로 겹치지 않고...'(pass 22→21). 원본 복원 후 shasum -a 256 = ea56fcd77d9c7fa6ee906e412cfefa4d45d7d66a94436f59b6945c015f0f8349 (변이 전과 동일) 확인. 또한 테스트 안에 동일 성격의 상시 검증('검증력 확인: 라우트를 하나 빼면 인벤토리 비교가 실패한다')이 포함되어 이후 실행에서도 반복 확인된다."
+    },
+    {
+      "check": "기존 계약 테스트 회귀 (contract.test.ts + oauth.test.ts + 신규)",
+      "command": "cd wt-WS-27 && npx tsx --test tests/contract/*.test.ts",
+      "result": "PASS",
+      "evidence": "tests 33, pass 33, fail 0, 종료코드 0. 내역: 기존 contract.test.ts 15건 + oauth.test.ts 5건 + 신규 13건. 기존 테스트가 auth-membership.v0.2/v0.3 인벤토리를 계속 검증하므로 계약 추가가 기존 계약을 깨지 않았음을 확인."
+    },
+    {
+      "check": "백엔드 타입 검사",
+      "command": "cd wt-WS-27/services/backend && npx tsc --noEmit",
+      "result": "PASS",
+      "evidence": "종료코드 0, 진단 출력 없음. (tsconfig include는 src/scripts만이라 tests/는 별도로 아래 항목에서 검사)"
+    },
+    {
+      "check": "신규 테스트 파일 타입 검사 (services/backend tsconfig 범위 밖)",
+      "command": "cd wt-WS-27 && ./services/backend/node_modules/.bin/tsc --noEmit --target ES2023 --module esnext --moduleResolution bundler --strict --allowImportingTsExtensions --skipLibCheck --typeRoots ./services/backend/node_modules/@types tests/contract/ws27-contracts.test.ts",
+      "result": "PASS",
+      "evidence": "종료코드 0. 워크트리 루트에 package.json이 없어 tests/는 CJS로 추론되므로 ESM 모듈 설정으로 검사했다(module NodeNext로는 import.meta TS1470 오류 — 런타임(tsx)은 ESM으로 정상 동작)."
+    },
+    {
+      "check": "환경 준비 — 의존성 설치",
+      "command": "cd wt-WS-27/services/backend && npm install --no-audit --no-fund",
+      "result": "PASS",
+      "evidence": "added 65 packages (fastify 5.12.7, pg, typescript 5.9.3, ajv 포함). node_modules는 gitignore되어 git status에 나타나지 않는다. npm warn EBADENGINE(node 26.7.0 vs engines >=24 <25)은 기존 저장소 조건이며 이 WS에서 engines를 변경하지 않았다."
+    },
+    {
+      "check": "실 PostgreSQL 통합 테스트 (원장·견적·채팅·리뷰·관리자 실제 거래)",
+      "command": "실행하지 않음",
+      "result": "NOT_RUN",
+      "evidence": "이 WS는 계약 문서 + 라우트 인벤토리 검증 작업이고 PLAN의 WS-27 검증 요건은 'npx tsx --test tests/contract/*.test.ts' 실제 실행이다. DB 스키마·핸들러를 변경하지 않았으므로 새 DB 거래를 만들지 않았고, 기존 통합 스위트는 재실행하지 않았다."
+    },
+    {
+      "check": "응답 스키마의 실제 와이어 검증 (핸들러 반환값 ↔ 계약 responses)",
+      "command": "실행하지 않음",
+      "result": "NOT_RUN",
+      "evidence": "핸들러들이 Fastify 응답 스키마를 선언하지 않아(SQL 프로젝션/반환 객체가 근거) 등록 단계에서 대조할 스키마가 없다. 계약 responses는 소스의 SELECT 별칭·반환 객체를 읽어 작성했고 컴파일 유효성만 검증했다. 더블 SQL로 22개 operation을 모두 와이어 검증하는 작업은 하지 않았다 — 아래 risks/open에 남긴다."
+    },
+    {
+      "check": "실제 Railway/Cloudflare 배포 후 거래 호출",
+      "command": "실행하지 않음",
+      "result": "NOT_RUN",
+      "evidence": "지시대로 push/deploy/railway/cf 쓰기를 실행하지 않았다. 계약·테스트만 워크트리에 남아 있고 원격 반영과 배포 후 호출은 오케스트레이터 병합 단계 소관이다."
+    }
+  ],
+  "open": [
+    "응답 스키마는 실제 와이어로 검증되지 않았다. 각 operation의 responses는 핸들러 반환 객체와 SQL SELECT 별칭을 근거로 작성했으나, double SQL로 전 operation을 inject 검증하는 테스트는 이 WS에서 만들지 않았다. 필요하면 후속 카드로 22개 operation 와이어 검증을 추가해야 한다.",
+    "experts 도메인 라우트 6종(POST/PATCH /v1/expert/profile, POST /v1/expert/services, PATCH /v1/expert/services/:id, GET /v1/experts, GET /v1/experts/:id)은 이번 웨이브 지정 5개 계약에 포함되지 않아 계약 정본이 없다. 테스트는 이 6건을 '미등재 목록' 상수로 고정해 드리프트만 드러낸다.",
+    "contracts/reviews.v0.1.json: 공개 리뷰 목록이 여전히 authorId(member id)를 반환한다. WS-26의 'member id 미노출' 요구와 충돌하므로 WS-26 병합 시 v0.2에서 제거/마스킹을 결정해야 한다.",
+    "contracts/admin.v0.1.json: GET /v1/admin/members/:id 가 member row를 그대로 spread해 raw email이 emailMasked와 함께 반환된다. 상세 응답의 원문 이메일 노출 허용 여부는 제품/개인정보 결정 사항이며 이 WS에서 코드를 바꾸지 않았다.",
+    "contracts/chat.v0.1.json: deleted_at 컬럼은 있으나 삭제 라우트·필터가 없어 모든 메시지가 본문과 함께 반환된다. WS-25(본인 메시지 삭제 정책) 병합 시 chat 계약 v0.2로 갱신해야 한다.",
+    "contracts/ledger-quotes.v0.1.json: 금액은 integer amount 단일 필드이고 부가세·시급/총액 구분·TTL 규칙이 없다. WS-24(013_quote_terms.sql) 병합 시 v0.2 갱신 필요.",
+    "contracts/admin.v0.1.json: phoneMasked는 항상 null이다. WS-28(015_phone_masked.sql) 병합 시 v0.2에서 실제 마스킹 값을 계약에 반영해야 한다.",
+    "원장 라우트 표기 혼재(단수 /v1/ledger, 복수 /v1/ledgers/:id)는 PLAN 지시대로 이번 웨이브에서 통일하지 않았고 계약에도 현행 표기를 그대로 기록했다."
+  ],
+  "risks": [
+    "전체 라우트 인벤토리는 fastify printRoutes(commonPrefix:false) 트리 출력을 파싱해 만든다. fastify 5.12.7 출력 형식에 의존하므로 fastify 메이저 업그레이드 시 파싱을 재확인해야 한다(라우트 수 >= 50 가드를 넣어 파싱 실패를 침묵 통과로 두지 않았다).",
+    "계약 responses는 서버가 응답 스키마를 강제하지 않으므로 실제 응답과 드리프트할 수 있다. 요청/params/query는 핸들러 schema와 deepEqual로 고정되어 있어 드리프트 시 테스트가 실패한다.",
+    "라우트 추가·삭제 시 계약을 갱신하지 않으면 계약 테스트가 실패한다(의도된 게이트). 병렬 웨이브에서 다른 WS가 같은 모듈에 라우트를 추가하면 병합 후 이 테스트가 먼저 깨질 수 있다.",
+    "npm install로 services/backend/node_modules가 생성되었다(커밋 대상 아님). 커밋·push는 하지 않았고 워크트리 상태는 신규 파일 6개뿐이다."
+  ],
+  "next": [
+    "오케스트레이터: 병합 전 wt-WS-27에서 npx tsx --test tests/contract/*.test.ts 를 다시 실행해 33/33을 재확인하고, 5개 계약을 contracts/ 정본으로 편입한다.",
+    "병합 후 계약 정본 목록(contracts/README 또는 인덱스)에 5개 파일과 operation 수를 등재할지 결정한다.",
+    "WS-24/25/26/28 병합 시 각각 ledger-quotes/chat/reviews/admin 계약의 v0.2 갱신 카드를 함께 배정한다(현재 계약이 그 변경 전 상태를 정확히 기술하고 있다).",
+    "experts 도메인 계약 작성 여부를 결정하고, 필요하면 expert-profile 계약을 별도 카드로 배정한다."
+  ]
+}

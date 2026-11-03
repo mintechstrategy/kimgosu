@@ -1,9 +1,10 @@
 import Fastify from 'fastify';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { createHash, randomBytes } from 'node:crypto';
-import { ApiError } from './security.ts';
+import { ApiError, isAdminSessionToken } from './security.ts';
 import { registerAuthRoutes } from './auth.ts';
 import { registerOAuthRoutes, OAUTH_PROVIDERS, OAUTH_STATE_TTL_SECONDS } from './oauth.ts';
+import { registerAppleRoutes } from './apple.ts';
 import { registerRegisterRoutes, readinessDocuments, registrationReadiness } from './register.ts';
 import { registerAdminPolicyRoutes } from './admin-policy.ts';
 import { registerLedgerRoutes } from './ledger.ts';
@@ -13,6 +14,7 @@ import { registerChatRoutes } from './chat.ts';
 import { registerReviewRoutes } from './reviews.ts';
 import { registerDevLoginRoutes } from './dev-login.ts';
 import { registerAdminRoutes } from './admin.ts';
+import { registerAdminSessionRoutes, createLoginLimiter } from './admin-session.ts';
 import type { AuthOptions } from './providers.ts';
 import { POLICY_METADATA, loadPolicySnapshot } from './policy.ts';
 
@@ -31,8 +33,27 @@ const policySelect = `SELECT kind,version,status,title,body,body_sha256 AS "body
 
 export function buildApp(db: Sql, release: string, options: AuthOptions = {}) {
   const app = Fastify({ logger: false, bodyLimit: 16384, ajv: { customOptions: { removeAdditional: false, coerceTypes: false } } });
+  // Apple 은 콜백을 form_post(application/x-www-form-urlencoded)로 보낸다. 파서가
+  // 없으면 Fastify 가 415 로 거부한다. 중복 키는 400 이다(어느 값이 진짜인지
+  // 모호한 요청을 받아들이지 않는다).
+  app.addContentTypeParser('application/x-www-form-urlencoded', { parseAs: 'string', bodyLimit: 16384 }, (_request, body, done) => {
+    const fields = new Map<string, string>();
+    try {
+      for (const [key, value] of new URLSearchParams(typeof body === 'string' ? body : '')) {
+        if (fields.has(key)) throw new Error('duplicate field');
+        fields.set(key, value);
+      }
+    } catch {
+      const error: Error & { statusCode?: number } = new Error('INVALID_REQUEST');
+      error.statusCode = 400;
+      return done(error);
+    }
+    done(null, Object.fromEntries(fields));
+  });
   const throttleSalt = randomBytes(32).toString('hex');
   const throttle = new Map<string, { start: number; count: number }>();
+  // One attempt counter per app instance (per process); it is never persisted.
+  const adminLoginLimiter = createLoginLimiter();
   const corsOrigins = new Set(['https://dev-kimgosu.mintech.ai', ...(options.corsOrigins ?? []).filter(o => /^http:\/\/(localhost|127\.0\.0\.1):[0-9]{2,5}$/.test(o))]);
   app.addHook('onRequest', async (request, reply) => {
     reply.header('Cache-Control', 'no-store').header('Vary', 'Origin').header('X-Content-Type-Options', 'nosniff').header('Referrer-Policy', 'no-referrer');
@@ -73,6 +94,9 @@ export function buildApp(db: Sql, release: string, options: AuthOptions = {}) {
   async function authenticate(request: FastifyRequest, reply: FastifyReply) {
     const raw = request.headers.authorization;
     if (typeof raw !== 'string' || !/^Bearer [A-Za-z0-9_-]{32,256}$/.test(raw)) { fail(reply, 401, 'AUTH_REQUIRED'); return null; }
+    // Operator-scope sessions are only valid on /v1/admin/*; a member route must
+    // never accept one (scope separation is enforced in both directions).
+    if (isAdminSessionToken(raw.slice(7))) { fail(reply, 401, 'SESSION_INVALID'); return null; }
     const result = await db.query(`SELECT s.id AS "sessionId",m.id AS "memberId",m.principal_id AS "principalId",CASE WHEN EXISTS(SELECT 1 FROM kg_membership.restrictions r WHERE r.principal_id=m.principal_id AND r.revoked_at IS NULL AND r.starts_at<=now() AND (r.ends_at IS NULL OR r.ends_at>now())) THEN 'RESTRICTED' ELSE m.status END AS status
       FROM kg_membership.sessions s JOIN kg_membership.members m ON m.id=s.member_id
       WHERE s.access_digest=$1 AND s.revoked_at IS NULL AND s.expires_at>now() AND m.withdrawn_at IS NULL`, [hash(raw.slice(7))]);
@@ -184,6 +208,7 @@ export function buildApp(db: Sql, release: string, options: AuthOptions = {}) {
   });
   registerAuthRoutes(app, db, authenticate, options);
   registerOAuthRoutes(app, db, options);
+  registerAppleRoutes(app, db, options);
   registerRegisterRoutes(app, db, options);
   registerAdminPolicyRoutes(app, db, authenticate);
   registerLedgerRoutes(app, db, authenticate);
@@ -191,7 +216,10 @@ export function buildApp(db: Sql, release: string, options: AuthOptions = {}) {
   registerQuoteRoutes(app, db, authenticate);
   registerChatRoutes(app, db, authenticate);
   registerReviewRoutes(app, db, authenticate);
-  registerAdminRoutes(app, db, authenticate);
+  // Operator console: session exchange must be registered before the admin
+  // routes so /v1/admin/session is resolvable without an admin session.
+  registerAdminSessionRoutes(app, db, { limiter: adminLoginLimiter });
+  registerAdminRoutes(app, db);
   if (options.devLogin) registerDevLoginRoutes(app, db);
   return app;
 }

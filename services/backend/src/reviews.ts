@@ -19,6 +19,18 @@ async function audit(sql: Sql, actor: unknown, action: string, targetType: strin
 const reviewSelect = `SELECT r.id, r.ledger_id AS "ledgerId", r.author_id AS "authorId", r.target_id AS "targetId",
   r.rating, r.body, r.created_at AS "createdAt", r.hidden_at AS "hiddenAt"`;
 
+/**
+ * Public read projection (WS-26): the author's nickname is the only identity
+ * information that leaves the server. author/target member ids, e-mail and
+ * phone are not selected at all, so they cannot leak through a later edit of
+ * the response object.
+ */
+const publicReviewSelect = `SELECT r.id, r.rating, r.body, r.created_at AS "createdAt",
+  m.nickname AS "authorNickname"`;
+
+/** Reviews may be written until `agreements.completed_at + 30 days` (WS-26). */
+const REVIEW_WINDOW_DAYS = 30;
+
 /** Parse a string query value already pattern-checked by the route schema. */
 function count(raw: string | undefined, fallback: number, min: number, max: number): number {
   if (raw === undefined) return fallback;
@@ -38,6 +50,9 @@ export function registerReviewRoutes(app: FastifyInstance, db: Sql, authenticate
   // Write a review for the counterpart of a ledger.
   // Eligibility is decided by the server: the author must be a ledger
   // participant AND a COMPLETED agreement must exist for that same ledger.
+  // WS-26 adds the time window: the latest COMPLETED agreement must have
+  // completed within REVIEW_WINDOW_DAYS (30). A closed window is a 403
+  // REVIEW_WINDOW_CLOSED, distinct from REVIEW_NOT_ELIGIBLE (never completed).
   app.post<{ Params: { id: string }; Body: { rating: number; body?: string } }>('/v1/ledgers/:id/reviews', {
     schema: {
       params,
@@ -62,14 +77,19 @@ export function registerReviewRoutes(app: FastifyInstance, db: Sql, authenticate
       const targetId = pair.find(id => id !== me)!;
 
       const completed = (await sql.query(
-        `SELECT 1 FROM kg_membership.agreements
+        `SELECT (completed_at > now() - make_interval(days => $4::int)) AS "withinWindow"
+           FROM kg_membership.agreements
           WHERE ledger_id=$1 AND status='COMPLETED'
             AND ((requester_member_id=$2 AND counterpart_member_id=$3)
               OR (requester_member_id=$3 AND counterpart_member_id=$2))
+          ORDER BY completed_at DESC
           LIMIT 1`,
-        [request.params.id, me, targetId],
+        [request.params.id, me, targetId, REVIEW_WINDOW_DAYS],
       )).rows[0];
       if (!completed) throw new ApiError(403, 'REVIEW_NOT_ELIGIBLE');
+      // The window is measured on the server's clock against the stored
+      // completed_at; a client-supplied date is never consulted.
+      if (completed.withinWindow !== true) throw new ApiError(403, 'REVIEW_WINDOW_CLOSED');
 
       const duplicate = (await sql.query(
         `SELECT 1 FROM kg_membership.reviews WHERE ledger_id=$1 AND author_id=$2`,
@@ -94,6 +114,8 @@ export function registerReviewRoutes(app: FastifyInstance, db: Sql, authenticate
   });
 
   // Public list of reviews a member has received.
+  // WS-26: the projection is nickname-only (publicReviewSelect). Author and
+  // target member ids, e-mail and phone are never selected for this route.
   // NOTE: `:id` is the expert's member id. The dedicated expert profile table
   // (migration 008, WS-13) is not part of this branch, so no lookup against it
   // is assumed here. If WS-13 lands, this route may switch to profile ids; that
@@ -118,7 +140,7 @@ export function registerReviewRoutes(app: FastifyInstance, db: Sql, authenticate
     const limit = count(request.query.limit, 20, 1, 50);
     const offset = count(request.query.offset, 0, 0, 100000);
     const reviews = await db.query(
-      `${reviewSelect}, m.nickname AS "authorName"
+      `${publicReviewSelect}
          FROM kg_membership.reviews r JOIN kg_membership.members m ON m.id=r.author_id
         WHERE r.target_id=$1 AND r.hidden_at IS NULL
         ORDER BY r.created_at DESC, r.id DESC

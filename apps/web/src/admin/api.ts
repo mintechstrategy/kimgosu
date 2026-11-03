@@ -1,16 +1,20 @@
 /**
  * Admin console API client.
  *
- * The bearer token is held in this closure only. It is never written to
+ * The operator token is held in this closure only. It is never written to
  * localStorage, sessionStorage, cookies, the URL or a log. A console reload
- * therefore requires re-entering the token.
+ * therefore returns to the login screen.
+ *
+ * The console never accepts a pasted server token from a human: `login()` sends
+ * the member session obtained through a real login to `POST /v1/admin/session`
+ * and only keeps the operator-scope token the server mints for an ADMIN.
  */
 
 export type MemberStatus = 'ACTIVE' | 'RESTRICTED' | 'WITHDRAWN';
 
 export interface AdminMemberRow {
   id: string; customerNumber: string; name: string; nickname: string;
-  emailMasked: string | null; phoneMasked: null; status: MemberStatus;
+  emailMasked: string | null; phoneMasked: string | null; status: MemberStatus;
   expertActive: boolean; createdAt: string; withdrawnAt: string | null;
 }
 export interface AdminMemberDetailRow extends AdminMemberRow {
@@ -26,11 +30,19 @@ export interface LedgerRow {
 }
 export interface RoleRow { id: string; role: string; reason: string; startsAt: string; endsAt: string | null; revokedAt: string | null }
 export interface MemberDetail { member: AdminMemberDetailRow; restrictions: RestrictionRow[]; consents: ConsentRow[]; ledgers: LedgerRow[]; roles: RoleRow[] }
+export interface AdminOperator { memberId: string; nickname: string; customerNumber: string }
+export interface AdminSessionInfo { operator: AdminOperator; expiresAt: string }
 
 export class AdminApiError extends Error {
   readonly status: number;
   readonly code: string;
-  constructor(status: number, code: string) { super(code); this.name = 'AdminApiError'; this.status = status; this.code = code; }
+  readonly attemptsRemaining: number | null;
+  readonly retryAfterSeconds: number | null;
+  constructor(status: number, code: string, extra: { attemptsRemaining?: number | null; retryAfterSeconds?: number | null } = {}) {
+    super(code); this.name = 'AdminApiError'; this.status = status; this.code = code;
+    this.attemptsRemaining = extra.attemptsRemaining ?? null;
+    this.retryAfterSeconds = extra.retryAfterSeconds ?? null;
+  }
 }
 
 const invalid = (): never => { throw new AdminApiError(502, 'INVALID_RESPONSE'); };
@@ -39,29 +51,43 @@ const str = (v: unknown): string => typeof v === 'string' ? v : invalid();
 const nullable = (v: unknown): string | null => v === null ? null : str(v);
 const list = (v: unknown): unknown[] => Array.isArray(v) ? v : invalid();
 const count = (v: unknown): number => Number.isSafeInteger(v) && (v as number) >= 0 ? v as number : invalid();
+const optionalNumber = (v: unknown): number | null => Number.isSafeInteger(v) ? v as number : null;
+
+/** Operator-scope bearer: `adm_` + a 43-char opaque token. */
+export const ADMIN_TOKEN_PATTERN = /^adm_[A-Za-z0-9_-]{43}$/;
 
 export const ADMIN_ERROR_CODES = [
-  'ADMIN_REQUIRED', 'AUTH_REQUIRED', 'SESSION_INVALID', 'MEMBER_NOT_FOUND', 'MEMBER_WITHDRAWN',
-  'ALREADY_RESTRICTED', 'NOT_RESTRICTED', 'INVALID_REQUEST', 'ROUTE_NOT_FOUND',
+  'ADMIN_REQUIRED', 'ADMIN_SESSION_REQUIRED', 'AUTH_REQUIRED', 'SESSION_INVALID', 'MEMBER_NOT_FOUND',
+  'MEMBER_WITHDRAWN', 'ALREADY_RESTRICTED', 'NOT_RESTRICTED', 'ADMIN_LOGIN_LOCKED', 'INVALID_TOKEN',
+  'INVALID_REQUEST', 'ROUTE_NOT_FOUND',
 ] as const;
 
-export function createAdminApi(baseUrl: string, transport: typeof fetch = fetch, timeoutMs = 10000) {
+/** The console may only talk to the approved API origin or a loopback development server. */
+export function assertApprovedApiOrigin(baseUrl: string): URL {
   const origin = new URL(baseUrl);
   if (origin.origin !== 'https://api-dev-kimgosu.mintech.ai' && !(origin.protocol === 'http:' && ['127.0.0.1', 'localhost'].includes(origin.hostname))) {
     throw new Error('UNAPPROVED_API_ORIGIN');
   }
   if (origin.pathname !== '/' || origin.search || origin.hash) throw new Error('INVALID_API_BASE');
+  return origin;
+}
 
-  let session: string | undefined;
-  const setToken = (value: string) => { if (!/^[A-Za-z0-9_-]{32,256}$/.test(value)) throw new AdminApiError(400, 'INVALID_TOKEN'); session = value; };
-  const clearToken = () => { session = undefined; };
+export function createAdminApi(baseUrl: string, transport: typeof fetch = fetch, timeoutMs = 10000) {
+  const origin = assertApprovedApiOrigin(baseUrl);
 
-  async function request(path: string, method: 'GET' | 'POST' = 'GET', body?: unknown): Promise<unknown> {
-    if (!session) throw new AdminApiError(401, 'AUTH_REQUIRED');
+  let adminToken: string | undefined;
+  const clearSession = () => { adminToken = undefined; };
+  const setAdminSession = (value: string) => {
+    if (!ADMIN_TOKEN_PATTERN.test(value)) throw new AdminApiError(400, 'INVALID_TOKEN');
+    adminToken = value;
+  };
+
+  async function send(path: string, method: 'GET' | 'POST', body?: unknown, token?: string): Promise<unknown> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const headers: Record<string, string> = { Accept: 'application/json', 'Cache-Control': 'no-store', Authorization: `Bearer ${session}` };
+      const headers: Record<string, string> = { Accept: 'application/json', 'Cache-Control': 'no-store' };
+      if (token) headers.Authorization = `Bearer ${token}`;
       if (body !== undefined) headers['Content-Type'] = 'application/json';
       const response = await transport(origin.origin + path, {
         method, headers, body: body === undefined ? undefined : JSON.stringify(body),
@@ -71,8 +97,12 @@ export function createAdminApi(baseUrl: string, transport: typeof fetch = fetch,
       try { payload = await response.json(); } catch { throw new AdminApiError(502, 'INVALID_RESPONSE'); }
       if (!response.ok) {
         const envelope = obj(payload).error;
-        const code = envelope && typeof envelope === 'object' ? str((envelope as Record<string, unknown>).code) : invalid();
-        throw new AdminApiError(response.status, (ADMIN_ERROR_CODES as readonly string[]).includes(code) ? code : 'REQUEST_FAILED');
+        const detail = envelope && typeof envelope === 'object' ? envelope as Record<string, unknown> : invalid();
+        const code = str(detail.code);
+        throw new AdminApiError(response.status, (ADMIN_ERROR_CODES as readonly string[]).includes(code) ? code : 'REQUEST_FAILED', {
+          attemptsRemaining: optionalNumber(detail.attemptsRemaining),
+          retryAfterSeconds: optionalNumber(detail.retryAfterSeconds),
+        });
       }
       return payload;
     } catch (e) {
@@ -81,13 +111,27 @@ export function createAdminApi(baseUrl: string, transport: typeof fetch = fetch,
     } finally { clearTimeout(timer); }
   }
 
+  async function request(path: string, method: 'GET' | 'POST' = 'GET', body?: unknown): Promise<unknown> {
+    if (!adminToken) throw new AdminApiError(401, 'AUTH_REQUIRED');
+    return send(path, method, body, adminToken);
+  }
+
+  const readOperator = (value: unknown): AdminOperator => {
+    const d = obj(value);
+    return { memberId: str(d.memberId), nickname: str(d.nickname), customerNumber: str(d.customerNumber) };
+  };
+  const readSessionInfo = (value: unknown): AdminSessionInfo => {
+    const d = obj(value);
+    return { operator: readOperator(d.operator), expiresAt: str(d.expiresAt) };
+  };
+
   const readRow = (value: unknown): AdminMemberRow => {
     const d = obj(value);
     const status = str(d.status);
     if (!['ACTIVE', 'RESTRICTED', 'WITHDRAWN'].includes(status)) return invalid();
     return {
       id: str(d.id), customerNumber: str(d.customerNumber), name: str(d.name), nickname: str(d.nickname),
-      emailMasked: nullable(d.emailMasked), phoneMasked: null, status: status as MemberStatus,
+      emailMasked: nullable(d.emailMasked), phoneMasked: nullable(d.phoneMasked), status: status as MemberStatus,
       expertActive: d.expertActive === true, createdAt: str(d.createdAt), withdrawnAt: nullable(d.withdrawnAt),
     };
   };
@@ -101,8 +145,26 @@ export function createAdminApi(baseUrl: string, transport: typeof fetch = fetch,
   };
 
   return {
-    setToken, clearToken,
-    hasToken: () => session !== undefined,
+    hasSession: () => adminToken !== undefined,
+    setAdminSession,
+    clearSession,
+    /** Exchanges an already-authenticated member session for the operator scope. */
+    async login(sessionToken: string): Promise<AdminSessionInfo> {
+      if (!/^[A-Za-z0-9_-]{32,256}$/.test(sessionToken)) throw new AdminApiError(400, 'INVALID_TOKEN');
+      const d = obj(await send('/v1/admin/session', 'POST', { sessionToken }));
+      const token = str(d.adminToken);
+      if (!ADMIN_TOKEN_PATTERN.test(token)) return invalid();
+      // The token is kept only after the whole envelope validated.
+      adminToken = token;
+      return { operator: readOperator(d.operator), expiresAt: str(d.expiresAt) };
+    },
+    async session(): Promise<AdminSessionInfo> {
+      return readSessionInfo(await request('/v1/admin/session'));
+    },
+    async logout(): Promise<void> {
+      try { if (adminToken) await request('/v1/admin/session/logout', 'POST'); }
+      finally { clearSession(); }
+    },
     async members(params: { query?: string; status?: MemberStatus | ''; page?: number; limit?: number }): Promise<MemberPage> {
       const search = new URLSearchParams();
       if (params.query?.trim()) search.set('query', params.query.trim());

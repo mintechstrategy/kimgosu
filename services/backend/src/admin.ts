@@ -1,15 +1,17 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { randomUUID } from 'node:crypto';
 import type { Sql, Row } from './app.ts';
-import type { Authenticate } from './auth.ts';
+import { requireAdminScope } from './admin-session.ts';
 import { ApiError } from './security.ts';
 
 /**
  * Operator (admin) routes: member/ledger lookup and account restriction.
  *
- * Authority is decided here on the server from `role_grants`, never from a
- * client-sent flag. A member without a live ADMIN grant gets 403 before any
- * member data is read.
+ * Authority is decided here on the server, never from a client-sent flag, and
+ * requires an operator-scope session (`adm_…`) whose owner holds a live ADMIN
+ * `role_grants` row — both re-read on every request. A member session token gets
+ * 403 ADMIN_SESSION_REQUIRED (scope), an admin session without a live grant gets
+ * 403 ADMIN_REQUIRED (role); neither reads member data first.
  *
  * Restriction history lives in `kg_membership.restrictions` (active row while
  * `revoked_at IS NULL`); every restrict/release is also appended to
@@ -48,19 +50,9 @@ function cursor(value: unknown, fallback: number, min: number, max: number): num
   return Number.isSafeInteger(n) && n >= min && n <= max ? n : fallback;
 }
 
-export function registerAdminRoutes(app: FastifyInstance, db: Sql, authenticate: Authenticate) {
-  async function requireAdmin(request: FastifyRequest, reply: FastifyReply) {
-    const auth = await authenticate(request, reply);
-    if (!auth) return null;
-    const grant = await db.query(
-      `SELECT 1 FROM kg_membership.role_grants g
-        WHERE g.member_id=$1 AND g.role_id='ADMIN' AND g.revoked_at IS NULL
-          AND g.starts_at<=now() AND (g.ends_at IS NULL OR g.ends_at>now())`,
-      [auth.memberId],
-    );
-    if (!grant.rows[0]) { reply.code(403).send({ error: { code: 'ADMIN_REQUIRED' } }); return null; }
-    return auth;
-  }
+export function registerAdminRoutes(app: FastifyInstance, db: Sql) {
+  // Operator scope + live ADMIN grant; both re-read per request.
+  const requireAdmin = (request: FastifyRequest, reply: FastifyReply) => requireAdminScope(db, request, reply);
 
   app.get<{ Querystring: { query?: string; status?: string; page?: string; limit?: string } }>('/v1/admin/members', {
     schema: {
@@ -87,6 +79,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: Sql, authenticate:
     const total = Number((await db.query(`SELECT count(*)::int AS count FROM kg_membership.members m ${where}`, [search, status])).rows[0]?.count ?? 0);
     const rows = await db.query(
       `SELECT m.id, m.customer_no::text AS "customerNumber", m.name, m.nickname, m.email,
+              m.phone_masked AS "phoneMasked",
               ${effectiveStatus('m')} AS status, m.expert_active AS "expertActive",
               m.created_at AS "createdAt", m.withdrawn_at AS "withdrawnAt"
          FROM kg_membership.members m ${where}
@@ -98,7 +91,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: Sql, authenticate:
       page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)),
       members: rows.rows.map(row => ({
         id: row.id, customerNumber: row.customerNumber, name: row.name, nickname: row.nickname,
-        emailMasked: maskEmail(row.email), phoneMasked: null, status: row.status,
+        emailMasked: maskEmail(row.email), phoneMasked: row.phoneMasked ?? null, status: row.status,
         expertActive: row.expertActive, createdAt: row.createdAt, withdrawnAt: row.withdrawnAt,
       })),
     };
@@ -110,6 +103,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: Sql, authenticate:
     const auth = await requireAdmin(request, reply); if (!auth) return;
     const member = (await db.query(
       `SELECT m.id, m.customer_no::text AS "customerNumber", m.name, m.nickname, m.email,
+              m.phone_masked AS "phoneMasked",
               ${effectiveStatus('m')} AS status, m.expert_active AS "expertActive",
               m.created_at AS "createdAt", m.withdrawn_at AS "withdrawnAt",
               m.rejoin_after AS "rejoinAfter", m.retention_until AS "retentionUntil"
@@ -155,7 +149,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: Sql, authenticate:
          FROM kg_membership.role_grants g WHERE g.member_id=$1 ORDER BY g.created_at DESC`,
       [request.params.id],
     )).rows;
-    return { member: { ...member, emailMasked: maskEmail(member.email), phoneMasked: null }, restrictions, consents, ledgers, roles };
+    return { member: { ...member, emailMasked: maskEmail(member.email), phoneMasked: member.phoneMasked ?? null }, restrictions, consents, ledgers, roles };
   });
 
   app.post<{ Params: { id: string }; Body: { reason: string; endsAt?: string } }>('/v1/admin/members/:id/restrict', {
@@ -220,6 +214,76 @@ export function registerAdminRoutes(app: FastifyInstance, db: Sql, authenticate:
       await audit(sql, auth.memberId, 'MEMBER_RELEASED', request.params.id, request.body.reason.trim(),
         { restrictionId: live.id });
       return { released: true, restrictionId: released.id, revokedAt: released.revokedAt, memberId: request.params.id };
+    });
+  });
+
+  /**
+   * Review moderation (WS-26, migration 014).
+   *
+   * Hiding is operator-only and never deletes: `hidden_at`/`hidden_reason` are
+   * set, the row stays, and the public list already filters on `hidden_at IS
+   * NULL`. Both actions require an explicit reason because audit_log keeps why
+   * the row was taken off the public list — and for unhide, why it was put back.
+   */
+  app.post<{ Params: { id: string }; Body: { reason: string } }>('/v1/admin/reviews/:id/hide', {
+    schema: {
+      params: { type: 'object', required: ['id'], additionalProperties: false, properties: { id: idSchema } },
+      ...body({ reason: { type: 'string', minLength: 2, maxLength: 500 } }, ['reason']),
+    },
+  }, async (request, reply) => {
+    const auth = await requireAdmin(request, reply); if (!auth) return;
+    return db.transaction(async sql => {
+      const review = (await sql.query(
+        `SELECT id, hidden_at AS "hiddenAt" FROM kg_membership.reviews WHERE id=$1 FOR UPDATE`,
+        [request.params.id],
+      )).rows[0];
+      if (!review) throw new ApiError(404, 'REVIEW_NOT_FOUND');
+      if (review.hiddenAt) throw new ApiError(409, 'REVIEW_ALREADY_HIDDEN');
+      const reason = request.body.reason.trim();
+      if (reason.length < 2) throw new ApiError(400, 'INVALID_REQUEST');
+      const hidden = (await sql.query(
+        `UPDATE kg_membership.reviews SET hidden_at=now(), hidden_reason=$2 WHERE id=$1
+         RETURNING id, hidden_at AS "hiddenAt", hidden_reason AS "hiddenReason"`,
+        [request.params.id, reason],
+      )).rows[0];
+      await sql.query(
+        `INSERT INTO kg_membership.audit_log(actor_member_id,action,target_type,target_id,reason,detail)
+         VALUES($1,'REVIEW_HIDDEN','review',$2,$3,$4)`,
+        [auth.memberId, String(hidden!.id), reason, JSON.stringify({ hidden: true })],
+      );
+      return { ...hidden, hidden: true };
+    });
+  });
+
+  app.post<{ Params: { id: string }; Body: { reason: string } }>('/v1/admin/reviews/:id/unhide', {
+    schema: {
+      params: { type: 'object', required: ['id'], additionalProperties: false, properties: { id: idSchema } },
+      ...body({ reason: { type: 'string', minLength: 2, maxLength: 500 } }, ['reason']),
+    },
+  }, async (request, reply) => {
+    const auth = await requireAdmin(request, reply); if (!auth) return;
+    return db.transaction(async sql => {
+      const review = (await sql.query(
+        `SELECT id, hidden_at AS "hiddenAt", hidden_reason AS "hiddenReason"
+           FROM kg_membership.reviews WHERE id=$1 FOR UPDATE`,
+        [request.params.id],
+      )).rows[0];
+      if (!review) throw new ApiError(404, 'REVIEW_NOT_FOUND');
+      if (!review.hiddenAt) throw new ApiError(409, 'REVIEW_NOT_HIDDEN');
+      const reason = request.body.reason.trim();
+      if (reason.length < 2) throw new ApiError(400, 'INVALID_REQUEST');
+      const visible = (await sql.query(
+        `UPDATE kg_membership.reviews SET hidden_at=NULL, hidden_reason=NULL WHERE id=$1
+         RETURNING id, hidden_at AS "hiddenAt", hidden_reason AS "hiddenReason"`,
+        [request.params.id],
+      )).rows[0];
+      await sql.query(
+        `INSERT INTO kg_membership.audit_log(actor_member_id,action,target_type,target_id,reason,detail)
+         VALUES($1,'REVIEW_UNHIDDEN','review',$2,$3,$4)`,
+        [auth.memberId, String(review.id), reason,
+          JSON.stringify({ hidden: false, previousHiddenReason: review.hiddenReason ?? null })],
+      );
+      return { ...visible, hidden: false };
     });
   });
 }

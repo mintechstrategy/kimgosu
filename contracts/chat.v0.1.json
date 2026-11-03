@@ -1,0 +1,145 @@
+{
+  "contractId": "KG-CHAT-v0.1",
+  "owner": "develop / KG-PARALLEL-10-WS-27",
+  "status": "LOCAL_CANDIDATE_NOT_DEPLOYED",
+  "schemaDialect": "http://json-schema.org/draft-07/schema#",
+  "sourceModules": ["services/backend/src/chat.ts"],
+  "inventoryRule": "operations must equal the routes actually registered by sourceModules (tests/contract/ws27-contracts.test.ts compares against Fastify onRoute).",
+  "sharedBehaviors": [
+    "Participation is decided by the ledger row (expert_member_id or customer_member_id), never by a client flag. A non-participant gets 404 LEDGER_NOT_FOUND so the ledger's existence is not disclosed.",
+    "Ordering is (created_at DESC, id DESC). The id tiebreak keeps a total order for rows written in the same millisecond.",
+    "before is the id of the last message already seen. The server resolves it inside the same ledger and returns strictly older rows, so pages have no duplicates or gaps.",
+    "Query values arrive as strings because the app runs with ajv coerceTypes:false; numeric bounds are enforced in the handler (limit > 100 => 400 INVALID_LIMIT).",
+    "Deletion (WS-25): a member may delete only their own message. A deleted message disappears from the sender's own list, while the other participant keeps the row as a tombstone { deleted: true, body: null }. The body text is never returned to the other participant and the audit entry records ids only. Re-deleting an already deleted message is 409 MESSAGE_ALREADY_DELETED (deliberately not 404, so a retry is distinguishable from a wrong id).",
+    "total counts the rows visible to the caller (own tombstones excluded), so it never disagrees with what paging can return.",
+    "All routes respond with Cache-Control: no-store and X-Server-Time."
+  ],
+  "operations": [
+    {
+      "id": "messageSend",
+      "method": "POST",
+      "path": "/v1/ledgers/:id/messages",
+      "authentication": "session-active",
+      "source": "services/backend/src/chat.ts",
+      "paramsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id"],
+        "properties": { "id": { "type": "string", "format": "uuid" } }
+      },
+      "requestSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["body"],
+        "properties": { "body": { "type": "string", "minLength": 1, "maxLength": 2000 } }
+      },
+      "responses": {
+        "201": { "$ref": "#/definitions/Message" }
+      },
+      "errors": [
+        { "status": 400, "code": "INVALID_REQUEST", "when": "schema violation (missing/too long body, unknown property, bad uuid)" },
+        { "status": 400, "code": "MESSAGE_BODY_INVALID", "when": "body is only whitespace (passes minLength, violates the table trim CHECK)" },
+        { "status": 401, "code": "AUTH_REQUIRED", "when": "missing or malformed Authorization header" },
+        { "status": 403, "code": "ACCOUNT_RESTRICTED", "when": "member has an active restriction" },
+        { "status": 404, "code": "LEDGER_NOT_FOUND", "when": "ledger does not exist or caller is not a participant" }
+      ]
+    },
+    {
+      "id": "messageList",
+      "method": "GET",
+      "path": "/v1/ledgers/:id/messages",
+      "authentication": "session-active",
+      "source": "services/backend/src/chat.ts",
+      "paramsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id"],
+        "properties": { "id": { "type": "string", "format": "uuid" } }
+      },
+      "querySchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "before": { "type": "string", "format": "uuid" },
+          "limit": { "type": "string", "pattern": "^[1-9][0-9]{0,2}$" }
+        }
+      },
+      "responses": {
+        "200": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["messages", "total", "nextCursor"],
+          "properties": {
+            "messages": { "type": "array", "items": { "$ref": "#/definitions/Message" } },
+            "total": { "type": "integer", "minimum": 0 },
+            "nextCursor": { "type": ["string", "null"], "format": "uuid" }
+          }
+        }
+      },
+      "notes": "Default limit 50, maximum 100. nextCursor is null when the page is the last one. total uses the same visibility predicate as the page query.",
+      "errors": [
+        { "status": 400, "code": "INVALID_LIMIT", "when": "limit is not an integer in 1..100" },
+        { "status": 400, "code": "INVALID_CURSOR", "when": "before is unknown or belongs to another ledger" },
+        { "status": 400, "code": "INVALID_REQUEST", "when": "schema violation (bad uuid, limit not matching ^[1-9][0-9]{0,2}$)" },
+        { "status": 401, "code": "AUTH_REQUIRED", "when": "missing or malformed Authorization header" },
+        { "status": 403, "code": "ACCOUNT_RESTRICTED", "when": "member has an active restriction" },
+        { "status": 404, "code": "LEDGER_NOT_FOUND", "when": "ledger does not exist or caller is not a participant" }
+      ]
+    },
+    {
+      "id": "messageDelete",
+      "method": "DELETE",
+      "path": "/v1/ledgers/:id/messages/:messageId",
+      "authentication": "session-active",
+      "source": "services/backend/src/chat.ts",
+      "paramsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "messageId"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "messageId": { "type": "string", "format": "uuid" }
+        }
+      },
+      "responses": {
+        "200": { "$ref": "#/definitions/Message" }
+      },
+      "notes": "Soft delete: sets deleted_at and returns the tombstone row (body null, deleted true). The response is sent after COMMIT so an immediate re-read cannot miss the deletion.",
+      "errors": [
+        { "status": 400, "code": "INVALID_REQUEST", "when": "schema violation (bad uuid)" },
+        { "status": 401, "code": "AUTH_REQUIRED", "when": "missing or malformed Authorization header" },
+        { "status": 403, "code": "ACCOUNT_RESTRICTED", "when": "member has an active restriction" },
+        { "status": 403, "code": "MESSAGE_NOT_OWNED", "when": "the message belongs to the other participant" },
+        { "status": 404, "code": "LEDGER_NOT_FOUND", "when": "ledger does not exist or caller is not a participant" },
+        { "status": 404, "code": "MESSAGE_NOT_FOUND", "when": "message does not exist in this ledger" },
+        { "status": 409, "code": "MESSAGE_ALREADY_DELETED", "when": "the message was already deleted" }
+      ]
+    }
+  ],
+  "openItems": [
+    "Retention/restoration of deleted bodies is OPEN and deliberately not implemented: deleted_at is set and the text stays in the column. No purge or restore route exists.",
+    "read_at is returned but no route marks messages as read yet.",
+    "No retention/purge policy is defined for chat messages."
+  ],
+  "schemaDefinitions": {
+    "Uuid": { "type": "string", "format": "uuid" },
+    "Timestamp": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?Z$" },
+    "NullableTimestamp": { "type": ["string", "null"], "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?Z$" },
+    "Message": {
+      "description": "Wire projection of messageColumns: deleted is derived from deleted_at, and body is null whenever the row is deleted so the text cannot leak through any read path.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "ledgerId", "senderId", "body", "deleted", "createdAt", "readAt", "deletedAt"],
+      "properties": {
+        "id": { "$ref": "#/definitions/Uuid" },
+        "ledgerId": { "$ref": "#/definitions/Uuid" },
+        "senderId": { "$ref": "#/definitions/Uuid" },
+        "body": { "type": ["string", "null"] },
+        "deleted": { "type": "boolean" },
+        "createdAt": { "$ref": "#/definitions/Timestamp" },
+        "readAt": { "$ref": "#/definitions/NullableTimestamp" },
+        "deletedAt": { "$ref": "#/definitions/NullableTimestamp" }
+      }
+    }
+  }
+}

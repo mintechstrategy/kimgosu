@@ -33,6 +33,10 @@ const PRINCIPALS: string[] = [];
 let DOCUMENT_ID = 0;
 
 const auth = (token: string) => ({ authorization: `Bearer ${token}` });
+// Operator scope: admin routes take the session minted by POST /v1/admin/session,
+// never the member login token (that is refused with 403 ADMIN_SESSION_REQUIRED).
+let ADMIN_SESSION_TOKEN = '';
+const adminAuth = () => auth(ADMIN_SESSION_TOKEN);
 
 async function seedMember(member: { id: string; token: string }, nickname: string, email: string, expert = false) {
   const principalId = randomUUID();
@@ -89,6 +93,12 @@ before(async () => {
     `INSERT INTO kg_membership.consent_events(member_id,document_id,action,request_id) VALUES($1,$2,'GRANTED',$3)`,
     [TARGET.id, DOCUMENT_ID, DOCUMENT],
   );
+
+  // Mint the operator session exactly as the console does.
+  const exchanged = await app.inject({ method: 'POST', url: '/v1/admin/session', payload: { sessionToken: ADMIN.token } });
+  assert.equal(exchanged.statusCode, 201, 'an ADMIN member session must be exchangeable for an operator session');
+  ADMIN_SESSION_TOKEN = exchanged.json().adminToken;
+  assert.match(ADMIN_SESSION_TOKEN, /^adm_/);
 });
 
 after(async () => {
@@ -112,11 +122,13 @@ test('anonymous and non-admin callers are refused before member data is read', a
   assert.equal(anonymous.statusCode, 401);
   assert.equal(anonymous.json().error.code, 'AUTH_REQUIRED');
 
-  // CS is a real role, but only ADMIN may operate the console.
+  // CS is a real role, but only ADMIN may operate the console. A member session
+  // token is the wrong scope entirely, so every admin route refuses it (403)
+  // before any grant or member data is read.
   for (const headers of [auth(CS_ONLY.token), auth(PLAIN.token)]) {
     const list = await app.inject({ method: 'GET', url: '/v1/admin/members', headers });
     assert.equal(list.statusCode, 403);
-    assert.equal(list.json().error.code, 'ADMIN_REQUIRED');
+    assert.equal(list.json().error.code, 'ADMIN_SESSION_REQUIRED');
     assert.equal(list.json().members, undefined);
     const detail = await app.inject({ method: 'GET', url: `/v1/admin/members/${TARGET.id}`, headers });
     assert.equal(detail.statusCode, 403);
@@ -136,7 +148,7 @@ test('an invented client role flag is not authority', async () => {
 });
 
 test('list masks PII, searches and paginates', async () => {
-  const all = await app.inject({ method: 'GET', url: '/v1/admin/members?limit=100', headers: auth(ADMIN.token) });
+  const all = await app.inject({ method: 'GET', url: '/v1/admin/members?limit=100', headers: adminAuth() });
   assert.equal(all.statusCode, 200);
   const body = all.json();
   assert.equal(body.total, 5);
@@ -154,33 +166,33 @@ test('list masks PII, searches and paginates', async () => {
     assert.equal(Object.hasOwn(m, 'email'), false, 'raw email stays out of the list response');
   }
 
-  const search = await app.inject({ method: 'GET', url: '/v1/admin/members?query=대상', headers: auth(ADMIN.token) });
+  const search = await app.inject({ method: 'GET', url: '/v1/admin/members?query=대상', headers: adminAuth() });
   assert.equal(search.statusCode, 200);
   assert.equal(search.json().total, 1);
   assert.equal(search.json().members[0].id, TARGET.id);
 
-  const byNumber = await app.inject({ method: 'GET', url: `/v1/admin/members?query=${body.members.find((m: { id: string }) => m.id === TARGET.id).customerNumber}`, headers: auth(ADMIN.token) });
+  const byNumber = await app.inject({ method: 'GET', url: `/v1/admin/members?query=${body.members.find((m: { id: string }) => m.id === TARGET.id).customerNumber}`, headers: adminAuth() });
   assert.equal(byNumber.json().total, 1);
   assert.equal(byNumber.json().members[0].id, TARGET.id);
 
-  const paged = await app.inject({ method: 'GET', url: '/v1/admin/members?limit=2&page=2', headers: auth(ADMIN.token) });
+  const paged = await app.inject({ method: 'GET', url: '/v1/admin/members?limit=2&page=2', headers: adminAuth() });
   assert.equal(paged.statusCode, 200);
   assert.equal(paged.json().members.length, 2);
   assert.equal(paged.json().totalPages, 3);
-  const firstPage = await app.inject({ method: 'GET', url: '/v1/admin/members?limit=2&page=1', headers: auth(ADMIN.token) });
+  const firstPage = await app.inject({ method: 'GET', url: '/v1/admin/members?limit=2&page=1', headers: adminAuth() });
   const seen = new Set([...firstPage.json().members, ...paged.json().members].map((m: { id: string }) => m.id));
   assert.equal(seen.size, 4, 'pages must not repeat rows');
 
-  const filtered = await app.inject({ method: 'GET', url: '/v1/admin/members?status=WITHDRAWN', headers: auth(ADMIN.token) });
+  const filtered = await app.inject({ method: 'GET', url: '/v1/admin/members?status=WITHDRAWN', headers: adminAuth() });
   assert.equal(filtered.statusCode, 200);
   assert.equal(filtered.json().total, 0);
 
-  const badStatus = await app.inject({ method: 'GET', url: '/v1/admin/members?status=DELETED', headers: auth(ADMIN.token) });
+  const badStatus = await app.inject({ method: 'GET', url: '/v1/admin/members?status=DELETED', headers: adminAuth() });
   assert.equal(badStatus.statusCode, 400);
 });
 
 test('detail returns consents, ledgers and restriction history', async () => {
-  const detail = await app.inject({ method: 'GET', url: `/v1/admin/members/${TARGET.id}`, headers: auth(ADMIN.token) });
+  const detail = await app.inject({ method: 'GET', url: `/v1/admin/members/${TARGET.id}`, headers: adminAuth() });
   assert.equal(detail.statusCode, 200);
   const body = detail.json();
   assert.equal(body.member.id, TARGET.id);
@@ -194,21 +206,21 @@ test('detail returns consents, ledgers and restriction history', async () => {
   assert.equal(body.ledgers[0].counterpartId, CUSTOMER.id);
   assert.deepEqual(body.restrictions, []);
 
-  const missing = await app.inject({ method: 'GET', url: `/v1/admin/members/${randomUUID()}`, headers: auth(ADMIN.token) });
+  const missing = await app.inject({ method: 'GET', url: `/v1/admin/members/${randomUUID()}`, headers: adminAuth() });
   assert.equal(missing.statusCode, 404);
-  const malformed = await app.inject({ method: 'GET', url: '/v1/admin/members/not-a-uuid', headers: auth(ADMIN.token) });
+  const malformed = await app.inject({ method: 'GET', url: '/v1/admin/members/not-a-uuid', headers: adminAuth() });
   assert.equal(malformed.statusCode, 400);
 });
 
 test('restrict blocks the account server-side and records reason, period and audit', async () => {
   const endsAt = new Date(Date.now() + 7 * 86400000).toISOString();
-  const missingReason = await app.inject({ method: 'POST', url: `/v1/admin/members/${TARGET.id}/restrict`, headers: auth(ADMIN.token), payload: {} });
+  const missingReason = await app.inject({ method: 'POST', url: `/v1/admin/members/${TARGET.id}/restrict`, headers: adminAuth(), payload: {} });
   assert.equal(missingReason.statusCode, 400);
-  const past = await app.inject({ method: 'POST', url: `/v1/admin/members/${TARGET.id}/restrict`, headers: auth(ADMIN.token), payload: { reason: '과거 기한', endsAt: '2020-01-01T00:00:00.000Z' } });
+  const past = await app.inject({ method: 'POST', url: `/v1/admin/members/${TARGET.id}/restrict`, headers: adminAuth(), payload: { reason: '과거 기한', endsAt: '2020-01-01T00:00:00.000Z' } });
   assert.equal(past.statusCode, 400);
 
   const created = await app.inject({
-    method: 'POST', url: `/v1/admin/members/${TARGET.id}/restrict`, headers: auth(ADMIN.token),
+    method: 'POST', url: `/v1/admin/members/${TARGET.id}/restrict`, headers: adminAuth(),
     payload: { reason: '반복적인 거래 취소', endsAt },
   });
   assert.equal(created.statusCode, 201);
@@ -238,21 +250,21 @@ test('restrict blocks the account server-side and records reason, period and aud
   assert.equal(me.statusCode, 200);
   assert.equal(me.json().status, 'RESTRICTED');
 
-  const duplicate = await app.inject({ method: 'POST', url: `/v1/admin/members/${TARGET.id}/restrict`, headers: auth(ADMIN.token), payload: { reason: '중복 제재' } });
+  const duplicate = await app.inject({ method: 'POST', url: `/v1/admin/members/${TARGET.id}/restrict`, headers: adminAuth(), payload: { reason: '중복 제재' } });
   assert.equal(duplicate.statusCode, 409);
   assert.equal(duplicate.json().error.code, 'ALREADY_RESTRICTED');
 
-  const listed = await app.inject({ method: 'GET', url: '/v1/admin/members?status=RESTRICTED', headers: auth(ADMIN.token) });
+  const listed = await app.inject({ method: 'GET', url: '/v1/admin/members?status=RESTRICTED', headers: adminAuth() });
   assert.equal(listed.json().total, 1);
   assert.equal(listed.json().members[0].id, TARGET.id);
 });
 
 test('release keeps the history and restores access', async () => {
-  const notRestricted = await app.inject({ method: 'POST', url: `/v1/admin/members/${PLAIN.id}/release`, headers: auth(ADMIN.token), payload: { reason: '제재 없음' } });
+  const notRestricted = await app.inject({ method: 'POST', url: `/v1/admin/members/${PLAIN.id}/release`, headers: adminAuth(), payload: { reason: '제재 없음' } });
   assert.equal(notRestricted.statusCode, 409);
   assert.equal(notRestricted.json().error.code, 'NOT_RESTRICTED');
 
-  const released = await app.inject({ method: 'POST', url: `/v1/admin/members/${TARGET.id}/release`, headers: auth(ADMIN.token), payload: { reason: '소명 확인' } });
+  const released = await app.inject({ method: 'POST', url: `/v1/admin/members/${TARGET.id}/release`, headers: adminAuth(), payload: { reason: '소명 확인' } });
   assert.equal(released.statusCode, 200);
   assert.equal(released.json().released, true);
   assert.ok(released.json().revokedAt);
@@ -271,13 +283,13 @@ test('release keeps the history and restores access', async () => {
   const me = await app.inject({ method: 'GET', url: '/v1/me', headers: auth(TARGET.token) });
   assert.equal(me.json().status, 'ACTIVE');
 
-  const detail = await app.inject({ method: 'GET', url: `/v1/admin/members/${TARGET.id}`, headers: auth(ADMIN.token) });
+  const detail = await app.inject({ method: 'GET', url: `/v1/admin/members/${TARGET.id}`, headers: adminAuth() });
   assert.equal(detail.json().member.status, 'ACTIVE');
   assert.equal(detail.json().restrictions.length, 1);
   assert.equal(detail.json().restrictions[0].active, false);
   assert.ok(detail.json().restrictions[0].revokedAt);
   assert.equal(detail.json().restrictions[0].releaseReason, '소명 확인', 'the release reason is visible in the history');
 
-  const again = await app.inject({ method: 'POST', url: `/v1/admin/members/${TARGET.id}/release`, headers: auth(ADMIN.token), payload: { reason: '재해제 시도' } });
+  const again = await app.inject({ method: 'POST', url: `/v1/admin/members/${TARGET.id}/release`, headers: adminAuth(), payload: { reason: '재해제 시도' } });
   assert.equal(again.statusCode, 409);
 });

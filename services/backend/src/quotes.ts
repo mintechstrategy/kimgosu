@@ -14,12 +14,57 @@ import { ApiError } from './security.ts';
 const string = (minLength: number, maxLength: number) => ({ type: 'string', minLength, maxLength });
 const idSchema = { type: 'string', format: 'uuid' };
 const quoteColumns = `q.id, q.ledger_id AS "ledgerId", q.expert_member_id AS "expertMemberId",
-  q.customer_member_id AS "customerMemberId", q.amount, q.schedule_at AS "scheduleAt",
+  q.customer_member_id AS "customerMemberId", q.amount, q.price_type AS "priceType",
+  q.vat_included AS "vatIncluded", q.hourly_rate AS "hourlyRate", q.schedule_at AS "scheduleAt",
   q.message, q.status, q.version::int AS version, q.expires_at AS "expiresAt",
   q.agreement_id AS "agreementId", q.created_at AS "createdAt",
   q.accepted_at AS "acceptedAt", q.rejected_at AS "rejectedAt",
   q.customer_confirmed_at AS "customerConfirmedAt", q.expert_confirmed_at AS "expertConfirmedAt",
   q.completed_at AS "completedAt"`;
+
+/**
+ * User-confirmed quote terms (wave 3):
+ *   - VAT is quoted separately by default; `vatIncluded` records the exception.
+ *   - Prices are either hourly or a total; the two must stay distinguishable.
+ *   - A quote is valid 7 days by default and never longer than 30 days.
+ *
+ * Amounts are computed on the server from the stored `amount` only. A client
+ * that sends its own derived total/VAT numbers is rejected by the request
+ * schema, not trusted.
+ */
+export const VAT_RATE = 0.1;
+export const QUOTE_DEFAULT_TTL_DAYS = 7;
+export const QUOTE_MAX_TTL_DAYS = 30;
+const DAY_MS = 24 * 60 * 60 * 1000;
+const MIN_TTL_MS = 60 * 1000;
+
+type Amounts = { supplyAmount: number; vatAmount: number; totalAmount: number };
+
+/** `amount` is authoritative. vatIncluded=false -> amount is the VAT-exclusive
+ *  supply price ("부가세 별도"); true -> amount is the final payable total. */
+export function quoteAmounts(amount: number, vatIncluded: boolean): Amounts {
+  if (vatIncluded) {
+    const supplyAmount = Math.round(amount / (1 + VAT_RATE));
+    return { supplyAmount, vatAmount: amount - supplyAmount, totalAmount: amount };
+  }
+  const vatAmount = Math.round(amount * VAT_RATE);
+  return { supplyAmount: amount, vatAmount, totalAmount: amount + vatAmount };
+}
+
+function present(row: Row): Row {
+  const amount = Number(row.amount);
+  const vatIncluded = row.vatIncluded === true;
+  return {
+    ...row,
+    amount,
+    priceType: String(row.priceType),
+    vatIncluded,
+    hourlyRate: row.hourlyRate === null || row.hourlyRate === undefined ? null : Number(row.hourlyRate),
+    currency: 'KRW',
+    vatRate: VAT_RATE,
+    ...quoteAmounts(amount, vatIncluded),
+  };
+}
 
 async function audit(sql: Sql, actor: unknown, action: string, targetId: string, detail?: Row) {
   await sql.query(
@@ -84,41 +129,66 @@ export function registerQuoteRoutes(app: FastifyInstance, db: Sql, authenticate:
   };
 
   // Propose a quote. Only the ledger's expert may price their own customer.
-  app.post<{ Params: { id: string }; Body: { amount: number; message: string; expiresAt: string; scheduleAt?: string } }>(
+  app.post<{
+    Params: { id: string };
+    Body: {
+      amount: number; message: string; expiresAt?: string; scheduleAt?: string;
+      priceType?: 'HOURLY' | 'TOTAL'; vatIncluded?: boolean; hourlyRate?: number;
+    };
+  }>(
     '/v1/ledgers/:id/quotes', {
       schema: {
         params: { type: 'object', required: ['id'], additionalProperties: false, properties: { id: idSchema } },
         body: {
-          type: 'object', additionalProperties: false, required: ['amount', 'message', 'expiresAt'],
+          type: 'object', additionalProperties: false, required: ['amount', 'message'],
           properties: {
             amount: { type: 'integer', minimum: 1, maximum: 2147483647 },
             message: string(1, 2000),
+            // Optional: the server applies the 7-day default when omitted.
             expiresAt: { type: 'string', format: 'date-time' },
             scheduleAt: { type: 'string', format: 'date-time' },
+            priceType: { type: 'string', enum: ['HOURLY', 'TOTAL'] },
+            vatIncluded: { type: 'boolean' },
+            hourlyRate: { type: 'integer', minimum: 1, maximum: 2147483647 },
           },
         },
       },
     }, async (request, reply) => {
       const auth = await requireMember(request, reply); if (!auth) return;
+      const priceType = request.body.priceType ?? 'TOTAL';
+      const vatIncluded = request.body.vatIncluded ?? false;
+      // Hourly and total pricing must not be conflated: an hourly quote without
+      // a rate is unreadable, and a total quote must not carry a stray rate.
+      if (priceType === 'HOURLY' && request.body.hourlyRate === undefined) throw new ApiError(400, 'HOURLY_RATE_REQUIRED');
+      if (priceType === 'TOTAL' && request.body.hourlyRate !== undefined) throw new ApiError(400, 'HOURLY_RATE_NOT_ALLOWED');
+
+      const now = Date.now();
+      const expiresAt = request.body.expiresAt === undefined
+        ? new Date(now + QUOTE_DEFAULT_TTL_DAYS * DAY_MS)
+        : new Date(request.body.expiresAt);
+      // User-confirmed TTL: 7 days by default, 30 days maximum, and never in
+      // the past (a 1-minute floor also keeps expires_at > created_at from
+      // failing on a clock race instead of returning a clean 400).
+      if (Number.isNaN(expiresAt.getTime()) || expiresAt.getTime() <= now + MIN_TTL_MS) throw new ApiError(400, 'INVALID_EXPIRY');
+      if (expiresAt.getTime() > now + QUOTE_MAX_TTL_DAYS * DAY_MS) throw new ApiError(400, 'EXPIRY_EXCEEDS_MAX_TTL');
+
       return db.transaction(async sql => {
         const ledger = await participantLedger(sql, request.params.id, auth.memberId);
         if (ledger.expertMemberId !== String(auth.memberId)) throw new ApiError(403, 'EXPERT_ONLY');
-        const expiresAt = new Date(request.body.expiresAt);
-        // Quote TTL beyond "must be in the future" is not a confirmed policy, so
-        // only a 1-minute floor is enforced (also keeps expires_at > created_at
-        // from failing on a clock-race instead of returning a clean 400).
-        if (Number.isNaN(expiresAt.getTime()) || expiresAt.getTime() <= Date.now() + 60_000) throw new ApiError(400, 'INVALID_EXPIRY');
         const id = randomUUID();
         const created = (await sql.query(
           `INSERT INTO kg_membership.quotes(id,ledger_id,expert_member_id,customer_member_id,amount,
-             schedule_at,message,expires_at)
-           VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING ${quoteColumns.replace(/q\./g, '')}`,
+             price_type,vat_included,hourly_rate,schedule_at,message,expires_at)
+           VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING ${quoteColumns.replace(/q\./g, '')}`,
           [id, request.params.id, auth.memberId, ledger.customerMemberId, request.body.amount,
+            priceType, vatIncluded, request.body.hourlyRate ?? null,
             request.body.scheduleAt ?? null, request.body.message, expiresAt.toISOString()],
         )).rows[0];
         await transition(sql, id, null, 'PROPOSED', auth.memberId);
-        await audit(sql, auth.memberId, 'QUOTE_PROPOSED', id, { ledgerId: request.params.id, amount: request.body.amount });
-        return reply.code(201).send(created);
+        await audit(sql, auth.memberId, 'QUOTE_PROPOSED', id, {
+          ledgerId: request.params.id, amount: request.body.amount, priceType, vatIncluded,
+        });
+        return reply.code(201).send(present(created));
       });
     });
 
@@ -140,7 +210,7 @@ export function registerQuoteRoutes(app: FastifyInstance, db: Sql, authenticate:
         LIMIT $2`,
       [request.params.id, request.query.limit ?? 50],
     );
-    return { quotes: rows.rows };
+    return { quotes: rows.rows.map(present) };
   });
 
   // Customer accepts or rejects. The state machine, not the client, decides.
@@ -179,12 +249,13 @@ export function registerQuoteRoutes(app: FastifyInstance, db: Sql, authenticate:
           if (!rejected) throw new ApiError(409, 'VERSION_CONFLICT');
           await transition(sql, String(quote.id), 'PROPOSED', 'REJECTED', auth.memberId);
           await audit(sql, auth.memberId, 'QUOTE_REJECTED', String(quote.id), {});
-          return rejected;
+          return present(rejected);
         }
 
         // accept: materialise the wave-1 agreement so review eligibility keeps one basis.
         const agreementId = randomUUID();
-        const summary = `견적 수락: ${Number(quote.amount).toLocaleString('en-US')}원`;
+        const agreed = quoteAmounts(Number(quote.amount), quote.vatIncluded === true);
+        const summary = `견적 수락: ${agreed.totalAmount.toLocaleString('en-US')}원 (${quote.vatIncluded === true ? '부가세 포함' : '부가세 별도'})`;
         const agreement = (await sql.query(
           `INSERT INTO kg_membership.agreements(id,ledger_id,requester_member_id,counterpart_member_id,summary,status,accepted_at)
            VALUES($1,$2,$3,$4,$5,'ACCEPTED',now()) RETURNING id`,
@@ -199,7 +270,7 @@ export function registerQuoteRoutes(app: FastifyInstance, db: Sql, authenticate:
         if (!accepted) throw new ApiError(409, 'VERSION_CONFLICT');
         await transition(sql, String(quote.id), 'PROPOSED', 'ACCEPTED', auth.memberId);
         await audit(sql, auth.memberId, 'QUOTE_ACCEPTED', String(quote.id), { agreementId: String(agreement.id) });
-        return accepted;
+        return present(accepted);
       });
       if (isExpired(outcome)) throw new ApiError(409, 'QUOTE_EXPIRED');
       return outcome;
@@ -257,10 +328,10 @@ export function registerQuoteRoutes(app: FastifyInstance, db: Sql, authenticate:
         await audit(sql, auth.memberId, 'QUOTE_COMPLETED', String(quote.id), { agreementId: String(quote.agreementId) });
       }
 
-      return (await sql.query(
+      return present((await sql.query(
         `SELECT ${quoteColumns} FROM kg_membership.quotes q WHERE q.id=$1`,
         [request.params.id],
-      )).rows[0];
+      )).rows[0]);
     });
     if (isExpired(outcome)) throw new ApiError(409, 'QUOTE_EXPIRED');
     return outcome;

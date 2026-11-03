@@ -1,3 +1,3 @@
 import { createApp } from 'vue';
-import AdminApp from './AdminApp.vue';
-createApp(AdminApp).mount('#app');
+import AdminShell from './AdminShell.vue';
+createApp(AdminShell).mount('#app');

@@ -35,6 +35,131 @@
       "sha256": "816b1bc87b7a80cab1dd34ba66115f16a1e7ae190d4df72fc60f07acc6ff836f"
     }
   ],
+  "scopeNote": "최상위 status·version·documents는 v0.1-draft 세트를 설명한다. v0.2 세트는 아래 \"v0.2\" 키를 따른다.",
+  "v0.2": {
+    "status": "READY",
+    "effectiveFrom": "2026-11-03",
+    "operatorPlanned": "mintech",
+    "basis": [
+      "TERMS-v0.1-draft.md",
+      "PRIVACY-CONSENT-v0.1-draft.md",
+      "PRIVACY-POLICY-v0.1-draft.md",
+      "MARKETING-v0.1-draft.md"
+    ],
+    "businessInfo": {
+      "상호": "민테크놀로지",
+      "대표자": "권민택",
+      "사업자등록번호": "549-87-02902",
+      "주소": "경기도 양주시 덕정길 81",
+      "고객센터": "customer@mintech.ai",
+      "개인정보보호책임자": "권민택 (kwon.mt@mintech.ai)"
+    },
+    "documents": [
+      {
+        "kind": "TERMS",
+        "file": "TERMS-v0.2.md",
+        "title": "김고수 서비스 이용약관 (v0.2)",
+        "bytes": 8960,
+        "sha256": "abd29a8b16cb7b4980d8ca296ca9903baefd8f8ed0ff9ed77fa42cfe8f87a1ee"
+      },
+      {
+        "kind": "PRIVACY_CONSENT",
+        "file": "PRIVACY-CONSENT-v0.2.md",
+        "title": "개인정보 수집·이용 동의 (v0.2)",
+        "bytes": 4406,
+        "sha256": "9a5f7363e762ca47f91de107b09ac8338136df3cbe027e9024a6565a44a6ebb0"
+      },
+      {
+        "kind": "PRIVACY_POLICY",
+        "file": "PRIVACY-POLICY-v0.2.md",
+        "title": "김고수 개인정보 처리방침 (v0.2)",
+        "bytes": 5950,
+        "sha256": "b8bd1c52f7c46923622465de13e2d5c9ebe73627329f184a135be5e9e40df01f"
+      },
+      {
+        "kind": "MARKETING",
+        "file": "MARKETING-v0.2.md",
+        "title": "마케팅 정보 수신 동의 (v0.2)",
+        "bytes": 2631,
+        "sha256": "5f8af2b492c417175ca41743c8106c67df31bd558489dbee6d92136879d0cf71"
+      }
+    ],
+    "changesFromV01": [
+      "사업자 정보(상호·대표자·사업자등록번호·주소·고객센터) 확정 반영",
+      "개인정보보호책임자 권민택(kwon.mt@mintech.ai) 확정 반영",
+      "시행일 2026-11-03 확정",
+      "남은 [미확정] 표시를 회사 공지·관련 법령 위임 문구로 정리",
+      "개인정보 처리방침 권익침해 구제기관 연락처에서 회사 이메일을 제거하고 기관 공식 채널 안내로 교체"
+    ],
+    "loading": {
+      "script": "services/backend/scripts/load-policy-drafts.mjs",
+      "command": "DATABASE_URL=<db-url> node scripts/load-policy-drafts.mjs --version v0.2",
+      "dryRun": "node scripts/load-policy-drafts.mjs --version v0.2 --dry-run",
+      "safety": "항상 status='DRAFT'로만 삽입. canConsent=false이므로 승격 전에는 동의 대상이 되지 않는다. 기존 (kind,version) 행은 덮어쓰지 않는다. 로더는 [미확정 잔존·시행일 미기재 문서를 거부한다."
+    },
+    "promotion": {
+      "status": "COMPLETED",
+      "at": "2026-11-03T17:30:00+09:00",
+      "from": "DRAFT",
+      "to": "READY",
+      "values": {
+        "operator_name": "mintech",
+        "effective_at": "2026-11-03T00:00:00+09:00",
+        "approved_at": "2026-11-03T17:30:00+09:00"
+      },
+      "authorizedBy": "사용자 지시: A-2 v0.2 새로 만들어서 오늘 시행",
+      "script": "services/backend/scripts/promote-policy-drafts.mjs",
+      "runner": "services/backend/scripts/dev-db.sh",
+      "targets": [
+        "local kgtest (127.0.0.1:55432)",
+        "Railway dev Postgres"
+      ],
+      "irreversible": true,
+      "liveVerification": {
+        "url": "https://api-dev-kimgosu.mintech.ai/v1/policies?metadata=policy-v0.3",
+        "checkedAt": "2026-11-03T17:40+09:00",
+        "result": "4종 모두 v0.2가 isCurrent=true, isDisplay=true, canConsent=true",
+        "signupReady": false,
+        "remainingBlockers": [
+          "OAuth provider 자격증명 미설정",
+          "SMS 미연결",
+          "identity key 미설정"
+        ]
+      }
+    },
+    "verification": {
+      "environment": "PostgreSQL 18.6 loopback 127.0.0.1:55432/kgtest_ws22 (migrations 001-011) + Fastify app.inject. Railway 개발 DB에는 적재하지 않았다.",
+      "at": "2026-11-03",
+      "checks": [
+        {
+          "check": "실제 로더 실행(v0.1-draft, v0.2)",
+          "result": "PASS",
+          "evidence": "각 4건 DRAFT 삽입(id 1-4, 5-8), 전체 8건 canConsent=false. 재실행 시 기존 행 skip."
+        },
+        {
+          "check": "GET /v1/policies 재조회",
+          "result": "PASS",
+          "evidence": "v0.2 4건이 DRAFT로 반환되고 bodySha256이 파일 해시와 일치, 본문 왕복 일치."
+        },
+        {
+          "check": "GET /v1/policies?metadata=policy-v0.3 (v0.1 승격 상태에서)",
+          "result": "PASS",
+          "evidence": "HTTP 200. v0.1-draft 4건 current/READY 유지, v0.2 4건 DRAFT는 isCurrent=false로 추가. missingReadyKinds=[]."
+        },
+        {
+          "check": "MANIFEST sha256·bytes 재계산 대조",
+          "result": "PASS",
+          "evidence": "tests/policy-v02.integration.test.ts 두 번째 테스트."
+        },
+        {
+          "check": "v0.2 승격(READY)",
+          "result": "NOT_RUN",
+          "evidence": "PLAN이 승격을 오케스트레이터 몫으로 지정했다."
+        }
+      ],
+      "test": "KG_TEST_DATABASE_URL=postgres://postgres@127.0.0.1:55432/kgtest node --test tests/policy-v02.integration.test.ts"
+    }
+  },
   "confirmedDecisionsReflected": [
     "만 14세 이상 확인",
     "이름·이메일 필수, 성별·연령대·생년월일 미수집",
@@ -83,10 +208,22 @@
       "at": "2026-11-03",
       "method": "railway connect Postgres --tunnel-only (SSH key kimgosu-develop 등록 후)",
       "inserted": [
-        { "kind": "TERMS", "id": 2 },
-        { "kind": "PRIVACY_CONSENT", "id": 3 },
-        { "kind": "PRIVACY_POLICY", "id": 4 },
-        { "kind": "MARKETING", "id": 5 }
+        {
+          "kind": "TERMS",
+          "id": 2
+        },
+        {
+          "kind": "PRIVACY_CONSENT",
+          "id": 3
+        },
+        {
+          "kind": "PRIVACY_POLICY",
+          "id": 4
+        },
+        {
+          "kind": "MARKETING",
+          "id": 5
+        }
       ],
       "liveVerification": {
         "endpoint": "https://api-dev-kimgosu.mintech.ai/v1/policies",
@@ -121,10 +258,22 @@
     "script": "services/backend/scripts/promote-policy-drafts.mjs",
     "runner": "services/backend/scripts/dev-db.sh",
     "documents": [
-      { "kind": "TERMS", "id": 2 },
-      { "kind": "PRIVACY_CONSENT", "id": 3 },
-      { "kind": "PRIVACY_POLICY", "id": 4 },
-      { "kind": "MARKETING", "id": 5 }
+      {
+        "kind": "TERMS",
+        "id": 2
+      },
+      {
+        "kind": "PRIVACY_CONSENT",
+        "id": 3
+      },
+      {
+        "kind": "PRIVACY_POLICY",
+        "id": 4
+      },
+      {
+        "kind": "MARKETING",
+        "id": 5
+      }
     ],
     "irreversible": true,
     "irreversibilityNote": "READY 전환 시 content_sealed=true가 되어 본문·제목·버전·operator·시행일·승인일이 DB 트리거로 잠긴다. 내용 수정은 새 버전(v0.2 등) 발행으로만 가능하다.",
@@ -139,7 +288,11 @@
       "configEndpoint": {
         "url": "https://api-dev-kimgosu.mintech.ai/v1/auth/config",
         "signupReady": false,
-        "remainingBlockers": ["providers 3종 미연결", "sms 미연결", "identity key 미설정"]
+        "remainingBlockers": [
+          "providers 3종 미연결",
+          "sms 미연결",
+          "identity key 미설정"
+        ]
       },
       "sealProof": {
         "script": "services/backend/scripts/verify-policy-seal.mjs",

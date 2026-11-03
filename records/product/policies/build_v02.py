@@ -6,7 +6,7 @@ decided yet are not left as bracketed placeholders — they are reworded into th
 standard deferral clause the company uses elsewhere ("회사가 서비스 내에 공지한
 기간/기준에 따릅니다"), so an approved document contains no unfilled blanks.
 
-Run from any directory; writes *_v0.2-draft.md next to this file.
+Run from any directory; writes *_v0.2.md next to this file.
 """
 from pathlib import Path
 
@@ -59,6 +59,21 @@ REPLACEMENTS = {
     "PRIVACY_POLICY": [
         *BUSINESS,
         ("[미확정: 시행일]", "2026년 11월 3일"),
+        # The four relief-agency lines must not inherit the company contact:
+        # an agency-specific "[미확정: 연락처]" is not the customer centre.
+        ("정보주체는 개인정보 침해에 대한 구제를 위하여 아래 기관에 상담을 신청할 수 있습니다.\n\n"
+         "- 개인정보침해신고센터: `[미확정: 연락처]`\n"
+         "- 개인정보분쟁조정위원회: `[미확정: 연락처]`\n"
+         "- 대검찰청 사이버수사과: `[미확정: 연락처]`\n"
+         "- 경찰청 사이버수사국: `[미확정: 연락처]`",
+         "정보주체는 개인정보 침해에 대한 구제를 위하여 아래 기관의 공식 홈페이지에 게시된 "
+         "상담·신고 채널을 이용할 수 있습니다.\n\n"
+         "- 개인정보침해신고센터 (한국인터넷진흥원 운영)\n"
+         "- 개인정보분쟁조정위원회\n"
+         "- 대검찰청 사이버수사과\n"
+         "- 경찰청 국가수사본부 사이버수사국\n\n"
+         "회사는 위 기관의 연락처를 자체적으로 안내하지 않으며, 최신 연락처는 각 기관의 공식 "
+         "홈페이지에서 확인할 수 있습니다."),
         ("[미확정: 자료별 법적 보존 근거 및 최소 보존 범위]",
          "자료별 법적 보존 근거 및 최소 보존 범위는 관련 법령에 따릅니다."),
         ("[미확정: 제공 항목, 제공받는 자, 제공 목적, 보유 기간]",
@@ -115,12 +130,13 @@ for kind, (source, target) in TARGETS.items():
     text = text.replace("(검토 초안 v0.1)", "v0.2")
     text = text.replace(
         "> **상태: DRAFT_NOT_EFFECTIVE**\n> 이 문서는 사업·운영 검토용 초안이며, 법률 검토·최종 승인·시행을 뜻하지 않습니다.\n",
-        "> **상태: EFFECTIVE (2026-11-03 시행)**\n"
-        "> 사업자 정보가 확정되어 v0.2로 발행되었습니다. v0.1-draft는 이력으로 보존됩니다.\n",
+        "> **상태: v0.2 (2026-11-03 시행)**\n"
+        "> 사업자 정보가 확정되어 v0.2로 작성되었습니다. v0.1-draft는 이력으로 보존됩니다.\n"
+        "> DB 승격(READY 전환)은 별도 운영 절차로 수행합니다.\n",
     )
     text = text.replace("> 정식 고객의 동의를 받는 문서로 사용할 수 없습니다.\n", "")
     text = text.replace("> `[미확정]` 표시 항목은 확정 전까지 효력이 없습니다.\n", "")
-    text = text.replace("**상태: DRAFT_NOT_EFFECTIVE**", "**상태: EFFECTIVE**")
+    text = text.replace("**상태: DRAFT_NOT_EFFECTIVE**", "**상태: v0.2 (2026-11-03 시행)**")
     for old, new in REPLACEMENTS[kind]:
         # The v0.1 sources wrap several placeholders in backticks. Replace the
         # backticked form first so resolved prose is not rendered as code.

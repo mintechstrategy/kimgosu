@@ -84,16 +84,18 @@ for (const provider of ['kakao', 'naver'] as const) {
   });
 }
 
-test('[수용1] apple start는 현재 스키마(oath_flows provider CHECK)에서 503 PROVIDER_SCHEMA_PENDING으로 정직하게 거부된다', async t => {
-  // 실제 현재 동작 고정: 002/001의 CHECK는 ('google','kakao','naver')만 허용한다.
-  // WS-11에는 마이그레이션 번호가 배정되지 않아 CHECK를 확장하지 않았다.
-  // CHECK가 확장되면 이 테스트는 200 + flow 저장 검증으로 바뀌어야 한다.
+test('[수용1] apple start는 012 적용 후 인가 URL을 반환하고 apple flow를 저장한다', async t => {
+  // 012_apple_provider.sql 이 oauth_flows/social_links 의 provider CHECK 에 apple 을
+  // 추가했다. 이전에는 503 PROVIDER_SCHEMA_PENDING 으로 정직하게 거부했다.
   const app = makeApp(); t.after(() => app.close());
   const res = await startOauth(app, 'apple');
-  assert.equal(res.statusCode, 503);
-  assert.equal(res.json().error.code, 'PROVIDER_SCHEMA_PENDING');
-  const stored = (await pool.query(`SELECT count(*)::int AS n FROM kg_membership.oauth_flows WHERE provider='apple'`)).rows[0].n;
-  assert.equal(stored, 0, 'a refused provider must not leave a half-started flow');
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.json().provider, 'apple');
+  assert.ok(new URL(res.json().authorizationUrl).searchParams.get('state'));
+  const stored = (await pool.query(`SELECT consumed_at FROM kg_membership.oauth_flows WHERE state_digest=$1`,
+    [digest(res.json().state)])).rows[0];
+  assert.ok(stored, 'the apple flow must be persisted');
+  assert.equal(stored.consumed_at, null);
 });
 
 // --- 수용 기준 2: state 재사용·만료·provider 불일치 거부 --------------------

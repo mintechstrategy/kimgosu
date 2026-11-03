@@ -40,7 +40,10 @@ class AuthModel @JvmOverloads constructor(application: Application, private val 
         started = true
         execute {
             token = sessions.read()
-            if (token != null) { loadAccount(); if (state.screen != AuthScreen.ACCOUNT_RESTRICTED) { browsing = true; stack = emptyList() } }
+            // A stored session enters A1 before any network call: an offline cold start must
+            // show the main screen with its account-error/retry state, never the login entry.
+            // Only a server rejection of the session (401) returns to the auth entry below.
+            if (token != null) { stack = emptyList(); browsing = true; loadAccount() }
             else { loadConfig(); loadPolicies() }
         }
     }
@@ -101,6 +104,7 @@ class AuthModel @JvmOverloads constructor(application: Application, private val 
         when {
             privateRequest && api?.status == 401 && api.code in listOf("AUTH_REQUIRED", "SESSION_INVALID", "SESSION_REQUIRED") -> {
                 val cleared = runCatching { sessions.clear() }.isSuccess; token = null; version = null
+                browsing = false
                 state = state.copy(nickname = "", email = "", customerNumber = "", records = emptyList(), notifications = emptyMap(), marketingConsented = false)
                 stack = listOf(AuthScreen.E1, AuthScreen.SESSION_EXPIRED); show(AuthScreen.SESSION_EXPIRED)
                 entry = "SESSION_EXPIRED"
