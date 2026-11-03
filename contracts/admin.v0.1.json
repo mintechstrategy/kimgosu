@@ -1,0 +1,282 @@
+{
+  "contractId": "KG-ADMIN-v0.1",
+  "owner": "develop / KG-PARALLEL-10-WS-27",
+  "status": "LOCAL_CANDIDATE_NOT_DEPLOYED",
+  "schemaDialect": "http://json-schema.org/draft-07/schema#",
+  "sourceModules": ["services/backend/src/admin.ts"],
+  "inventoryRule": "operations must equal the routes actually registered by sourceModules (tests/contract/ws27-contracts.test.ts compares against Fastify onRoute). Policy promotion (POST /v1/admin/policies/promote) lives in contracts/registration.v0.1.json per the wave-3 split.",
+  "sharedBehaviors": [
+    "Authority is decided on the server from a live kg_membership.role_grants row (role_id='ADMIN', revoked_at IS NULL, starts_at<=now(), ends_at IS NULL OR ends_at>now()). A client-sent admin flag does not exist. A session without a live ADMIN grant gets 403 ADMIN_REQUIRED before any member data is read.",
+    "Status is the effective status: a member with a live restriction row reads as RESTRICTED even when members.status is ACTIVE.",
+    "E-mail is masked in list/detail responses as emailMasked (first two characters of the local part + at least three '*'). The raw email is still present in the member detail response because the handler spreads the member row — see openItems.",
+    "phoneMasked is always null at v0.1: no masked phone column exists yet.",
+    "Every restrict/release writes kg_membership.audit_log (action MEMBER_RESTRICTED / MEMBER_RELEASED, reason, restrictionId).",
+    "All routes respond with Cache-Control: no-store and X-Server-Time."
+  ],
+  "operations": [
+    {
+      "id": "adminMembers",
+      "method": "GET",
+      "path": "/v1/admin/members",
+      "authentication": "admin",
+      "source": "services/backend/src/admin.ts",
+      "querySchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "query": { "type": "string", "maxLength": 100 },
+          "status": { "type": "string", "enum": ["ACTIVE", "RESTRICTED", "WITHDRAWN"] },
+          "page": { "type": "string", "pattern": "^[0-9]{1,6}$" },
+          "limit": { "type": "string", "pattern": "^[0-9]{1,3}$" }
+        }
+      },
+      "responses": {
+        "200": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["page", "limit", "total", "totalPages", "members"],
+          "properties": {
+            "page": { "type": "integer", "minimum": 1 },
+            "limit": { "type": "integer", "minimum": 1, "maximum": 100 },
+            "total": { "type": "integer", "minimum": 0 },
+            "totalPages": { "type": "integer", "minimum": 1 },
+            "members": { "type": "array", "items": { "$ref": "#/definitions/MemberListItem" } }
+          }
+        }
+      },
+      "notes": "query searches name/nickname/e-mail ILIKE and exact customer_no. LIKE wildcards in query are escaped. page defaults to 1, limit defaults to 20 (max 100).",
+      "errors": [
+        { "status": 400, "code": "INVALID_REQUEST", "when": "unknown query property, status outside the enum, page/limit not matching the digit pattern" },
+        { "status": 401, "code": "AUTH_REQUIRED", "when": "missing or malformed Authorization header" },
+        { "status": 403, "code": "ADMIN_REQUIRED", "when": "session is valid but has no live ADMIN role grant" }
+      ]
+    },
+    {
+      "id": "adminMember",
+      "method": "GET",
+      "path": "/v1/admin/members/:id",
+      "authentication": "admin",
+      "source": "services/backend/src/admin.ts",
+      "paramsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id"],
+        "properties": { "id": { "type": "string", "format": "uuid" } }
+      },
+      "responses": {
+        "200": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["member", "restrictions", "consents", "ledgers", "roles"],
+          "properties": {
+            "member": { "$ref": "#/definitions/MemberDetail" },
+            "restrictions": { "type": "array", "items": { "$ref": "#/definitions/Restriction" } },
+            "consents": { "type": "array", "items": { "$ref": "#/definitions/ConsentRecord" } },
+            "ledgers": { "type": "array", "items": { "$ref": "#/definitions/MemberLedger" } },
+            "roles": { "type": "array", "items": { "$ref": "#/definitions/RoleGrant" } }
+          }
+        }
+      },
+      "notes": "Ledgers are capped at the 50 most recently updated. Withdrawn members are still readable here for operator review.",
+      "errors": [
+        { "status": 400, "code": "INVALID_REQUEST", "when": ":id is not a uuid" },
+        { "status": 401, "code": "AUTH_REQUIRED", "when": "missing or malformed Authorization header" },
+        { "status": 403, "code": "ADMIN_REQUIRED", "when": "session is valid but has no live ADMIN role grant" },
+        { "status": 404, "code": "MEMBER_NOT_FOUND", "when": "member does not exist" }
+      ]
+    },
+    {
+      "id": "adminMemberRestrict",
+      "method": "POST",
+      "path": "/v1/admin/members/:id/restrict",
+      "authentication": "admin",
+      "source": "services/backend/src/admin.ts",
+      "paramsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id"],
+        "properties": { "id": { "type": "string", "format": "uuid" } }
+      },
+      "requestSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["reason"],
+        "properties": {
+          "reason": { "type": "string", "minLength": 2, "maxLength": 500 },
+          "endsAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "responses": {
+        "201": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "reason", "startsAt", "endsAt", "revokedAt", "memberId", "status"],
+          "properties": {
+            "id": { "$ref": "#/definitions/Uuid" },
+            "reason": { "type": "string" },
+            "startsAt": { "$ref": "#/definitions/Timestamp" },
+            "endsAt": { "$ref": "#/definitions/NullableTimestamp" },
+            "revokedAt": { "$ref": "#/definitions/NullableTimestamp" },
+            "memberId": { "$ref": "#/definitions/Uuid" },
+            "status": { "type": "string", "enum": ["RESTRICTED"] }
+          }
+        }
+      },
+      "notes": "Restriction is applied per principal, not per member: all accounts of the same principal are restricted.",
+      "errors": [
+        { "status": 400, "code": "INVALID_REQUEST", "when": "reason shorter than 2 characters, endsAt not in the future, or schema violation" },
+        { "status": 401, "code": "AUTH_REQUIRED", "when": "missing or malformed Authorization header" },
+        { "status": 403, "code": "ADMIN_REQUIRED", "when": "session is valid but has no live ADMIN role grant" },
+        { "status": 404, "code": "MEMBER_NOT_FOUND", "when": "member does not exist" },
+        { "status": 409, "code": "MEMBER_WITHDRAWN", "when": "member already withdrew" },
+        { "status": 409, "code": "ALREADY_RESTRICTED", "when": "a live restriction already exists for the principal" }
+      ]
+    },
+    {
+      "id": "adminMemberRelease",
+      "method": "POST",
+      "path": "/v1/admin/members/:id/release",
+      "authentication": "admin",
+      "source": "services/backend/src/admin.ts",
+      "paramsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id"],
+        "properties": { "id": { "type": "string", "format": "uuid" } }
+      },
+      "requestSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["reason"],
+        "properties": {
+          "reason": { "type": "string", "minLength": 2, "maxLength": 500 }
+        }
+      },
+      "responses": {
+        "200": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["released", "restrictionId", "revokedAt", "memberId"],
+          "properties": {
+            "released": { "type": "boolean", "const": true },
+            "restrictionId": { "$ref": "#/definitions/Uuid" },
+            "revokedAt": { "$ref": "#/definitions/Timestamp" },
+            "memberId": { "$ref": "#/definitions/Uuid" }
+          }
+        }
+      },
+      "errors": [
+        { "status": 400, "code": "INVALID_REQUEST", "when": "reason shorter than 2 characters or schema violation" },
+        { "status": 401, "code": "AUTH_REQUIRED", "when": "missing or malformed Authorization header" },
+        { "status": 403, "code": "ADMIN_REQUIRED", "when": "session is valid but has no live ADMIN role grant" },
+        { "status": 404, "code": "MEMBER_NOT_FOUND", "when": "member does not exist" },
+        { "status": 409, "code": "NOT_RESTRICTED", "when": "the principal has no live restriction" }
+      ]
+    }
+  ],
+  "openItems": [
+    "GET /v1/admin/members/:id returns the raw member row spread into `member`, so `email` (unmasked) is present next to emailMasked. The list response masks the e-mail. Whether the detail may return the raw address is a product/privacy decision and is NOT changed by this contract.",
+    "phoneMasked is hard-coded null: no masked phone column exists. Wave-3 WS-28 adds members.phone_masked and will make this field carry a real masked value (contract v0.2).",
+    "There is no admin login/session separation at v0.1: admin routes authenticate with the ordinary social session plus a live ADMIN grant. The dedicated /admin/login + separate admin session scope is wave-3 WS-23.",
+    "No admin route to hide reviews or read the audit log; the audit log is written but not exposed through the API."
+  ],
+  "schemaDefinitions": {
+    "Uuid": { "type": "string", "format": "uuid" },
+    "Timestamp": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?Z$" },
+    "NullableTimestamp": { "type": ["string", "null"], "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?Z$" },
+    "MemberStatus": { "type": "string", "enum": ["ACTIVE", "RESTRICTED", "WITHDRAWN"] },
+    "MemberListItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "customerNumber", "name", "nickname", "emailMasked", "phoneMasked", "status", "expertActive", "createdAt", "withdrawnAt"],
+      "properties": {
+        "id": { "$ref": "#/definitions/Uuid" },
+        "customerNumber": { "type": "string" },
+        "name": { "type": "string" },
+        "nickname": { "type": "string" },
+        "emailMasked": { "type": ["string", "null"] },
+        "phoneMasked": { "type": "null" },
+        "status": { "$ref": "#/definitions/MemberStatus" },
+        "expertActive": { "type": "boolean" },
+        "createdAt": { "$ref": "#/definitions/Timestamp" },
+        "withdrawnAt": { "$ref": "#/definitions/NullableTimestamp" }
+      }
+    },
+    "MemberDetail": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "customerNumber", "name", "nickname", "email", "status", "expertActive", "createdAt", "withdrawnAt", "rejoinAfter", "retentionUntil", "emailMasked", "phoneMasked"],
+      "properties": {
+        "id": { "$ref": "#/definitions/Uuid" },
+        "customerNumber": { "type": "string" },
+        "name": { "type": "string" },
+        "nickname": { "type": "string" },
+        "email": { "type": "string" },
+        "status": { "$ref": "#/definitions/MemberStatus" },
+        "expertActive": { "type": "boolean" },
+        "createdAt": { "$ref": "#/definitions/Timestamp" },
+        "withdrawnAt": { "$ref": "#/definitions/NullableTimestamp" },
+        "rejoinAfter": { "$ref": "#/definitions/NullableTimestamp" },
+        "retentionUntil": { "$ref": "#/definitions/NullableTimestamp" },
+        "emailMasked": { "type": ["string", "null"] },
+        "phoneMasked": { "type": "null" }
+      }
+    },
+    "Restriction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "reason", "startsAt", "endsAt", "revokedAt", "active", "releaseReason"],
+      "properties": {
+        "id": { "$ref": "#/definitions/Uuid" },
+        "reason": { "type": "string" },
+        "startsAt": { "$ref": "#/definitions/Timestamp" },
+        "endsAt": { "$ref": "#/definitions/NullableTimestamp" },
+        "revokedAt": { "$ref": "#/definitions/NullableTimestamp" },
+        "active": { "type": "boolean" },
+        "releaseReason": { "type": ["string", "null"] }
+      }
+    },
+    "ConsentRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "title", "version", "status", "recordedAt"],
+      "properties": {
+        "kind": { "type": "string", "enum": ["TERMS", "PRIVACY_CONSENT", "PRIVACY_POLICY", "MARKETING", "OPERATIONS"] },
+        "title": { "type": "string" },
+        "version": { "type": "string" },
+        "status": { "type": "string", "enum": ["GRANTED", "WITHDRAWN"] },
+        "recordedAt": { "$ref": "#/definitions/Timestamp" }
+      }
+    },
+    "MemberLedger": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "displayName", "createdAt", "updatedAt", "role", "counterpartId", "counterpartNickname", "counterpartNumber", "agreementCount", "completedAgreements"],
+      "properties": {
+        "id": { "$ref": "#/definitions/Uuid" },
+        "displayName": { "type": ["string", "null"] },
+        "createdAt": { "$ref": "#/definitions/Timestamp" },
+        "updatedAt": { "$ref": "#/definitions/Timestamp" },
+        "role": { "type": "string", "enum": ["EXPERT", "CUSTOMER"] },
+        "counterpartId": { "$ref": "#/definitions/Uuid" },
+        "counterpartNickname": { "type": "string" },
+        "counterpartNumber": { "type": "string" },
+        "agreementCount": { "type": "integer", "minimum": 0 },
+        "completedAgreements": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "RoleGrant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "role", "reason", "startsAt", "endsAt", "revokedAt"],
+      "properties": {
+        "id": { "$ref": "#/definitions/Uuid" },
+        "role": { "type": "string", "enum": ["USER", "EXPERT", "CS", "ADMIN"] },
+        "reason": { "type": "string" },
+        "startsAt": { "$ref": "#/definitions/Timestamp" },
+        "endsAt": { "$ref": "#/definitions/NullableTimestamp" },
+        "revokedAt": { "$ref": "#/definitions/NullableTimestamp" }
+      }
+    }
+  }
+}
