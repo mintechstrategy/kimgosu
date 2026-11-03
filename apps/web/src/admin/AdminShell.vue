@@ -72,6 +72,6 @@ onBeforeUnmount(() => { clearExpiry(); api.clearSession(); window.removeEventLis
 </template>
 
 <style scoped>
-.notice { max-width: 720px; margin: 16px auto 0; padding: 12px 14px; border-radius: 10px; font-family: 'Pretendard', system-ui, -apple-system, sans-serif; }
+.notice { max-width: 720px; margin: 16px auto 0; padding: 12px 14px; border-radius: 10px; font-family: 'Pretendard Variable', Pretendard, system-ui, -apple-system, sans-serif; }
 .notice.error { background: #fdf1f0; border: 1px solid #f2c6c1; color: #8f1d14; }
 </style>

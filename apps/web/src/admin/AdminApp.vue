@@ -283,7 +283,7 @@ const statusLabel = (value: MemberStatus) => value === 'ACTIVE' ? '이용 가능
 </template>
 
 <style scoped>
-:global(body) { margin: 0; background: #f4f6f8; color: #172033; font-family: 'Pretendard', system-ui, -apple-system, sans-serif; }
+:global(body) { margin: 0; background: #f4f6f8; color: #172033; font-family: 'Pretendard Variable', Pretendard, system-ui, -apple-system, sans-serif; }
 .console-header { display: flex; align-items: baseline; gap: 16px; padding: 20px 32px; background: #101a2b; color: #fff; flex-wrap: wrap; }
 .console-header h1 { font-size: 20px; margin: 0; }
 .console-header .meta { color: #9fb0c9; margin: 0; }

@@ -192,3 +192,50 @@ test('role grants and audit rows are recorded', async () => {
   assert.ok(rows.some(r => r.action === 'AGREEMENT_COMPLETED'));
   assert.ok(rows.every(r => r.target_type === 'agreement'));
 });
+
+test('a customer opens one ledger per expert and reopening returns the same one', async () => {
+  // 기존 픽스처가 EXPERT-CUSTOMER 원장을 이미 만들었으므로 새 고객으로 최초 생성을 확인한다.
+  const NEWCOMER = { id: randomUUID(), token: 'N'.repeat(43) };
+  await seedMember(NEWCOMER, '신규고객G', false);
+
+  const first = await app.inject({
+    method: 'POST', url: '/v1/ledgers', headers: auth(NEWCOMER.token), payload: { expertId: EXPERT.id },
+  });
+  assert.equal(first.statusCode, 201);
+  assert.equal(first.json().created, true);
+
+  const again = await app.inject({
+    method: 'POST', url: '/v1/ledgers', headers: auth(NEWCOMER.token), payload: { expertId: EXPERT.id },
+  });
+  assert.equal(again.statusCode, 200);
+  assert.equal(again.json().created, false);
+  assert.equal(again.json().id, first.json().id);
+
+  const rows = (await pool.query(
+    `SELECT count(*)::int AS n FROM kg_membership.ledgers WHERE expert_member_id=$1 AND customer_member_id=$2`,
+    [EXPERT.id, NEWCOMER.id],
+  )).rows[0];
+  assert.equal(rows.n, 1);
+
+  const audited = (await pool.query(
+    `SELECT 1 FROM kg_membership.audit_log WHERE action='LEDGER_OPENED' AND target_id=$1`, [first.json().id],
+  )).rows[0];
+  assert.ok(audited, 'opening a ledger must be audited');
+});
+
+test('opening a ledger refuses self, unknown experts and unauthenticated callers', async () => {
+  const self = await app.inject({
+    method: 'POST', url: '/v1/ledgers', headers: auth(EXPERT.token), payload: { expertId: EXPERT.id },
+  });
+  assert.equal(self.statusCode, 400);
+  assert.equal(self.json().error.code, 'SELF_LEDGER_NOT_ALLOWED');
+
+  const unknown = await app.inject({
+    method: 'POST', url: '/v1/ledgers', headers: auth(CUSTOMER.token), payload: { expertId: randomUUID() },
+  });
+  assert.equal(unknown.statusCode, 404);
+  assert.equal(unknown.json().error.code, 'EXPERT_NOT_FOUND');
+
+  const anonymous = await app.inject({ method: 'POST', url: '/v1/ledgers', payload: { expertId: EXPERT.id } });
+  assert.equal(anonymous.statusCode, 401);
+});
