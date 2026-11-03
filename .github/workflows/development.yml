@@ -59,10 +59,10 @@ jobs:
           KG_SCHEMA_TEST_USER: postgres
       # The schema step above applies 001-004; the integration suite needs the
       # tester-account, ledger/permission and index migrations too.
-      - name: Apply migrations 005-009 to the integration database
+      - name: Apply migrations 005 onward to the integration database
         run: |
           export PGPASSWORD=postgres
-          for f in services/backend/migrations/00[5-9]_*.sql; do
+          for f in services/backend/migrations/00[5-9]_*.sql services/backend/migrations/01*_*.sql; do
             echo "applying $(basename "$f")"
             psql -h 127.0.0.1 -U postgres -d kg_release_ci -v ON_ERROR_STOP=1 -q -f "$f"
           done
