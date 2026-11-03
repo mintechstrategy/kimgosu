@@ -1,0 +1,98 @@
+{
+  "ws": "WS-16",
+  "status": "DONE",
+  "summary": "011_reviews.sql과 리뷰 작성/조회 3개 API를 구현하고, 실 PostgreSQL 통합 테스트 12건(수용 기준 5건 전부 포함)과 전체 회귀(6+12+33)를 이 세션에서 직접 실행해 전부 통과시켰다.",
+  "changedFiles": [
+    "services/backend/migrations/011_reviews.sql",
+    "services/backend/src/reviews.ts",
+    "services/backend/src/app.ts",
+    "services/backend/tests/reviews.integration.test.ts",
+    "services/backend/package.json"
+  ],
+  "verification": [
+    {
+      "check": "TypeScript 타입 검사",
+      "command": "cd services/backend && npx tsc --noEmit",
+      "result": "PASS",
+      "evidence": "TSC_EXIT=0 (진단 출력 없음). 테스트 파일 수정 후 재실행도 TSC_EXIT=0."
+    },
+    {
+      "check": "유닛 테스트 회귀",
+      "command": "cd services/backend && npm test",
+      "result": "PASS",
+      "evidence": "node --test src/*.test.ts → tests 23, pass 23, fail 0 (node v26.7.0)."
+    },
+    {
+      "check": "WS-16 통합 테스트 (실 PostgreSQL, 전용 DB kgtest_ws16)",
+      "command": "KG_TEST_DATABASE_URL=postgres://postgres@127.0.0.1:55432/kgtest_ws16 node --test tests/reviews.integration.test.ts",
+      "result": "PASS",
+      "evidence": "tests 12, pass 12, fail 0. 수용 기준 매핑: [1] 미완료 거래 리뷰 403 REVIEW_NOT_ELIGIBLE / [2] 비참여자 403 NOT_A_PARTICIPANT(비로그인은 401) / [3] 중복 409 REVIEW_EXISTS + DB count=1 / [4] rating 0·6·2.5 400 INVALID_REQUEST / [5] summary.average=4 가 DB 행 평균과 일치. 추가로 hidden 행 제외, limit=51 400, 자기리뷰 구조적 불가(CHECK 23514), 미존재 expert 404, /v1/me/reviews written·received 분리, audit_log REVIEW_CREATED 2건 검증."
+    },
+    {
+      "check": "전체 통합 회귀 (ledger + reviews + local-db)",
+      "command": "KG_TEST_DATABASE_URL=postgres://postgres@127.0.0.1:55432/kgtest_ws16 npm run test:integration",
+      "result": "PASS",
+      "evidence": "ledger 6/6, reviews 12/12, local-db 33/33 — INT_EXIT=0, fail 0 (총 51 pass)."
+    },
+    {
+      "check": "빈 DB에서 마이그레이션 순서 적용",
+      "command": "createdb kgtest_ws16_fresh 후 001→002→003→004→005→006→007→011 순차 psql -v ON_ERROR_STOP=1 -f 적용",
+      "result": "PASS",
+      "evidence": "8개 파일 모두 APPLIED(오류 없음), to_regclass('kg_membership.reviews') 확인. WS-13/14/15의 008~010이 없어도 011이 독립 적용됨을 확인. 테스트 후 dropdb로 제거."
+    },
+    {
+      "check": "011 재적용 안전성(멱등)",
+      "command": "kgtest_ws16_fresh 에 011_reviews.sql 2·3회차 재적용",
+      "result": "PASS",
+      "evidence": "2·3회차 모두 exit 0, 'relation already exists, skipping' NOTICE만 발생(CREATE TABLE/INDEX IF NOT EXISTS)."
+    },
+    {
+      "check": "스키마 제약·인덱스 실제 확인",
+      "command": "psql kgtest_ws16 -c \"\\d kg_membership.reviews\"",
+      "result": "PASS",
+      "evidence": "UNIQUE (ledger_id, author_id)=reviews_ledger_id_author_id_key, CHECK rating 1..5, CHECK author_id<>target_id, CHECK body length 1..2000, FK ledgers ON DELETE CASCADE, 부분 인덱스 review_target_visible(hidden_at IS NULL) 확인."
+    },
+    {
+      "check": "테스트 데이터 정리",
+      "command": "테스트 후 kgtest_ws16 카운트 조회",
+      "result": "PASS",
+      "evidence": "reviews=0, agreements=0, ledgers=0, audit_log=0 (WS-16 테스트가 after에서 자기 데이터를 TRUNCATE). members=5는 WS-16 데이터가 아니라 local-db 스위트가 남긴 합성 계정으로, 타 WS 테스트 파일 소유라 이 WS에서 수정·삭제하지 않았다(정리 명령이 실행 정책상 차단됨)."
+    },
+    {
+      "check": "실제 Railway/Cloudflare 배포 후 실거래 호출",
+      "command": "실행하지 않음",
+      "result": "NOT_RUN",
+      "evidence": "이 작업 지시는 push/deploy/railway/cf 쓰기를 금지한다. PLAN의 WS-16 검증 요건은 '실 PostgreSQL 통합 테스트'이며, 배포 후 거래 검증은 오케스트레이터 병합 단계로 남긴다. Railway dev DB에 011 미적용."
+    }
+  ],
+  "contractChanges": [],
+  "migrations": [
+    "services/backend/migrations/011_reviews.sql"
+  ],
+  "open": [
+    "GET /v1/experts/:id/reviews 의 :id 의미: 이 브랜치에 WS-13의 008_expert_services.sql(expert_profiles)이 없어 'expert의 member id'로 구현했다. WS-13 병합 후 expert_profile id로 전환할지 사용자 결정 필요.",
+    "hidden_at(리뷰 숨김) 설정 주체·사유 미확정. 현재 관리자 API가 없어 직접 SQL만 가능하고 숨김 사유 컬럼도 없다. WS-19에서 다룰지 결정 필요.",
+    "리뷰 작성 가능 기간(거래 완료 후 N일) 제한 미확정 — 현재 기한 없음.",
+    "리뷰 본문 필수 여부 미확정 — 현재 별점 필수, 본문 선택(1~2000자).",
+    "리뷰 수정·삭제 정책 미확정 — 현재 수정/삭제 API 없음(1인 1원장 1회로 고정).",
+    "GET /v1/experts/:id/reviews 를 비로그인 공개로 두었고 authorName(닉네임)을 노출한다. 공개 범위·마스킹 정책 확인 필요.",
+    "라우트 표기: PLAN 지정대로 /v1/ledgers/:id/reviews(복수형)를 따랐으나 기존 원장 라우트는 /v1/ledger(단수)다. 표기 통일 여부는 사용자 결정 사항.",
+    "리뷰 API 3종이 contracts/*.json 인벤토리에 등재되어 있지 않다. PLAN이 요구하지 않아 계약 파일은 건드리지 않았다 — 계약 정본화 여부 결정 필요."
+  ],
+  "risks": [
+    "자격 검증(참여자·완료 합의)은 API 계층에만 있다. reviews 테이블에 참여자/완료를 강제하는 트리거가 없어 DB 직접 INSERT는 우회 가능하다(자기 자신 대상만 CHECK로 차단).",
+    "hidden_at 설정 경로가 없어 운영 중 부적절 리뷰 차단 수단이 SQL뿐이다.",
+    "평점 집계는 설계대로 조회 시 계산한다. 부분 인덱스로 완화했지만 리뷰가 많은 expert에서 매 조회 집계 비용이 남는다.",
+    "공유 로컬 테스트 DB kgtest에도 이전에 011이 적용되어 있다. 다른 워커와 동시에 사용하면 TRUNCATE 간섭이 생기므로 KG_TEST_DATABASE_URL로 kgtest_ws16을 지정할 것을 권고한다.",
+    "실제 Railway dev DB에는 011을 적용하지 않았다(원격 쓰기 금지). 배포 전 마이그레이션 적용이 필요하다.",
+    "이 작업트리의 구현은 커밋되지 않은 상태로 남아 있었다. 본 세션은 이전 PASS 주장을 근거로 쓰지 않고 위 검증을 전부 새로 실행했으며, 그 과정에서 비로그인 POST 401 테스트 1건을 추가했다. 커밋은 하지 않았다.",
+    "local-db 통합 스위트가 kgtest_ws16에 합성 계정 5건을 남긴다(WS-16 소유 파일 아님). 정리 명령은 실행 정책상 차단되어 손대지 않았다."
+  ],
+  "next": [
+    "오케스트레이터: 병합 전 KG_TEST_DATABASE_URL을 지정해 npm run test:integration 재실행(이 WS가 package.json의 test:integration 문자열에 reviews 스위트를 추가했다 — 공통 파일 최소 변경).",
+    "Railway dev DB에 011_reviews.sql 적용 후 실제 API 거래(리뷰 작성→재조회→평균 일치) 검증.",
+    "WS-13 병합 시 /v1/experts/:id/reviews 의 id 의미를 expert_profile 기준으로 정합화.",
+    "WS-19 관리자 기능에서 리뷰 숨김(hidden_at) 처리·사유 기록 경로 검토.",
+    "앱/웹 리뷰 화면은 위 API로 연결하고 업무 데이터를 프론트 로컬 DB에 저장하지 않는다."
+  ]
+}
