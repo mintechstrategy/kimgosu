@@ -20,6 +20,7 @@
 		B00000000000000000000004 = {isa = PBXBuildFile; fileRef = B10000000000000000000004; };
 		B00000000000000000000005 = {isa = PBXBuildFile; fileRef = B10000000000000000000005; };
 		B00000000000000000000006 = {isa = PBXBuildFile; fileRef = B10000000000000000000006; };
+		E00000000000000000000001 = {isa = PBXBuildFile; fileRef = E10000000000000000000001; };
 		C00000000000000000000001 = {isa = PBXBuildFile; fileRef = B10000000000000000000001; };
 		C00000000000000000000002 = {isa = PBXBuildFile; fileRef = B10000000000000000000002; };
 		C00000000000000000000003 = {isa = PBXBuildFile; fileRef = B10000000000000000000004; };
@@ -55,6 +56,7 @@ D00000000000000000000002 = {isa = PBXBuildFile; fileRef = D100000000000000000000
 		B10000000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Kimgosu/AuthRepository.swift; sourceTree = "<group>"; };
 		B10000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Kimgosu/AuthModel.swift; sourceTree = "<group>"; };
 		B10000000000000000000006 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Kimgosu/AuthHost.swift; sourceTree = "<group>"; };
+		E10000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Kimgosu/DesignTokens.swift; sourceTree = "<group>"; };
 		C10000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/CoreRepairChecks.swift; sourceTree = "<group>"; };
 D10000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/PolicySnapshotChecks.swift; sourceTree = "<group>"; };
 D10000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = folder; path = "../../records/engineering/auth-v03-app-01/test-inputs"; sourceTree = "<group>"; };
@@ -88,6 +90,7 @@ D10000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = folder; 
 				B10000000000000000000004,
 				B10000000000000000000005,
 				B10000000000000000000006,
+				E10000000000000000000001,
 				A00000000000000000000031 /* ../mobile-shared/MobileAssets */,
 				A00000000000000000000032 /* Kimgosu/LaunchScreen.storyboard */,
 				A00000000000000000000033 /* Kimgosu/Assets.xcassets */,
@@ -212,6 +215,7 @@ D10000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = folder; 
 				B00000000000000000000004,
 				B00000000000000000000005,
 				B00000000000000000000006,
+				E00000000000000000000001,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

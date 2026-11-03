@@ -55,7 +55,8 @@ credentials.json
 /qa/
 /handoffs/
 /tasks/
-/design/
+/design/*
+!/design/tokens.json
 /AGENTS.md
 
 # Managed project records (policy originals, architecture authority, test inputs).

@@ -3,6 +3,7 @@ package ai.mintech.kimgosu
 import android.app.Application
 import ai.mintech.kimgosu.auth.*
 import ai.mintech.kimgosu.auth.ui.*
+import ai.mintech.kimgosu.ui.DesignTokens
 import android.graphics.BitmapFactory
 import android.os.Bundle
 import android.os.SystemClock
@@ -58,11 +59,6 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.time.Instant
 
-private val Navy = Color(0xFF0B1E35)
-private val Lime = Color(0xFFC5FB1F)
-private val Soft = Color(0xFFEFF8D8)
-private val Muted = Color(0xFF526277)
-private val Border = Color(0xFFD6DFE8)
 private val LocalBrandFont = staticCompositionLocalOf<FontFamily> { FontFamily.Default }
 
 data class Item(val label: String, val icon: String)
@@ -159,7 +155,7 @@ class MainActivity : ComponentActivity() {
             val storedSession = remember { runCatching { SecureSession(this@MainActivity).read() }.getOrNull() != null }
             var devReady by remember { mutableStateOf(!devLoginRequired || storedSession) }
             val fonts = remember { FontFamily(Font("regular.otf", assets), Font("semibold.otf", assets, FontWeight.SemiBold), Font("bold.otf", assets, FontWeight.Bold)) }
-            MaterialTheme(colorScheme = lightColorScheme(primary = Navy, onPrimary = Color.White, surface = Color.White, onSurface = Navy)) {
+            MaterialTheme(colorScheme = lightColorScheme(primary = DesignTokens.navy, onPrimary = Color.White, surface = Color.White, onSurface = DesignTokens.navy)) {
                 CompositionLocalProvider(LocalBrandFont provides fonts) {
                     if (model.error) {
                         Column(Modifier.fillMaxSize().background(Color.White).safeDrawingPadding().padding(24.dp), verticalArrangement = Arrangement.Center) {
@@ -207,7 +203,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable private fun Copy(text: String, modifier: Modifier = Modifier, size: Int = 14, bold: Boolean = false,
-                             color: Color = Navy, align: TextAlign = TextAlign.Start, weight: FontWeight? = null) {
+                             color: Color = DesignTokens.navy, align: TextAlign = TextAlign.Start, weight: FontWeight? = null) {
     Text(text, modifier, color, fontSize = size.sp, fontFamily = LocalBrandFont.current,
         fontWeight = weight ?: if (bold) FontWeight.Bold else FontWeight.Normal, textAlign = align)
 }
@@ -227,16 +223,16 @@ class MainActivity : ComponentActivity() {
             Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Copy(home.text("brand"), size = 23, bold = true)
-                    Box(Modifier.padding(top = 2.dp).size(26.dp, 3.dp).background(Lime, RoundedCornerShape(2.dp)))
+                    Box(Modifier.padding(top = 2.dp).size(26.dp, 3.dp).background(DesignTokens.lime, RoundedCornerShape(2.dp)))
                 }
                 IconButton(onClick = { open("알림") }, modifier = Modifier.size(48.dp)) { AssetImage("notification.png", "알림", Modifier.size(23.dp)) }
             }
             ProfileCard(profile, onRetryProfile, onProfileLogin)
             Copy(home.text("introduction"), Modifier.fillMaxWidth().padding(top = 20.dp).testTag("main-introduction"), 20, true, align = TextAlign.Center)
-            Row(Modifier.padding(top = 16.dp).fillMaxWidth().heightIn(min = 48.dp).border(1.dp, Border, RoundedCornerShape(6.dp))
+            Row(Modifier.padding(top = 16.dp).fillMaxWidth().heightIn(min = 48.dp).border(1.dp, DesignTokens.border, RoundedCornerShape(6.dp))
                 .clickable { open("검색") }.padding(14.dp).testTag("search"), verticalAlignment = Alignment.CenterVertically) {
                 AssetImage("nav_1.png", null, Modifier.size(20.dp))
-                Copy(home.text("search"), Modifier.padding(start = 14.dp), 16, color = Muted)
+                Copy(home.text("search"), Modifier.padding(start = 14.dp), 16, color = DesignTokens.muted)
             }
             BoxWithConstraints(Modifier.padding(top = 16.dp).fillMaxWidth()
                 .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
@@ -268,7 +264,7 @@ class MainActivity : ComponentActivity() {
                 home.popularTabs.forEachIndexed { index, title ->
                     FilterChip(selected = popular == index, onClick = { popular = index }, label = { Copy(title) },
                         shape = RoundedCornerShape(percent = 50),
-                        colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Soft))
+                        colors = FilterChipDefaults.filterChipColors(selectedContainerColor = DesignTokens.soft))
                 }
             }
             EmptyCopy(home.text("unavailable"))
@@ -276,19 +272,19 @@ class MainActivity : ComponentActivity() {
             TextButton(onClick = { onProtected("마이페이지") }) { Copy("로그인/가입 · 회원관리") }
             TextButton(onClick = { onPolicy("OPERATIONS") }) { Copy("서비스 운영정책") }
             TextButton(onClick = { onPolicy("PRIVACY_POLICY") }) { Copy("개인정보 처리방침") }
-            Copy("소셜 로그인·문자 인증은 준비 중이며, 공개 탐색은 계속 이용할 수 있습니다.", Modifier.padding(vertical = 24.dp), 12, color = Muted)
-            if (apiStatus != null) Copy(apiStatus, Modifier.padding(bottom = 16.dp).testTag("api-status"), 12, color = Muted)
+            Copy("소셜 로그인·문자 인증은 준비 중이며, 공개 탐색은 계속 이용할 수 있습니다.", Modifier.padding(vertical = 24.dp), 12, color = DesignTokens.muted)
+            if (apiStatus != null) Copy(apiStatus, Modifier.padding(bottom = 16.dp).testTag("api-status"), 12, color = DesignTokens.muted)
         }
-        HorizontalDivider(color = Border)
+        HorizontalDivider(color = DesignTokens.border)
         Row(Modifier.fillMaxWidth().padding(vertical = 5.dp).selectableGroup(), horizontalArrangement = Arrangement.SpaceEvenly) {
             home.navigation.forEachIndexed { index, item ->
                 Column(Modifier.weight(1f).heightIn(min = 58.dp).padding(horizontal = 4.dp)
-                    .background(if (index == 0) Soft else Color.White, RoundedCornerShape(8.dp))
+                    .background(if (index == 0) DesignTokens.soft else Color.White, RoundedCornerShape(8.dp))
                     .selectable(selected = index == 0, role = Role.Tab, onClick = { if (index != 0) open(item.label) })
                     .padding(vertical = 7.dp).testTag("nav-$index"),
                     horizontalAlignment = Alignment.CenterHorizontally) {
                     AssetImage(item.icon, null, Modifier.size(26.dp))
-                    Copy(item.label, Modifier.padding(top = 3.dp), 11, index == 0, if (index == 0) Navy else Muted)
+                    Copy(item.label, Modifier.padding(top = 3.dp), 11, index == 0, if (index == 0) DesignTokens.navy else DesignTokens.muted)
                 }
             }
         }
@@ -308,34 +304,34 @@ class MainActivity : ComponentActivity() {
     }
     val signedIn = state is ProfileState.Ready
     Column(Modifier.padding(top = 14.dp).fillMaxWidth().heightIn(min = 60.dp)
-        .background(if (signedIn) Soft else Color.White, RoundedCornerShape(6.dp))
-        .border(1.dp, if (signedIn) Soft else Border, RoundedCornerShape(6.dp))
+        .background(if (signedIn) DesignTokens.soft else Color.White, RoundedCornerShape(6.dp))
+        .border(1.dp, if (signedIn) DesignTokens.soft else DesignTokens.border, RoundedCornerShape(6.dp))
         .padding(horizontal = 14.dp, vertical = 12.dp).testTag(tag)) {
         when (state) {
             ProfileState.Loading -> Row(verticalAlignment = Alignment.CenterVertically) {
-                CircularProgressIndicator(Modifier.size(16.dp), color = Navy, strokeWidth = 2.dp)
-                Copy("회원 정보를 불러오는 중…", Modifier.padding(start = 10.dp), size = 13, color = Muted)
+                CircularProgressIndicator(Modifier.size(16.dp), color = DesignTokens.navy, strokeWidth = 2.dp)
+                Copy("회원 정보를 불러오는 중…", Modifier.padding(start = 10.dp), size = 13, color = DesignTokens.muted)
             }
             is ProfileState.Ready -> {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Copy(state.nickname, size = 16, bold = true)
-                    if (state.expert) Box(Modifier.padding(start = 8.dp).background(Lime, RoundedCornerShape(4.dp))
+                    if (state.expert) Box(Modifier.padding(start = 8.dp).background(DesignTokens.lime, RoundedCornerShape(4.dp))
                         .padding(horizontal = 6.dp, vertical = 2.dp)) { Copy("고수", size = 11, weight = FontWeight.SemiBold) }
-                    if (state.status == "RESTRICTED") Box(Modifier.padding(start = 8.dp).border(1.dp, Muted, RoundedCornerShape(4.dp))
-                        .padding(horizontal = 6.dp, vertical = 2.dp)) { Copy("이용 제한", size = 11, color = Muted) }
+                    if (state.status == "RESTRICTED") Box(Modifier.padding(start = 8.dp).border(1.dp, DesignTokens.muted, RoundedCornerShape(4.dp))
+                        .padding(horizontal = 6.dp, vertical = 2.dp)) { Copy("이용 제한", size = 11, color = DesignTokens.muted) }
                 }
                 Copy(if (state.customerNumber.isBlank()) "고객번호 없음" else "고객번호 ${state.customerNumber}",
-                    Modifier.padding(top = 4.dp), size = 13, color = Muted)
+                    Modifier.padding(top = 4.dp), size = 13, color = DesignTokens.muted)
             }
             ProfileState.Empty -> {
-                Copy("로그인하면 회원 정보가 표시됩니다.", size = 13, color = Muted)
+                Copy("로그인하면 회원 정보가 표시됩니다.", size = 13, color = DesignTokens.muted)
                 TextButton(onClick = onLogin, modifier = Modifier.heightIn(min = 48.dp).testTag("profile-login")) {
                     Copy("로그인", weight = FontWeight.SemiBold)
                 }
             }
             is ProfileState.Failed -> {
                 Copy(if (state.network) "네트워크에 연결할 수 없습니다. 연결을 확인하고 다시 시도해주세요."
-                    else "회원 정보를 불러오지 못했습니다. (${state.code})", size = 13, color = Muted)
+                    else "회원 정보를 불러오지 못했습니다. (${state.code})", size = 13, color = DesignTokens.muted)
                 TextButton(onClick = onRetry, modifier = Modifier.heightIn(min = 48.dp).testTag("profile-retry")) {
                     Copy("다시 시도", weight = FontWeight.SemiBold)
                 }
@@ -354,5 +350,5 @@ class MainActivity : ComponentActivity() {
     EmptyCopy(empty)
 }
 @Composable private fun EmptyCopy(text: String) {
-    Copy(text, Modifier.padding(top = 13.dp).fillMaxWidth().border(1.dp, Border, RoundedCornerShape(6.dp)).padding(20.dp), color = Muted)
+    Copy(text, Modifier.padding(top = 13.dp).fillMaxWidth().border(1.dp, DesignTokens.border, RoundedCornerShape(6.dp)).padding(20.dp), color = DesignTokens.muted)
 }
