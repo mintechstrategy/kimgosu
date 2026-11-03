@@ -6,6 +6,7 @@ import { registerAuthRoutes } from './auth.ts';
 import { registerLedgerRoutes } from './ledger.ts';
 import { registerExpertRoutes } from './experts.ts';
 import { registerQuoteRoutes } from './quotes.ts';
+import { registerChatRoutes } from './chat.ts';
 import { registerDevLoginRoutes } from './dev-login.ts';
 import type { AuthOptions } from './providers.ts';
 import { POLICY_METADATA, loadPolicySnapshot, requiredReadyKindsForGrant } from './policy.ts';
@@ -171,6 +172,7 @@ export function buildApp(db: Sql, release: string, options: AuthOptions = {}) {
   registerLedgerRoutes(app, db, authenticate);
   registerExpertRoutes(app, db, authenticate);
   registerQuoteRoutes(app, db, authenticate);
+  registerChatRoutes(app, db, authenticate);
   if (options.devLogin) registerDevLoginRoutes(app, db);
   return app;
 }
