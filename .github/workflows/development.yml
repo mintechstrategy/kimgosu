@@ -36,12 +36,14 @@ jobs:
         working-directory: services/samples/railway-db
       - run: npm ci --ignore-scripts && npm run build
         working-directory: apps/dev-console
-      - name: Membership web typecheck, unit tests and build
-        run: npm ci --ignore-scripts && npm run typecheck && npm run test:unit && npm run build
-        working-directory: apps/web
       - name: Membership backend typecheck and unit tests
         run: npm ci --ignore-scripts && npm run check && npm test
         working-directory: services/backend
+      # Must run after the backend install: the web unit tests resolve ajv
+      # through ../../services/backend/package.json.
+      - name: Membership web typecheck, unit tests and build
+        run: npm run typecheck && npm run test:unit && npm run build
+        working-directory: apps/web
       - name: Membership v0.2 contract regression
         run: node --test engineering/auth-integration-02/contract.test.ts
       - name: Membership v0.3 metadata regression (unchanged original assertions)
