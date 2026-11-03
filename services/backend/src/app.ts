@@ -2,6 +2,7 @@ import Fastify from 'fastify';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { createHash, randomBytes } from 'node:crypto';
 import { ApiError, isAdminSessionToken } from './security.ts';
+import { errorBody, fail } from './kernel.ts';
 import { registerAuthRoutes } from './auth.ts';
 import { registerOAuthRoutes, OAUTH_PROVIDERS, OAUTH_STATE_TTL_SECONDS } from './oauth.ts';
 import { registerAppleRoutes } from './apple.ts';
@@ -58,7 +59,7 @@ export function buildApp(db: Sql, release: string, options: AuthOptions = {}) {
   app.addHook('onRequest', async (request, reply) => {
     reply.header('Cache-Control', 'no-store').header('Vary', 'Origin').header('X-Content-Type-Options', 'nosniff').header('Referrer-Policy', 'no-referrer');
     if (request.headers.origin) {
-      if (!corsOrigins.has(request.headers.origin)) return reply.code(403).send({ error: { code: 'ORIGIN_NOT_ALLOWED' } });
+      if (!corsOrigins.has(request.headers.origin)) return fail(reply, 403, 'ORIGIN_NOT_ALLOWED');
       reply.header('Access-Control-Allow-Origin', request.headers.origin).header('Access-Control-Expose-Headers', 'Date, Retry-After, X-Server-Time');
     }
     if (request.method === 'POST' && request.url.startsWith('/v1/auth/')) {
@@ -66,7 +67,7 @@ export function buildApp(db: Sql, release: string, options: AuthOptions = {}) {
       for (const [key, value] of throttle) if (now - value.start >= 60000) throttle.delete(key);
       const key = hash(throttleSalt + request.ip);
       const rate = throttle.get(key) ?? { start: now, count: 0 };
-      if (rate.count >= 60 || (!throttle.has(key) && throttle.size >= 10000)) return reply.header('Retry-After', '60').code(429).send({ error: { code: 'AUTH_RATE_LIMITED' } });
+      if (rate.count >= 60 || (!throttle.has(key) && throttle.size >= 10000)) return fail(reply.header('Retry-After', '60'), 429, 'AUTH_RATE_LIMITED');
       rate.count++; throttle.set(key, rate);
     }
   });
@@ -77,20 +78,19 @@ export function buildApp(db: Sql, release: string, options: AuthOptions = {}) {
   app.options('/*', async (request, reply) => {
     const method = request.headers['access-control-request-method'];
     const headers = String(request.headers['access-control-request-headers'] ?? '').toLowerCase().split(',').map(v => v.trim()).filter(Boolean);
-    if (!['GET', 'POST', 'PATCH'].includes(String(method)) || headers.some(h => !['authorization', 'content-type', 'cache-control'].includes(h))) return reply.code(403).send({ error: { code: 'CORS_PREFLIGHT_DENIED' } });
+    if (!['GET', 'POST', 'PATCH'].includes(String(method)) || headers.some(h => !['authorization', 'content-type', 'cache-control'].includes(h))) return fail(reply, 403, 'CORS_PREFLIGHT_DENIED');
     return reply.header('Access-Control-Allow-Methods', 'GET, POST, PATCH, OPTIONS').header('Access-Control-Allow-Headers', 'Authorization, Content-Type, Cache-Control').code(204).send();
   });
   app.setErrorHandler((error, _request, reply) => {
     if (error instanceof ApiError) {
       if (error.metadata.retryAfterSeconds !== undefined) reply.header('Retry-After', String(error.metadata.retryAfterSeconds));
-      return reply.code(error.status).send({ error: { code: error.code, ...error.metadata } });
+      return reply.code(error.status).send(errorBody(error.code, error.metadata));
     }
-    if (error && typeof error === 'object' && 'validation' in error && error.validation) return reply.code(400).send({ error: { code: 'INVALID_REQUEST' } });
-    if (error && typeof error === 'object' && 'statusCode' in error && [400, 413, 415].includes(Number(error.statusCode))) return reply.code(Number(error.statusCode)).send({ error: { code: 'INVALID_REQUEST' } });
-    return reply.code(500).send({ error: { code: 'INTERNAL_ERROR' } });
+    if (error && typeof error === 'object' && 'validation' in error && error.validation) return fail(reply, 400, 'INVALID_REQUEST');
+    if (error && typeof error === 'object' && 'statusCode' in error && [400, 413, 415].includes(Number(error.statusCode))) return fail(reply, Number(error.statusCode), 'INVALID_REQUEST');
+    return fail(reply, 500, 'INTERNAL_ERROR');
   });
-  app.setNotFoundHandler((_request, reply) => reply.code(404).send({ error: { code: 'ROUTE_NOT_FOUND' } }));
-  const fail = (reply: FastifyReply, status: number, code: string) => reply.code(status).send({ error: { code } });
+  app.setNotFoundHandler((_request, reply) => fail(reply, 404, 'ROUTE_NOT_FOUND'));
   async function authenticate(request: FastifyRequest, reply: FastifyReply) {
     const raw = request.headers.authorization;
     if (typeof raw !== 'string' || !/^Bearer [A-Za-z0-9_-]{32,256}$/.test(raw)) { fail(reply, 401, 'AUTH_REQUIRED'); return null; }

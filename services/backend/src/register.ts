@@ -4,6 +4,7 @@ import type { AuthOptions } from './providers.ts';
 import { finalizeRegistration, type RegistrationInput } from './auth.ts';
 import { consentInputSchema, requiredReadyKindsForGrant, revisionSchema } from './policy.ts';
 import { tokenSchema } from './security.ts';
+import { fail } from './kernel.ts';
 
 const body = (properties: Record<string, unknown>, required = Object.keys(properties)) =>
   ({ body: { type: 'object', additionalProperties: false, properties, required } });
@@ -56,9 +57,7 @@ export function registerRegisterRoutes(app: FastifyInstance, db: Sql, options: A
   }, async (request, reply) => {
     const readiness = registrationReadiness(await readinessDocuments(db), options);
     if (!readiness.signupReady) {
-      return reply.code(409).send({
-        error: { code: 'SIGNUP_NOT_READY', reasons: readiness.reasons, missingDocumentKinds: readiness.missingDocumentKinds },
-      });
+      return fail(reply, 409, 'SIGNUP_NOT_READY', { reasons: readiness.reasons, missingDocumentKinds: readiness.missingDocumentKinds });
     }
     return db.transaction(sql => finalizeRegistration(sql, request.body));
   });

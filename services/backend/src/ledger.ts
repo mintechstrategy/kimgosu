@@ -1,21 +1,14 @@
-import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import type { FastifyInstance } from 'fastify';
 import { randomUUID } from 'node:crypto';
-import type { Sql, Row } from './app.ts';
+import type { Sql } from './app.ts';
 import type { Authenticate } from './auth.ts';
 import { ApiError } from './security.ts';
+import { audit, fail, requireActiveMember } from './kernel.ts';
 
 const body = (properties: Record<string, unknown>, required = Object.keys(properties)) =>
   ({ body: { type: 'object', additionalProperties: false, properties, required } });
 const string = (minLength: number, maxLength: number) => ({ type: 'string', minLength, maxLength });
 const idSchema = { type: 'string', format: 'uuid' };
-
-async function audit(sql: Sql, actor: unknown, action: string, targetType: string, targetId: string, reason?: string, detail?: Row) {
-  await sql.query(
-    `INSERT INTO kg_membership.audit_log(actor_member_id,action,target_type,target_id,reason,detail)
-     VALUES($1,$2,$3,$4,$5,$6)`,
-    [actor, action, targetType, targetId, reason ?? null, JSON.stringify(detail ?? {})],
-  );
-}
 
 /**
  * Review eligibility: a review may only be written for a pair that has a
@@ -36,12 +29,7 @@ export async function reviewEligible(sql: Sql, memberA: unknown, memberB: unknow
 }
 
 export function registerLedgerRoutes(app: FastifyInstance, db: Sql, authenticate: Authenticate) {
-  const requireMember = async (request: FastifyRequest, reply: FastifyReply) => {
-    const auth = await authenticate(request, reply);
-    if (!auth) return null;
-    if (auth.status !== 'ACTIVE') { reply.code(403).send({ error: { code: 'ACCOUNT_RESTRICTED' } }); return null; }
-    return auth;
-  };
+  const requireMember = requireActiveMember(authenticate);
 
   app.get('/v1/me/roles', async (request, reply) => {
     const auth = await requireMember(request, reply); if (!auth) return;
@@ -124,7 +112,7 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Sql, authenticate
         WHERE l.id=$1 AND l.expert_member_id=$2`,
       [request.params.id, auth.memberId],
     )).rows[0];
-    if (!ledger) return reply.code(404).send({ error: { code: 'LEDGER_NOT_FOUND' } });
+    if (!ledger) return fail(reply, 404, 'LEDGER_NOT_FOUND');
     const notes = await db.query(
       `SELECT id, body, created_at AS "createdAt" FROM kg_membership.ledger_notes
         WHERE ledger_id=$1 AND purged_at IS NULL ORDER BY created_at DESC`,
@@ -150,7 +138,7 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Sql, authenticate
       `SELECT 1 FROM kg_membership.ledgers WHERE id=$1 AND expert_member_id=$2`,
       [request.params.id, auth.memberId],
     )).rows[0];
-    if (!owned) return reply.code(404).send({ error: { code: 'LEDGER_NOT_FOUND' } });
+    if (!owned) return fail(reply, 404, 'LEDGER_NOT_FOUND');
     const note = (await db.query(
       `INSERT INTO kg_membership.ledger_notes(id,ledger_id,author_member_id,body)
        VALUES($1,$2,$3,$4) RETURNING id, body, created_at AS "createdAt"`,

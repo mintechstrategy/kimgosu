@@ -1,20 +1,13 @@
-import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import type { FastifyInstance } from 'fastify';
 import { randomUUID } from 'node:crypto';
-import type { Sql, Row } from './app.ts';
+import type { Sql } from './app.ts';
 import type { Authenticate } from './auth.ts';
 import { ApiError } from './security.ts';
+import { audit, fail, requireActiveMember } from './kernel.ts';
 
 const idSchema = { type: 'string', format: 'uuid' };
 const params = { type: 'object', required: ['id'], additionalProperties: false, properties: { id: idSchema } };
 const string = (minLength: number, maxLength: number) => ({ type: 'string', minLength, maxLength });
-
-async function audit(sql: Sql, actor: unknown, action: string, targetType: string, targetId: string, reason?: string, detail?: Row) {
-  await sql.query(
-    `INSERT INTO kg_membership.audit_log(actor_member_id,action,target_type,target_id,reason,detail)
-     VALUES($1,$2,$3,$4,$5,$6)`,
-    [actor, action, targetType, targetId, reason ?? null, JSON.stringify(detail ?? {})],
-  );
-}
 
 const reviewSelect = `SELECT r.id, r.ledger_id AS "ledgerId", r.author_id AS "authorId", r.target_id AS "targetId",
   r.rating, r.body, r.created_at AS "createdAt", r.hidden_at AS "hiddenAt"`;
@@ -40,12 +33,7 @@ function count(raw: string | undefined, fallback: number, min: number, max: numb
 }
 
 export function registerReviewRoutes(app: FastifyInstance, db: Sql, authenticate: Authenticate) {
-  const requireMember = async (request: FastifyRequest, reply: FastifyReply) => {
-    const auth = await authenticate(request, reply);
-    if (!auth) return null;
-    if (auth.status !== 'ACTIVE') { reply.code(403).send({ error: { code: 'ACCOUNT_RESTRICTED' } }); return null; }
-    return auth;
-  };
+  const requireMember = requireActiveMember(authenticate);
 
   // Write a review for the counterpart of a ledger.
   // Eligibility is decided by the server: the author must be a ledger
@@ -135,7 +123,7 @@ export function registerReviewRoutes(app: FastifyInstance, db: Sql, authenticate
       `SELECT id FROM kg_membership.members WHERE id=$1 AND withdrawn_at IS NULL`,
       [request.params.id],
     )).rows[0];
-    if (!target) return reply.code(404).send({ error: { code: 'EXPERT_NOT_FOUND' } });
+    if (!target) return fail(reply, 404, 'EXPERT_NOT_FOUND');
 
     const limit = count(request.query.limit, 20, 1, 50);
     const offset = count(request.query.offset, 0, 0, 100000);

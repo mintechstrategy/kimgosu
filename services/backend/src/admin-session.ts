@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { randomUUID } from 'node:crypto';
 import type { Sql } from './app.ts';
 import { ApiError, ADMIN_SESSION_PREFIX, bearerTokenPattern, digest, isAdminSessionToken, opaque } from './security.ts';
+import { audit, fail } from './kernel.ts';
 
 /**
  * Operator console sessions (`POST /v1/admin/session`).
@@ -120,23 +121,15 @@ export async function resolveAdminScope(db: Sql, authorization: unknown): Promis
 export async function requireAdminScope(db: Sql, request: FastifyRequest, reply: FastifyReply): Promise<AdminScope | null> {
   const result = await resolveAdminScope(db, request.headers.authorization);
   if (result.status === 'OK') return result.scope;
-  if (result.status === 'NO_AUTH') reply.code(401).send({ error: { code: 'AUTH_REQUIRED' } });
-  else if (result.status === 'WRONG_SCOPE') reply.code(403).send({ error: { code: 'ADMIN_SESSION_REQUIRED' } });
-  else if (result.status === 'SESSION_INVALID') reply.code(401).send({ error: { code: 'SESSION_INVALID' } });
-  else reply.code(403).send({ error: { code: 'ADMIN_REQUIRED' } });
+  if (result.status === 'NO_AUTH') fail(reply, 401, 'AUTH_REQUIRED');
+  else if (result.status === 'WRONG_SCOPE') fail(reply, 403, 'ADMIN_SESSION_REQUIRED');
+  else if (result.status === 'SESSION_INVALID') fail(reply, 401, 'SESSION_INVALID');
+  else fail(reply, 403, 'ADMIN_REQUIRED');
   return null;
 }
 
 const body = (properties: Record<string, unknown>) =>
   ({ body: { type: 'object', additionalProperties: false, properties, required: Object.keys(properties) } });
-
-async function audit(sql: Sql, actor: string | null, action: string, targetType: string, targetId: string, reason: string | null, detail: Record<string, unknown>) {
-  await sql.query(
-    `INSERT INTO kg_membership.audit_log(actor_member_id,action,target_type,target_id,reason,detail)
-     VALUES($1,$2,$3,$4,$5,$6)`,
-    [actor, action, targetType, targetId, reason, JSON.stringify(detail)],
-  );
-}
 
 export function registerAdminSessionRoutes(
   app: FastifyInstance, db: Sql,
@@ -153,11 +146,7 @@ export function registerAdminSessionRoutes(
     const key = clientKey(request);
     const locked = limiter.lockedFor(key);
     if (locked > 0) {
-      await db.query(
-        `INSERT INTO kg_membership.audit_log(actor_member_id,action,target_type,target_id,reason,detail)
-         VALUES(NULL,'ADMIN_LOGIN_BLOCKED','admin_login',$1,'LOCK_ACTIVE',$2)`,
-        [key, JSON.stringify({ retryAfterSeconds: locked })],
-      );
+      await audit(db, null, 'ADMIN_LOGIN_BLOCKED', 'admin_login', key, 'LOCK_ACTIVE', { retryAfterSeconds: locked });
       throw new ApiError(429, 'ADMIN_LOGIN_LOCKED', { retryAfterSeconds: locked });
     }
     // An admin token is not a member session; it must never be exchangeable again.

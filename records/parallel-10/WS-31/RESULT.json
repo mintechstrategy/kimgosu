@@ -1,0 +1,131 @@
+{
+  "ws": "WS-31",
+  "status": "DONE",
+  "summary": "백엔드 공통 커널(services/backend/src/kernel.ts) 하나로 에러 envelope 생성·audit_log 추가·활성회원 가드를 모았다. 직접 쓰던 send({error:}) 22곳→0(errorBody/fail 1개 빌더), audit_log INSERT 지점 11곳(중복 함수 7 + 인라인 4)→1, 커서 페이지네이션은 실제 구현이 chat·experts 2곳뿐이라 PLAN 규칙대로 추출하지 않았다. 계약 33/33, 유닛 26/26, 실DB 통합 158/158, tsc 0, src 3350→3296줄(-54). HEAD 대비 동일 요청 33건(정상·오류·제한회원 경로) A/B 응답 diff 0, audit_log 행 diff 0.",
+  "changedFiles": [
+    "services/backend/src/kernel.ts",
+    "services/backend/src/app.ts",
+    "services/backend/src/admin.ts",
+    "services/backend/src/admin-session.ts",
+    "services/backend/src/admin-policy.ts",
+    "services/backend/src/chat.ts",
+    "services/backend/src/experts.ts",
+    "services/backend/src/ledger.ts",
+    "services/backend/src/quotes.ts",
+    "services/backend/src/reviews.ts",
+    "services/backend/src/register.ts",
+    "records/parallel-10/WS-31/RESULT.json"
+  ],
+  "verification": [
+    {
+      "check": "타입체크",
+      "command": "cd services/backend && npx tsc --noEmit",
+      "result": "PASS",
+      "evidence": "출력 없음, exit 0. 추가로 --noUnusedLocals --noUnusedParameters 실행 시 변경 전과 동일하게 scripts/railway-integration.ts 기존 경고 2건만 남고 src는 0건(미사용 import/dead code 없음)."
+    },
+    {
+      "check": "유닛 테스트",
+      "command": "cd services/backend && npm test",
+      "result": "PASS",
+      "evidence": "tests 26 / pass 26 / fail 0 (CORS·rate limit·에러 envelope 관련 유닛 포함)."
+    },
+    {
+      "check": "계약 테스트 33/33 · 라우트 인벤토리 불변",
+      "command": "cd <wt-WS-31> && npx tsx --test tests/contract/*.test.ts",
+      "result": "PASS",
+      "evidence": "tests 33 / pass 33 / fail 0. 'operation 목록 = 실제 등록 라우트(양방향)', '전체 앱에 28개 operation 등록' 포함 — 라우트 추가·삭제 없음."
+    },
+    {
+      "check": "실 PostgreSQL 통합 테스트 (변경 후)",
+      "command": "cd services/backend && for f in tests/*.integration.test.ts; do KG_TEST_DATABASE_URL=postgres://postgres@127.0.0.1:55432/kgtest_ws31 node --test $f; done",
+      "result": "PASS",
+      "evidence": "14개 파일 158건 전건 통과: admin-session 8, admin 6, apple 17, chat 13, experts 10, ledger 6, local-db 33, oauth 14, phone-masked 4, policy-v02 3, quote-terms 8, quotes 7, register 9, reviews 20."
+    },
+    {
+      "check": "실 PostgreSQL 통합 테스트 baseline (HEAD)",
+      "command": "git archive HEAD → 스크래치 트리에서 같은 14개 파일 실행 (동일 DB kgtest_ws31, node_modules 심볼릭)",
+      "result": "PASS (157/158, 1건 사전 flake)",
+      "evidence": "HEAD에서도 157 pass / 1 fail. 실패는 experts 'service creation persists and is re-readable' 1건으로, 콜드 첫 실행에서만 발생하고 즉시 재실행 시 10/10 통과. 변경 후 코드에서는 같은 테스트 10/10. 사전 존재 flake이며 이번 변경과 인과 없음(risks 참조)."
+    },
+    {
+      "check": "동작 불변 A/B — 응답 바이트 비교 (26요청)",
+      "command": "node 스크래치 스크립트: HEAD 트리 buildApp vs 작업트리 buildApp에 동일 요청 주입, statusCode+body 문자열 비교",
+      "result": "PASS",
+      "evidence": "compared 26 requests, diffs=0. 포함: /health, /v1/policies(+:kind, 404), /v1/me(401 2종), /v1/ledgers(401·404), /v1/experts(limit/cursor 오류·404), quotes/messages 스키마 오류, /v1/auth/logout, dev login, /v1/admin/members(401·403), /v1/admin/session, /v1/auth/register(SIGNUP_NOT_READY + reasons/missingDocumentKinds), 404 라우트, CORS preflight 403, 잘못된 JSON 400."
+    },
+    {
+      "check": "동작 불변 A/B — 제한회원 가드 경로 (7요청)",
+      "command": "node 스크래치 스크립트: RESTRICTED 회원 세션으로 /v1/me, /v1/experts/:id, POST /v1/expert/profile, POST /v1/expert/services, /v1/ledgers 등 주입",
+      "result": "PASS",
+      "evidence": "restricted-member requests=7 diffs=0. requireMember가 throw(ApiError)→reply(fail)로 바뀐 experts 경로도 403 {\"error\":{\"code\":\"ACCOUNT_RESTRICTED\"}} 동일."
+    },
+    {
+      "check": "동작 불변 A/B — audit_log 행 비교",
+      "command": "node 스크래치 스크립트: 고수 프로필+서비스 생성 플로우를 HEAD/작업트리에서 각각 실행 후 audit_log(action,target_type,target_id,reason,detail) 비교",
+      "result": "PASS",
+      "evidence": "audit identical: true — 두 트리 모두 [{action:'EXPERT_SERVICE_CREATED', target_type:'expert_service', reason:null, detail:'{\"visibility\": \"VISIBLE\"}'}]. 통합 테스트도 audit 단언(리뷰·견적 전이·서비스 쓰기) 전건 통과."
+    },
+    {
+      "check": "추출 헬퍼 사용처 (3곳 이상)",
+      "command": "grep -rn 'requireActiveMember\\|errorBody\\|function audit\\|INSERT INTO .*audit_log' services/backend/src",
+      "result": "PASS",
+      "evidence": "audit: 정의 1곳(kernel.ts), 호출 22곳/8개 파일(ledger, quotes, chat, experts, reviews, admin, admin-session, admin-policy). requireActiveMember: 정의 1 + 5개 파일(chat, experts, ledger, quotes, reviews). errorBody/fail: 정의 1 + 사용처 app.ts 15·admin-session.ts 4·ledger.ts 2·admin.ts 1·experts.ts 1·reviews.ts 1·register.ts 1(합 25곳, 7개 파일)."
+    },
+    {
+      "check": "src 총 줄 수 / 중복 감소 계측 (HEAD vs 작업트리)",
+      "command": "git archive HEAD src 라인 합 vs 작업트리 src 라인 합, grep 계측",
+      "result": "PASS",
+      "evidence": "src 3350→3296(-54, 신규 kernel.ts 39줄 포함). audit_log INSERT 지점 11→1, 'async function audit' 7→1, await audit( 호출 18→22(인라인 4건이 호출로 전환), 텍스트 'send({ error:' 22→0, 'const requireMember = async' 5→0. 파일 수 22→23(kernel.ts 1개 추가)."
+    },
+    {
+      "check": "에러 코드 목록 불변 (미래/임의 코드 추가 없음)",
+      "command": "HEAD vs 작업트리에서 src의 대문자 스네이크 문자열 리터럴 집합 추출 후 diff",
+      "result": "PASS",
+      "evidence": "166 vs 166, diff 없음 — 신규 에러 코드 0, 삭제·개명 0. new ApiError 호출부도 154→153(중복 제거) 외 코드 값 변화 없음."
+    },
+    {
+      "check": "변경 범위 (금지 경계 준수)",
+      "command": "git status --short / git diff --stat",
+      "result": "PASS",
+      "evidence": "수정 10개 + 신규 kernel.ts 1개. tests/·contracts/·migrations/ 무변경(마이그레이션 0). 커밋·push·원격 쓰기·배포 명령 실행 없음."
+    },
+    {
+      "check": "AOS·iOS 빌드",
+      "command": "-",
+      "result": "NOT_RUN",
+      "evidence": "PLAN-WAVE5의 '마무리(오케스트레이터)' 항목이며 WS-31 변경은 services/backend/src에 한정(앱 소스·자산 무변경). 병합 후 오케스트레이터가 수행해야 한다."
+    },
+    {
+      "check": "Railway/Cloudflare 개발계 배포 및 실제 거래 검증",
+      "command": "-",
+      "result": "NOT_RUN",
+      "evidence": "이 카드는 원격 쓰기·배포 금지이고 배포 권한도 없다. 병합·배포 후 별도 검증 필요."
+    },
+    {
+      "check": "라우트×상태 전수 응답 대조",
+      "command": "-",
+      "result": "NOT_RUN",
+      "evidence": "33개 요청 A/B + 기존 통합 158건 + 계약 33건으로 검증했고, 모든 라우트의 모든 오류 상태를 개별 대조하지는 않았다."
+    }
+  ],
+  "contractChanges": [],
+  "migrations": [],
+  "open": [
+    "페이지네이션 공통화는 하지 않았다(PLAN 수용 기준의 '2곳이면 뽑지 않는다' 적용). 실제 커서 구현은 chat.ts(before=마지막 메시지 uuid, nextCursor)와 experts.ts(base64 'at|id' keyset, nextCursor) 2곳뿐이고 커서 형식·정렬·응답 필드가 서로 다르다. quotes.ts는 limit만 받고 cursor가 없으며(quotes.ts:184-199), reviews.ts는 limit+offset(reviews.ts:111-155), admin.ts는 page/limit offset(admin.ts:50-64)이다. 세 번째 커서 API가 생기면 그때 추출 검토.",
+    "에러 코드 목록은 코드에 상수 레지스트리로 등재하지 않았다. PLAN 1항의 '지금 쓰이는 것만 등록(미래 코드 추가 금지)'을 '코드 값 자체를 바꾸지 않고 새 코드를 만들지 않는다'로 적용했고, 그 근거로 src의 대문자 스네이크 문자열 집합이 166→166으로 동일함을 측정했다. 레지스트리를 상수로 두면 contracts/*.json의 errors 열거와 중복되는 세 번째 진실 원천이 되고 사용처 없는 죽은 코드가 되므로 Anti-Slop 19·25에 따라 만들지 않았다. 오케스트레이터가 레지스트리를 요구하면 별도 판단 필요.",
+    "참여자(ledger participant) 검사는 통합하지 않았다. chat.requireParticipant는 404 LEDGER_NOT_FOUND, quotes.participantLedger는 404(+두 참여자 id 반환), ledger.ts:142·176과 reviews는 403 NOT_A_PARTICIPANT로 상태코드·응답이 다르고 일부는 FOR UPDATE 잠금 경로 안에 있다. 합치면 '응답 완전 동일' 수용 기준을 깨므로 의도적으로 남겼다. 관리자 가드는 기존 requireAdminScope 그대로다.",
+    "이 작업트리에서 같은 WS-31이 중복 실행됐다. 세션 시작 시점(wt-WS-31 clean) 이후 다른 kg-01 프로세스(PID 11186, 이전 PLAN-WAVE3 프롬프트로 기동, 22:05:44 종료)가 같은 worktree에 kernel.ts와 10개 파일 수정, 그리고 선행 RESULT.json을 남겼다. 나는 그 프로세스 종료 후 전체 diff를 직접 재검토하고 이 RESULT의 모든 검증을 이 세션에서 다시 실행했다. 선행 RESULT.json은 이 파일로 대체됐다. 오케스트레이터는 worktree당 WS 중복 기동을 막아야 한다."
+  ],
+  "risks": [
+    "experts.integration.test.ts 'service creation persists and is re-readable'가 콜드 첫 실행에서 1회 실패한다(HEAD에서도 재현, 재실행 시 통과). 원인 후보: 핸들러가 db.transaction 콜백 안에서 reply.code(201).send()로 응답을 먼저 내보내고 커밋은 그 뒤에 일어나므로(experts.ts 생성 핸들러, ledger.ts:151 동일 패턴), 직후 다른 커넥션의 SELECT가 커밋 전 스냅샷을 볼 수 있다. 이번 변경과 무관하며 고치지 않았다(동작 변경 금지·범위 밖). CI에서 간헐 실패로 보일 수 있다.",
+    "응답 동일성은 33개 요청 A/B와 기존 통합 158건으로 확인했으나 모든 라우트×모든 상태의 전수 대조는 아니다.",
+    "kernel.ts는 모든 라우트 모듈이 import하는 단일 의존점이 된다. 다만 app.ts·auth.ts에서 type-only import만 하므로 런타임 순환은 없다(tsc·전 테스트 통과로 확인).",
+    "새 파일 1개(kernel.ts)가 늘었다. src 총 줄은 54줄 줄었고 계층·DI·Service 도입은 없다."
+  ],
+  "next": [
+    "오케스트레이터: 병합 전 wt-WS-31에서 npx tsc --noEmit, npm test, npx tsx --test tests/contract/*.test.ts, 통합 14파일 재실행.",
+    "웨이브 5 마무리: 병합 후 AOS·iOS 실제 빌드로 전체 확인(오케스트레이터 몫).",
+    "후속(선택): experts/ledger 생성 핸들러의 '응답 전 커밋' 순서를 별도 카드로 정리할지 결정 — 응답 코드가 바뀔 수 있어 이번 웨이브 범위 밖.",
+    "후속(선택): 에러 코드 레지스트리 필요 여부 결정. 도입 시 contracts의 errors 열거와의 관계를 먼저 정해야 한다."
+  ]
+}

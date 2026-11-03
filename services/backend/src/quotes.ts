@@ -1,8 +1,9 @@
-import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import type { FastifyInstance } from 'fastify';
 import { randomUUID } from 'node:crypto';
 import type { Sql, Row } from './app.ts';
 import type { Authenticate } from './auth.ts';
 import { ApiError } from './security.ts';
+import { audit, requireActiveMember } from './kernel.ts';
 
 /**
  * Quote flow: expert proposes -> customer accepts/rejects -> both sides confirm
@@ -66,14 +67,6 @@ function present(row: Row): Row {
   };
 }
 
-async function audit(sql: Sql, actor: unknown, action: string, targetId: string, detail?: Row) {
-  await sql.query(
-    `INSERT INTO kg_membership.audit_log(actor_member_id,action,target_type,target_id,detail)
-     VALUES($1,$2,'quote',$3,$4)`,
-    [actor, action, targetId, JSON.stringify(detail ?? {})],
-  );
-}
-
 async function transition(sql: Sql, quoteId: string, from: string | null, to: string, actor: unknown, note?: string) {
   await sql.query(
     `INSERT INTO kg_membership.quote_transitions(quote_id,from_status,to_status,actor_member_id,note)
@@ -113,7 +106,7 @@ async function expireIfDue(sql: Sql, quote: Row, actor: unknown): Promise<boolea
     [quote.id],
   );
   await transition(sql, String(quote.id), 'PROPOSED', 'EXPIRED', actor, 'expires_at passed');
-  await audit(sql, actor, 'QUOTE_EXPIRED', String(quote.id), {});
+  await audit(sql, actor, 'QUOTE_EXPIRED', 'quote', String(quote.id));
   return true;
 }
 
@@ -121,12 +114,7 @@ const expired = { expired: true } as const;
 const isExpired = (value: unknown): boolean => Boolean(value && typeof value === 'object' && 'expired' in value);
 
 export function registerQuoteRoutes(app: FastifyInstance, db: Sql, authenticate: Authenticate) {
-  const requireMember = async (request: FastifyRequest, reply: FastifyReply) => {
-    const auth = await authenticate(request, reply);
-    if (!auth) return null;
-    if (auth.status !== 'ACTIVE') { reply.code(403).send({ error: { code: 'ACCOUNT_RESTRICTED' } }); return null; }
-    return auth;
-  };
+  const requireMember = requireActiveMember(authenticate);
 
   // Propose a quote. Only the ledger's expert may price their own customer.
   app.post<{
@@ -185,7 +173,7 @@ export function registerQuoteRoutes(app: FastifyInstance, db: Sql, authenticate:
             request.body.scheduleAt ?? null, request.body.message, expiresAt.toISOString()],
         )).rows[0];
         await transition(sql, id, null, 'PROPOSED', auth.memberId);
-        await audit(sql, auth.memberId, 'QUOTE_PROPOSED', id, {
+        await audit(sql, auth.memberId, 'QUOTE_PROPOSED', 'quote', id, null, {
           ledgerId: request.params.id, amount: request.body.amount, priceType, vatIncluded,
         });
         return reply.code(201).send(present(created));
@@ -248,7 +236,7 @@ export function registerQuoteRoutes(app: FastifyInstance, db: Sql, authenticate:
           )).rows[0];
           if (!rejected) throw new ApiError(409, 'VERSION_CONFLICT');
           await transition(sql, String(quote.id), 'PROPOSED', 'REJECTED', auth.memberId);
-          await audit(sql, auth.memberId, 'QUOTE_REJECTED', String(quote.id), {});
+          await audit(sql, auth.memberId, 'QUOTE_REJECTED', 'quote', String(quote.id));
           return present(rejected);
         }
 
@@ -269,7 +257,7 @@ export function registerQuoteRoutes(app: FastifyInstance, db: Sql, authenticate:
         )).rows[0];
         if (!accepted) throw new ApiError(409, 'VERSION_CONFLICT');
         await transition(sql, String(quote.id), 'PROPOSED', 'ACCEPTED', auth.memberId);
-        await audit(sql, auth.memberId, 'QUOTE_ACCEPTED', String(quote.id), { agreementId: String(agreement.id) });
+        await audit(sql, auth.memberId, 'QUOTE_ACCEPTED', 'quote', String(quote.id), null, { agreementId: String(agreement.id) });
         return present(accepted);
       });
       if (isExpired(outcome)) throw new ApiError(409, 'QUOTE_EXPIRED');
@@ -305,7 +293,7 @@ export function registerQuoteRoutes(app: FastifyInstance, db: Sql, authenticate:
         `UPDATE kg_membership.quotes SET ${mine}=now(), version=version+1, updated_at=now() WHERE id=$1`,
         [request.params.id],
       );
-      await audit(sql, auth.memberId, 'QUOTE_COMPLETION_CONFIRMED', String(quote.id), { side: mine });
+      await audit(sql, auth.memberId, 'QUOTE_COMPLETION_CONFIRMED', 'quote', String(quote.id), null, { side: mine });
 
       const both = (await sql.query(
         `SELECT customer_confirmed_at IS NOT NULL AND expert_confirmed_at IS NOT NULL AS both
@@ -325,7 +313,7 @@ export function registerQuoteRoutes(app: FastifyInstance, db: Sql, authenticate:
           [quote.agreementId],
         );
         await transition(sql, String(quote.id), 'ACCEPTED', 'COMPLETED', auth.memberId, 'both parties confirmed');
-        await audit(sql, auth.memberId, 'QUOTE_COMPLETED', String(quote.id), { agreementId: String(quote.agreementId) });
+        await audit(sql, auth.memberId, 'QUOTE_COMPLETED', 'quote', String(quote.id), null, { agreementId: String(quote.agreementId) });
       }
 
       return present((await sql.query(
