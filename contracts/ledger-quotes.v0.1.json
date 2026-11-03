@@ -16,7 +16,7 @@
     "version is optimistic-concurrency state: a stale expectedVersion returns 409 VERSION_CONFLICT.",
     "Quote terms (WS-24): amount is authoritative and the server derives the money fields. vatIncluded=false means amount is the VAT-exclusive supply price (부가세 별도, the default); vatIncluded=true means amount is the final payable total. VAT_RATE is 0.1. priceType is HOURLY or TOTAL (default TOTAL); an HOURLY quote requires hourlyRate and a TOTAL quote must not carry one.",
     "Quote TTL (WS-24): expiresAt is optional. Omitted => now + 7 days. The server rejects an expiry at or before now + 60 seconds (400 INVALID_EXPIRY) and anything beyond now + 30 days (400 EXPIRY_EXCEEDS_MAX_TTL).",
-    "Route spelling: the pre-existing singular /v1/ledger for the expert's ledger list/detail, plural /v1/ledgers/:id for quotes. Unifying the spelling is explicitly out of scope for this wave."
+    "Route spelling: every ledger route is plural (/v1/ledgers, /v1/ledgers/:id, /v1/ledgers/:id/notes, /v1/ledgers/:id/quotes). The earlier singular /v1/ledger was unified to plural so the surface carries one spelling."
   ],
   "operations": [
     {
@@ -58,7 +58,7 @@
     {
       "id": "ledgerList",
       "method": "GET",
-      "path": "/v1/ledger",
+      "path": "/v1/ledgers",
       "authentication": "session-active",
       "source": "services/backend/src/ledger.ts",
       "notes": "Only ledgers the caller owns as expert are listed; a customer never lists other people's ledgers.",
@@ -81,7 +81,7 @@
     {
       "id": "ledgerGet",
       "method": "GET",
-      "path": "/v1/ledger/:id",
+      "path": "/v1/ledgers/:id",
       "authentication": "session-active",
       "source": "services/backend/src/ledger.ts",
       "paramsSchema": {
@@ -142,7 +142,7 @@
     {
       "id": "ledgerNoteCreate",
       "method": "POST",
-      "path": "/v1/ledger/:id/notes",
+      "path": "/v1/ledgers/:id/notes",
       "authentication": "session-active",
       "source": "services/backend/src/ledger.ts",
       "paramsSchema": {
@@ -422,8 +422,8 @@
   ],
   "openItems": [
     "Quote terms are the user-confirmed WS-24 policy: VAT is quoted separately by default (vatIncluded=false), priceType distinguishes HOURLY from TOTAL, and the TTL is 7 days by default with a 30-day maximum. The server derives supplyAmount/vatAmount/totalAmount from amount; a client-sent derived amount is rejected by additionalProperties:false.",
-    "GET /v1/ledger is expert-only by design; a customer-side ledger list does not exist.",
-    "Route spelling singular /v1/ledger vs plural /v1/ledgers/:id is intentionally unchanged; unification is a separate post-merge refactor."
+    "GET /v1/ledgers is expert-only by design; a customer-side ledger list does not exist.",
+    "Route spelling is uniform: all ledger routes are plural."
   ],
   "schemaDefinitions": {
     "Uuid": { "type": "string", "format": "uuid" },

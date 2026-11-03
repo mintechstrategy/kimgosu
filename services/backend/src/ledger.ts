@@ -62,7 +62,7 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Sql, authenticate
   });
 
   // Ledgers are owned by the expert. A customer never lists other people's ledgers.
-  app.get('/v1/ledger', async (request, reply) => {
+  app.get('/v1/ledgers', async (request, reply) => {
     const auth = await requireMember(request, reply); if (!auth) return;
     const rows = await db.query(
       `SELECT l.id, l.customer_member_id AS "customerMemberId", m.customer_no::text AS "customerNumber",
@@ -79,7 +79,7 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Sql, authenticate
     return { ledgers: rows.rows };
   });
 
-  app.get<{ Params: { id: string } }>('/v1/ledger/:id', {
+  app.get<{ Params: { id: string } }>('/v1/ledgers/:id', {
     schema: { params: { type: 'object', required: ['id'], additionalProperties: false, properties: { id: idSchema } } },
   }, async (request, reply) => {
     const auth = await requireMember(request, reply); if (!auth) return;
@@ -105,7 +105,7 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Sql, authenticate
     return { ledger, notes: notes.rows, agreements: agreements.rows };
   });
 
-  app.post<{ Params: { id: string }; Body: { body: string } }>('/v1/ledger/:id/notes', {
+  app.post<{ Params: { id: string }; Body: { body: string } }>('/v1/ledgers/:id/notes', {
     schema: {
       params: { type: 'object', required: ['id'], additionalProperties: false, properties: { id: idSchema } },
       ...body({ body: string(1, 2000) }),
