@@ -27,6 +27,7 @@ const EXPERT = { id: randomUUID(), token: 'E'.repeat(43) };
 const CUSTOMER = { id: randomUUID(), token: 'C'.repeat(43) };
 const OUTSIDER = { id: randomUUID(), token: 'O'.repeat(43) };
 const ADMIN = { id: randomUUID(), token: 'A'.repeat(43) };
+let ADMIN_SESSION_TOKEN = '';
 // WS-26 window fixtures use their own customers: `ledgers` is unique per
 // (expert, customer) pair, so reusing CUSTOMER would collide with OPEN_LEDGER.
 const WINDOW_CUSTOMER_OPEN = { id: randomUUID(), token: 'W'.repeat(43) };
@@ -101,6 +102,12 @@ before(async () => {
   await pool.query(`INSERT INTO kg_membership.ledgers(id,expert_member_id,customer_member_id) VALUES($1,$2,$3)`, [WINDOW_CLOSED_LEDGER, EXPERT.id, WINDOW_CUSTOMER_CLOSED.id]);
   await seedCompletedAgreementAt(WINDOW_OPEN_LEDGER, WINDOW_CUSTOMER_OPEN.id, 29);
   await seedCompletedAgreementAt(WINDOW_CLOSED_LEDGER, WINDOW_CUSTOMER_CLOSED.id, 31);
+
+  // WS-23 이후로는 ADMIN role_grant만으로는 부족하고 운영자 세션을 교환해야 한다.
+  // 콘솔이 하는 것과 동일한 경로로 세션을 만든다.
+  const exchanged = await app.inject({ method: 'POST', url: '/v1/admin/session', payload: { sessionToken: ADMIN.token } });
+  assert.equal(exchanged.statusCode, 201, 'ADMIN 회원 세션은 운영자 세션으로 교환되어야 한다');
+  ADMIN_SESSION_TOKEN = exchanged.json().adminToken;
 });
 
 after(async () => {
@@ -351,7 +358,7 @@ test('WS-26: hiding requires an ADMIN grant', async () => {
     method: 'POST', url: `/v1/admin/reviews/${target}/hide`, headers: auth(CUSTOMER.token), payload: { reason: '정책 위반' },
   });
   assert.equal(member.statusCode, 403);
-  assert.equal(member.json().error.code, 'ADMIN_REQUIRED');
+  assert.equal(member.json().error.code, 'ADMIN_SESSION_REQUIRED');
 
   const stillVisible = (await pool.query(
     `SELECT hidden_at FROM kg_membership.reviews WHERE id=$1`, [target],
@@ -365,7 +372,7 @@ test('WS-26: hiding without a reason is rejected (400)', async () => {
   )).rows[0].id as string;
 
   const response = await app.inject({
-    method: 'POST', url: `/v1/admin/reviews/${target}/hide`, headers: auth(ADMIN.token), payload: { reason: 'x' },
+    method: 'POST', url: `/v1/admin/reviews/${target}/hide`, headers: auth(ADMIN_SESSION_TOKEN), payload: { reason: 'x' },
   });
   assert.equal(response.statusCode, 400);
   assert.equal(response.json().error.code, 'INVALID_REQUEST');
@@ -380,7 +387,7 @@ test('WS-26: an operator hide removes the review from the public list and stores
   const beforeCount = (before.json().reviews as Record<string, unknown>[]).length;
 
   const hidden = await app.inject({
-    method: 'POST', url: `/v1/admin/reviews/${target}/hide`, headers: auth(ADMIN.token),
+    method: 'POST', url: `/v1/admin/reviews/${target}/hide`, headers: auth(ADMIN_SESSION_TOKEN),
     payload: { reason: '욕설 포함' },
   });
   assert.equal(hidden.statusCode, 200);
@@ -409,13 +416,13 @@ test('WS-26: an operator hide removes the review from the public list and stores
   assert.equal(audited.reason, '욕설 포함');
 
   const again = await app.inject({
-    method: 'POST', url: `/v1/admin/reviews/${target}/hide`, headers: auth(ADMIN.token), payload: { reason: '중복 숨김' },
+    method: 'POST', url: `/v1/admin/reviews/${target}/hide`, headers: auth(ADMIN_SESSION_TOKEN), payload: { reason: '중복 숨김' },
   });
   assert.equal(again.statusCode, 409);
   assert.equal(again.json().error.code, 'REVIEW_ALREADY_HIDDEN');
 
   const missing = await app.inject({
-    method: 'POST', url: `/v1/admin/reviews/${randomUUID()}/hide`, headers: auth(ADMIN.token), payload: { reason: '없는 리뷰' },
+    method: 'POST', url: `/v1/admin/reviews/${randomUUID()}/hide`, headers: auth(ADMIN_SESSION_TOKEN), payload: { reason: '없는 리뷰' },
   });
   assert.equal(missing.statusCode, 404);
   assert.equal(missing.json().error.code, 'REVIEW_NOT_FOUND');
@@ -427,7 +434,7 @@ test('WS-26: unhide restores the review and records why', async () => {
   )).rows[0].id as string;
 
   const unhidden = await app.inject({
-    method: 'POST', url: `/v1/admin/reviews/${target}/unhide`, headers: auth(ADMIN.token),
+    method: 'POST', url: `/v1/admin/reviews/${target}/unhide`, headers: auth(ADMIN_SESSION_TOKEN),
     payload: { reason: '오신고로 확인' },
   });
   assert.equal(unhidden.statusCode, 200);
@@ -453,7 +460,7 @@ test('WS-26: unhide restores the review and records why', async () => {
   assert.equal(audited.detail.previousHiddenReason, '욕설 포함');
 
   const again = await app.inject({
-    method: 'POST', url: `/v1/admin/reviews/${target}/unhide`, headers: auth(ADMIN.token), payload: { reason: '중복 해제' },
+    method: 'POST', url: `/v1/admin/reviews/${target}/unhide`, headers: auth(ADMIN_SESSION_TOKEN), payload: { reason: '중복 해제' },
   });
   assert.equal(again.statusCode, 409);
   assert.equal(again.json().error.code, 'REVIEW_NOT_HIDDEN');
