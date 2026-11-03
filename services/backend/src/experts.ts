@@ -1,8 +1,9 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { randomUUID } from 'node:crypto';
-import type { Sql, Row } from './app.ts';
+import type { Sql } from './app.ts';
 import type { Authenticate } from './auth.ts';
 import { ApiError } from './security.ts';
+import { audit, fail, requireActiveMember } from './kernel.ts';
 
 /**
  * Expert (고수) profile + service catalogue.
@@ -48,14 +49,6 @@ function decodeCursor(raw: string): { at: string; id: string } {
 /** Escape LIKE metacharacters so a search term cannot widen the match. */
 const likeTerm = (value: string) => value.replace(/[\\%_]/g, match => `\\${match}`);
 
-async function audit(sql: Sql, actor: unknown, action: string, targetId: string, detail?: Row) {
-  await sql.query(
-    `INSERT INTO ${SCHEMA}.audit_log(actor_member_id,action,target_type,target_id,detail)
-     VALUES($1,$2,'expert_service',$3,$4)`,
-    [actor, action, targetId, JSON.stringify(detail ?? {})],
-  );
-}
-
 function assertPrice(priceType: string, basePrice: unknown) {
   const negotiable = priceType === 'NEGOTIABLE';
   if (negotiable && basePrice !== null && basePrice !== undefined) throw new ApiError(400, 'INVALID_PRICE');
@@ -63,13 +56,7 @@ function assertPrice(priceType: string, basePrice: unknown) {
 }
 
 export function registerExpertRoutes(app: FastifyInstance, db: Sql, authenticate: Authenticate) {
-  /** Session → active member. */
-  const requireMember = async (request: FastifyRequest, reply: FastifyReply) => {
-    const auth = await authenticate(request, reply);
-    if (!auth) return null;
-    if (auth.status !== 'ACTIVE') throw new ApiError(403, 'ACCOUNT_RESTRICTED');
-    return auth;
-  };
+  const requireMember = requireActiveMember(authenticate);
 
   /** Session → active member that currently holds the EXPERT role. */
   const requireExpert = async (request: FastifyRequest, reply: FastifyReply) => {
@@ -152,7 +139,7 @@ export function registerExpertRoutes(app: FastifyInstance, db: Sql, authenticate
         [randomUUID(), auth.memberId, request.body.category.trim(), request.body.title.trim(), request.body.description.trim(),
           request.body.priceType, request.body.basePrice ?? null, request.body.visibility ?? 'VISIBLE'],
       )).rows[0];
-      await audit(sql, auth.memberId, 'EXPERT_SERVICE_CREATED', String(service.id), { visibility: service.visibility });
+      await audit(sql, auth.memberId, 'EXPERT_SERVICE_CREATED', 'expert_service', String(service.id), null, { visibility: service.visibility });
       return reply.code(201).send(service);
     });
   });
@@ -198,7 +185,7 @@ export function registerExpertRoutes(app: FastifyInstance, db: Sql, authenticate
         values,
       )).rows[0];
       if (!updated) throw new ApiError(404, 'SERVICE_NOT_FOUND');
-      await audit(sql, auth.memberId, 'EXPERT_SERVICE_UPDATED', String(request.params.id), { visibility: updated.visibility });
+      await audit(sql, auth.memberId, 'EXPERT_SERVICE_UPDATED', 'expert_service', String(request.params.id), null, { visibility: updated.visibility });
       return updated;
     });
   });
@@ -295,7 +282,7 @@ export function registerExpertRoutes(app: FastifyInstance, db: Sql, authenticate
       [request.params.id],
     )).rows[0];
     // A hidden profile is indistinguishable from a missing one.
-    if (!profile) return reply.code(404).send({ error: { code: 'EXPERT_NOT_FOUND' } });
+    if (!profile) return fail(reply, 404, 'EXPERT_NOT_FOUND');
     const services = (await db.query(
       `SELECT ${serviceSelect} FROM ${SCHEMA}.expert_services s
         WHERE s.expert_member_id=$1 AND s.visibility='VISIBLE'
