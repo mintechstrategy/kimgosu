@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "project": "김고수",
+  "updatedAt": "2026-10-30T14:25:01.037136+00:00",
+  "releases": [
+    {
+      "platform": "aos",
+      "kind": "android-apk",
+      "kindLabel": "Android 개발용 APK",
+      "version": "0.1.0",
+      "build": "1",
+      "builtAt": "2026-10-30T22:01:03.115301+09:00",
+      "publishedAt": "2026-10-30T14:25:01.035547+00:00",
+      "status": "published",
+      "qaStatus": "PASS",
+      "file": "/downloads/v0.1.0/kimgosu-aos-0.1.0-b1-b0cb812cf1ff.apk",
+      "bytes": 14520437,
+      "sha256": "b0cb812cf1ff754de0f5883caa1ed7ca7f492ae016c4ec0918aff1a9d1c4dbe9",
+      "installationNotice": "Android 기기용 개발 빌드입니다. 기기의 설치 허용 안내를 확인하세요.",
+      "notes": [
+        "스플래시 → A1 메인 최초 개발용 빌드",
+        "분야 오른쪽 페이드, 인기 탭·선택 상태 및 화면 복귀 보완",
+        "현재 메인 화면 범위입니다. 로그인·검색·견적·채팅 등 업무 기능은 아직 연결되지 않았습니다."
+      ]
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "source": "CURRENT-FULL-DESIGN.json → full-design-v0.2-brand-final/html/A1.html",
+  "sourceSHA256": "f0fd70d596ccc7535e63f671960f6ab9e2817fd749b9580960b774870b26faa1",
+  "splashSHA256": "244c3d21b27a44877e6e1d0e9a6cc2daf5533df776ef3b2302b0e4e2c82d79e4",
+  "icons": "Original inline SVGs rasterized at 3x, no redraw",
+  "fonts": "Preserved Pretendard Regular/SemiBold/Bold",
+  "historyAdjustment": "No invented 도배 search history on a first install",
+  "serviceData": "No sample listings/prices/reviews imported; explicitly unconnected"
+}
