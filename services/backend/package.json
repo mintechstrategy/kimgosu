@@ -9,7 +9,7 @@
   "scripts": {
     "check": "tsc --noEmit",
     "test": "node --test src/*.test.ts",
-    "test:integration": "node --test tests/ledger.integration.test.ts && node --test tests/local-db.integration.test.ts",
+    "test:integration": "node --test tests/ledger.integration.test.ts && node --test tests/local-db.integration.test.ts && node --test tests/oauth.integration.test.ts",
     "start": "node src/server.ts"
   },
   "dependencies": {

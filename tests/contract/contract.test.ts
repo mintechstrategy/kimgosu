@@ -68,10 +68,15 @@ test('v0.2 compiles every input/output/error schema; immutable core9 and complet
   const v01Bytes = readFileSync(new URL('../../contracts/auth-membership.v0.1.json', import.meta.url));
   assert.equal(createHash('sha256').update(v01Bytes).digest('hex'), contract.compatibility.v01Sha256);
   assert.deepEqual(JSON.parse(v01Bytes.toString()).implementedCore, contract.compatibility.core9PreservedVerbatim);
-  const sources = ['app.ts', 'auth.ts'].map(f => readFileSync(new URL('../../services/backend/src/' + f, import.meta.url), 'utf8')).join('\n');
+  const sources = ['app.ts', 'auth.ts', 'oauth.ts'].map(f => readFileSync(new URL('../../services/backend/src/' + f, import.meta.url), 'utf8')).join('\n');
   const actual = [...sources.matchAll(/app\.(get|post|patch|options)(?:<[^\n]*?>)?\('([^']+)'/g)].map(m => m[1].toUpperCase() + ' ' + m[2]);
-  assert.deepEqual(actual.sort(), [...contract.operations.map((o: {method: string; path: string}) => o.method + ' ' + o.path), 'OPTIONS /*'].sort());
+  // v0.2 is frozen at 21 operations. WS-11 added the official OAuth routes in
+  // contracts/auth-membership.v0.3.json, so the live inventory is v0.2 + v0.3-only.
+  const v03 = JSON.parse(readFileSync(new URL('../../contracts/auth-membership.v0.3.json', import.meta.url), 'utf8'));
+  const v03Only = v03.operations.filter((o: { id: string }) => !contract.operations.some((v: { id: string }) => v.id === o.id));
+  assert.deepEqual(actual.sort(), [...contract.operations.map((o: {method: string; path: string}) => o.method + ' ' + o.path), ...v03Only.map((o: {method: string; path: string}) => o.method + ' ' + o.path), 'OPTIONS /*'].sort());
   assert.equal(contract.operations.length, 21);
+  assert.deepEqual(v03Only.map((o: { id: string }) => o.id).sort(), ['oauthCallback', 'oauthStart']);
 });
 test('all core9 complete response fields retain legacy types and semantics on explicit SQL double', async t => {
   const db = new DoubleSql(); const app = buildApp(db, 'contract-double'); t.after(() => app.close()); const headers = { authorization: authorization() };

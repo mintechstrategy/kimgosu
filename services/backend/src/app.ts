@@ -3,6 +3,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import { createHash, randomBytes } from 'node:crypto';
 import { ApiError } from './security.ts';
 import { registerAuthRoutes } from './auth.ts';
+import { registerOAuthRoutes, OAUTH_PROVIDERS, OAUTH_STATE_TTL_SECONDS } from './oauth.ts';
 import { registerLedgerRoutes } from './ledger.ts';
 import { registerDevLoginRoutes } from './dev-login.ts';
 import type { AuthOptions } from './providers.ts';
@@ -90,7 +91,16 @@ export function buildApp(db: Sql, release: string, options: AuthOptions = {}) {
     const configured = options.providers ?? {};
     const identityReady = Boolean(options.identityKey && options.identityKey.length >= 32);
     const docsReady = requiredReadyKindsForGrant.every(kind => documents.rows.some(d => d.kind === kind && d.canConsent === true));
-    return { release, signupReady: docsReady && identityReady && Boolean(options.sms) && Object.keys(configured).length > 0, providers: (['kakao', 'naver', 'google'] as const).map(id => ({ id, enabled: Boolean(configured[id]) && identityReady, ...(!configured[id] || !identityReady ? { reason: 'PROVIDER_INTEGRATION_NOT_CONNECTED' } : {}) })),
+    // 정식 소셜 로그인 경로의 실제 연결 상태. 자격증명이 없으면 connected:false로
+    // 정직하게 노출하고, 해당 provider의 start는 503으로 거부된다.
+    const oauthProviders = OAUTH_PROVIDERS.map(id => ({
+      id,
+      connected: Boolean(configured[id]) && identityReady,
+      ...(!configured[id] || !identityReady ? { reason: 'PROVIDER_INTEGRATION_NOT_CONNECTED' } : {}),
+    }));
+    return { release, signupReady: docsReady && identityReady && Boolean(options.sms) && Object.keys(configured).length > 0,
+      oauth: { providers: oauthProviders, stateTtlSeconds: OAUTH_STATE_TTL_SECONDS, startPath: '/v1/auth/oauth/:provider/start', callbackPath: '/v1/auth/oauth/:provider/callback' },
+      providers: (['kakao', 'naver', 'google'] as const).map(id => ({ id, enabled: Boolean(configured[id]) && identityReady, ...(!configured[id] || !identityReady ? { reason: 'PROVIDER_INTEGRATION_NOT_CONNECTED' } : {}) })),
       sms: { available: Boolean(options.sms) && identityReady, codeDigits: 5, expiresInSeconds: 60, phonePattern: '^010[0-9]{8}$' },
       requiredFields: ['name', 'email'], minimumAgeAcknowledgement: 14, collectsGender: false, collectsAgeGroup: false,
       rejoinWaitDays: 30, retention: { purpose: '거래상대방 보호', startsAt: 'WITHDRAWAL_CONFIRMED', calendarYears: 1, rejoinResetsClock: false },
@@ -166,6 +176,7 @@ export function buildApp(db: Sql, release: string, options: AuthOptions = {}) {
     return { loggedOut: true };
   });
   registerAuthRoutes(app, db, authenticate, options);
+  registerOAuthRoutes(app, db, options);
   registerLedgerRoutes(app, db, authenticate);
   if (options.devLogin) registerDevLoginRoutes(app, db);
   return app;

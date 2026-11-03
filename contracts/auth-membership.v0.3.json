@@ -670,6 +670,54 @@
             },
             "policySnapshot": {
               "$ref": "#/definitions/PolicySnapshot"
+            },
+            "oauth": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "providers",
+                "stateTtlSeconds",
+                "startPath",
+                "callbackPath"
+              ],
+              "properties": {
+                "providers": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "id",
+                      "connected"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "enum": [
+                          "kakao",
+                          "naver",
+                          "apple"
+                        ]
+                      },
+                      "connected": {
+                        "type": "boolean"
+                      },
+                      "reason": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                },
+                "stateTtlSeconds": {
+                  "const": 600
+                },
+                "startPath": {
+                  "const": "/v1/auth/oauth/:provider/start"
+                },
+                "callbackPath": {
+                  "const": "/v1/auth/oauth/:provider/callback"
+                }
+              }
             }
           },
           "required": [
@@ -1114,6 +1162,276 @@
         "Uncertain result GET /me/consents and exact version policies before explicit retry; records give current per-kind history head, not operation receipt."
       ],
       "revisionField": "Optional for backward compatibility; v0.3 consumers must echo policySnapshot.policyRevision after explicit confirmation"
+    },
+    {
+      "id": "oauthStart",
+      "method": "POST",
+      "path": "/v1/auth/oauth/:provider/start",
+      "authentication": "none",
+      "paramsSchema": {
+        "type": "object",
+        "required": [
+          "provider"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "kakao",
+              "naver",
+              "apple"
+            ]
+          }
+        }
+      },
+      "requestSchema": null,
+      "responses": {
+        "200": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "provider",
+            "authorizationUrl",
+            "state",
+            "expiresInSeconds"
+          ],
+          "properties": {
+            "provider": {
+              "type": "string",
+              "enum": [
+                "kakao",
+                "naver",
+                "apple"
+              ]
+            },
+            "authorizationUrl": {
+              "type": "string",
+              "pattern": "^https://"
+            },
+            "state": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{43}$"
+            },
+            "expiresInSeconds": {
+              "const": 600
+            }
+          }
+        }
+      },
+      "errors": [
+        {
+          "status": 503,
+          "code": "PROVIDER_NOT_CONFIGURED",
+          "when": "no credential pair for that provider"
+        },
+        {
+          "status": 503,
+          "code": "IDENTITY_CONFIGURATION_REQUIRED",
+          "when": "KG_IDENTITY_HMAC_KEY missing or shorter than 32"
+        },
+        {
+          "status": 503,
+          "code": "PROVIDER_SCHEMA_PENDING",
+          "when": "oauth_flows provider CHECK does not yet include the provider"
+        },
+        {
+          "status": 400,
+          "code": "INVALID_REQUEST",
+          "when": "provider outside kakao/naver/apple"
+        }
+      ],
+      "source": "services/backend/src/oauth.ts",
+      "semantics": [
+        "State is a single-use random 43-char base64url token; only its sha256 digest is stored.",
+        "Flow expires 600s after issue (PLAN fixed TTL 10 minutes); the authorization URL is built by the provider adapter, never by the client.",
+        "No flow row is written when the provider is not configured or the identity key is missing.",
+        "kakao/naver/apple authorization-code flow is not PKCE-bound; oauth_flows.code_challenge holds a non-verifiable random placeholder because the v0.2 column is NOT NULL.",
+        "state/code/access token are never logged and never echoed in errors."
+      ]
+    },
+    {
+      "id": "oauthCallback",
+      "method": "GET",
+      "path": "/v1/auth/oauth/:provider/callback",
+      "authentication": "none",
+      "paramsSchema": {
+        "type": "object",
+        "required": [
+          "provider"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "kakao",
+              "naver",
+              "apple"
+            ]
+          }
+        }
+      },
+      "querySchema": {
+        "type": "object",
+        "required": [
+          "state"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "state": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{43}$"
+          },
+          "code": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "error": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        }
+      },
+      "requestSchema": null,
+      "responses": {
+        "200": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "outcome",
+            "provider",
+            "member",
+            "session"
+          ],
+          "properties": {
+            "outcome": {
+              "type": "string",
+              "enum": [
+                "AUTHENTICATED",
+                "REGISTERED"
+              ]
+            },
+            "provider": {
+              "type": "string",
+              "enum": [
+                "kakao",
+                "naver",
+                "apple"
+              ]
+            },
+            "member": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "customerNumber",
+                "status"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "customerNumber": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "ACTIVE",
+                    "RESTRICTED"
+                  ]
+                }
+              }
+            },
+            "session": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "accessToken",
+                "refreshToken",
+                "tokenType",
+                "expiresInSeconds"
+              ],
+              "properties": {
+                "accessToken": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9_-]{43}$"
+                },
+                "refreshToken": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9_-]{43}$"
+                },
+                "tokenType": {
+                  "const": "Bearer"
+                },
+                "expiresInSeconds": {
+                  "const": 900
+                }
+              }
+            }
+          }
+        }
+      },
+      "errors": [
+        {
+          "status": 400,
+          "code": "INVALID_REQUEST",
+          "when": "neither code nor error present"
+        },
+        {
+          "status": 401,
+          "code": "OAUTH_STATE_INVALID",
+          "when": "state unknown, expired, already consumed, or issued for another provider"
+        },
+        {
+          "status": 401,
+          "code": "SOCIAL_AUTH_CANCELLED",
+          "when": "provider redirected with error (user cancel/denial)"
+        },
+        {
+          "status": 401,
+          "code": "SOCIAL_AUTH_FAILED",
+          "when": "code exchange or id_token verification fails"
+        },
+        {
+          "status": 502,
+          "code": "PROVIDER_UNAVAILABLE",
+          "when": "provider HTTP endpoint unavailable"
+        },
+        {
+          "status": 409,
+          "code": "REJOIN_WAIT_REQUIRED",
+          "when": "same social identity previously withdrew and 30-day wait is running"
+        },
+        {
+          "status": 409,
+          "code": "PROFILE_INCOMPLETE",
+          "when": "provider returned no usable name/email; missing data is not fabricated"
+        },
+        {
+          "status": 503,
+          "code": "PROVIDER_NOT_CONFIGURED"
+        },
+        {
+          "status": 503,
+          "code": "IDENTITY_CONFIGURATION_REQUIRED"
+        },
+        {
+          "status": 503,
+          "code": "PROVIDER_SCHEMA_PENDING"
+        }
+      ],
+      "source": "services/backend/src/oauth.ts",
+      "semantics": [
+        "Member identity unit is (provider, providerUserId): the same person on a different SNS account is a different member with its own customer_no.",
+        "Relogin with the same (provider, providerUserId) never creates a second member; it issues a new independent session.",
+        "State is consumed before the code exchange, so a replay after any outcome (success, failure, cancel) is rejected with OAUTH_STATE_INVALID.",
+        "A state issued for one provider is not consumed by another provider callback.",
+        "Session issuance matches v0.2 session shape (15 min access, 30 day refresh, rotation family)."
+      ]
     }
   ],
   "metadataAuthority": {
