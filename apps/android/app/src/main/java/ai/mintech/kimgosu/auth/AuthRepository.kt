@@ -134,6 +134,10 @@ class AuthRepository(val transport: AuthTransport = MembershipHttp()) {
         return request(AuthRequestContext.PRIVATE, "POST", "/v1/auth/signup", body = body)
     }
     suspend fun logout(token: String) = request(AuthRequestContext.PRIVATE, "POST", "/v1/auth/logout", token)
+    // Temporary tester login (dev deployment only). The server issues the session;
+    // nothing about these calls creates a local-only identity.
+    suspend fun devAccounts() = request(AuthRequestContext.PUBLIC, "GET", "/v1/auth/dev/accounts")
+    suspend fun devLogin(slot: Int) = request(AuthRequestContext.PUBLIC, "POST", "/v1/auth/dev/login", body = JSONObject().put("slot", slot))
 }
 
 // v0.3 typed wire DTO; no local-clock eligibility, numeric ID or version sorting.
