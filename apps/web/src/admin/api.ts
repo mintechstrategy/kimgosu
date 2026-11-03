@@ -10,7 +10,7 @@ export type MemberStatus = 'ACTIVE' | 'RESTRICTED' | 'WITHDRAWN';
 
 export interface AdminMemberRow {
   id: string; customerNumber: string; name: string; nickname: string;
-  emailMasked: string | null; phoneMasked: null; status: MemberStatus;
+  emailMasked: string | null; phoneMasked: string | null; status: MemberStatus;
   expertActive: boolean; createdAt: string; withdrawnAt: string | null;
 }
 export interface AdminMemberDetailRow extends AdminMemberRow {
@@ -87,7 +87,7 @@ export function createAdminApi(baseUrl: string, transport: typeof fetch = fetch,
     if (!['ACTIVE', 'RESTRICTED', 'WITHDRAWN'].includes(status)) return invalid();
     return {
       id: str(d.id), customerNumber: str(d.customerNumber), name: str(d.name), nickname: str(d.nickname),
-      emailMasked: nullable(d.emailMasked), phoneMasked: null, status: status as MemberStatus,
+      emailMasked: nullable(d.emailMasked), phoneMasked: nullable(d.phoneMasked), status: status as MemberStatus,
       expertActive: d.expertActive === true, createdAt: str(d.createdAt), withdrawnAt: nullable(d.withdrawnAt),
     };
   };

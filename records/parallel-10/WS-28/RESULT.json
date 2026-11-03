@@ -1,0 +1,124 @@
+{
+  "ws": "WS-28",
+  "status": "DONE",
+  "summary": "마이그레이션 015로 members.phone_masked(010-****-1234 CHECK)를 신설하고, SMS 발송 시점에 마스킹 값만 저장→가입 시 회원 행으로 이관하도록 구현했으며, 관리자 목록·상세가 실제 phoneMasked를 반환하도록 고쳤다. 실 PostgreSQL에서 신규 통합 테스트 4종과 기존 admin/register/전체 통합 회귀, tsc, 계약 테스트, 웹 유닛 221종·빌드까지 실행해 모두 통과했다.",
+  "changedFiles": [
+    "services/backend/migrations/015_phone_masked.sql",
+    "services/backend/src/auth.ts",
+    "services/backend/src/admin.ts",
+    "services/backend/tests/phone-masked.integration.test.ts",
+    "services/backend/package.json",
+    "apps/web/src/admin/api.ts",
+    "apps/web/tests/unit/admin-api.test.ts"
+  ],
+  "verification": [
+    {
+      "check": "마이그레이션 015 신규 DB 적용 + 재실행 안전성",
+      "command": "createdb kgtest_ws28 후 psql -v ON_ERROR_STOP=1 -f migrations/001..011,015 ; 이어서 015 재실행",
+      "result": "PASS",
+      "evidence": "001~011 + 015 모두 exit 0. information_schema: members.phone_masked(text), registration_tickets.phone_masked(text) 존재. pg_constraint: members_phone_masked_format / registration_tickets_phone_masked_format = CHECK (phone_masked IS NULL OR phone_masked ~ '^010-\\*{4}-[0-9]{4}$'). 015 재실행 시 NOTICE 'column already exists, skipping' 2건만 발생하고 종료 코드 0(멱등)."
+    },
+    {
+      "check": "백엔드 타입 검사",
+      "command": "cd services/backend && npx tsc --noEmit",
+      "result": "PASS",
+      "evidence": "출력 없음, 종료 코드 0"
+    },
+    {
+      "check": "신규 실 PostgreSQL 통합 테스트(마스킹 CHECK·원문 컬럼 부재·저장 경로·관리자 응답)",
+      "command": "cd services/backend && KG_TEST_DATABASE_URL=postgres://postgres@127.0.0.1:55432/kgtest_ws28 node --test tests/phone-masked.integration.test.ts",
+      "result": "PASS",
+      "evidence": "tests 4 / pass 4 / fail 0 — ①CHECK: 원문 01012345678·010-1234-5678·010-****-567·010-****-56789·011-****-5678·010-***-5678·010-****-56a8 모두 SQLSTATE 23514(members_phone_masked_format)로 거부, '010-****-9999'와 NULL은 통과, 티켓 CHECK도 원문 거부 ②스키마: kg_membership의 phone/mobile/tel 관련 컬럼은 members.phone_digest(character), members.phone_masked(text), registration_tickets.phone_digest, registration_tickets.phone_masked, registration_tickets.phone_verified_at(timestamptz), sms_challenges.phone_digest 뿐이며 phone_digest는 전건 ^[0-9a-f]{64}$ ③실 가입 경로: POST /v1/auth/sms/send 후 티켓 phone_masked='010-****-5678', verify 후에도 유지되고 phone_digest만 채워짐, signup 200 후 회원 행 phone_masked='010-****-5678', to_jsonb(회원행)에 원문 '01012345678' 없음 ④관리자 GET /v1/admin/members·/v1/admin/members/:id가 phoneMasked='010-****-5678' 반환(응답 어디에도 원문 없음), 마스킹 값이 없는 기존 회원은 null"
+    },
+    {
+      "check": "기존 관리자 통합 테스트 회귀",
+      "command": "cd services/backend && KG_TEST_DATABASE_URL=postgres://postgres@127.0.0.1:55432/kgtest_ws28 node --test tests/admin.integration.test.ts",
+      "result": "PASS",
+      "evidence": "tests 6 / pass 6 / fail 0 — 비인증 401, CS·일반 403, 위조 헤더 403, 목록 마스킹·검색·페이지네이션, 상세, restrict/release 이력·감사 로그"
+    },
+    {
+      "check": "가입 경로 회귀(auth.ts 수정 영향)",
+      "command": "cd services/backend && KG_TEST_DATABASE_URL=postgres://postgres@127.0.0.1:55432/kgtest_ws28 node --test tests/register.integration.test.ts",
+      "result": "PASS",
+      "evidence": "tests 9 / pass 9 / fail 0 — DRAFT 차단, 미설정 409, 승격, 가입 성공, 중복 티켓 401, 마케팅 철회, 데이터 잔여 없음"
+    },
+    {
+      "check": "그 외 백엔드 통합 회귀",
+      "command": "KG_TEST_DATABASE_URL=postgres://postgres@127.0.0.1:55432/kgtest_ws28 node --test tests/<각 파일> 개별 실행",
+      "result": "PASS",
+      "evidence": "oauth 14/14, ledger 6/6, experts 10/10, quotes 7/7, chat 7/7, reviews 12/12, local-db 33/33 — 각 파일 개별 실행 모두 fail 0"
+    },
+    {
+      "check": "백엔드 유닛 테스트 전체",
+      "command": "cd services/backend && npm test",
+      "result": "PASS",
+      "evidence": "tests 23 / pass 23 / fail 0"
+    },
+    {
+      "check": "계약 테스트(라우트 응답 불변식 회귀)",
+      "command": "cd tests/contract && node --test contract.test.ts",
+      "result": "PASS",
+      "evidence": "tests 15 / pass 15 / fail 0 (admin 응답에 phoneMasked 문자열이 추가돼도 기존 계약 회귀 없음)"
+    },
+    {
+      "check": "웹 유닛 테스트(관리자 클라이언트 phoneMasked 전달 포함)",
+      "command": "cd apps/web && npm run test:unit",
+      "result": "PASS",
+      "evidence": "tests 221 / pass 221 / fail 0 — phoneMasked '010-****-5678'가 목록 row로 전달되는 단언 포함. 수정 전에는 fixtures에 phoneMasked가 없어 1건 실패(INVALID_RESPONSE)했고, 서버 계약에 맞춰 fixture와 파서를 함께 고쳤다."
+    },
+    {
+      "check": "웹 빌드",
+      "command": "cd apps/web && npm run build",
+      "result": "PASS",
+      "evidence": "vue-tsc 통과, vite build 성공 — dist/admin.html 0.60 kB, dist/assets/admin-*.js 18.65 kB"
+    },
+    {
+      "check": "테스트 데이터 정리 확인",
+      "command": "kgtest_ws28에서 members/principals/registration_tickets/sms_challenges/policy_documents 재조회",
+      "result": "PASS",
+      "evidence": "WS-28이 만든 행(nickname 형식검사·널검사·마스킹회원, version ws28-*, 티켓)은 0건. 남은 행(합성01/새닉네임, policy v1.0)은 다른 기존 스위트·005 시드가 남긴 것으로 WS-28 산출물이 아니다."
+    },
+    {
+      "check": "두 통합 스위트 동시 실행 시 DB 공유 간섭(관찰)",
+      "command": "node --test tests/phone-masked.integration.test.ts tests/admin.integration.test.ts (동시)",
+      "result": "FAIL",
+      "evidence": "한 프로세스에서 두 파일을 함께 돌리면 두 스위트가 같은 DB에 대해 before()에서 TRUNCATE하므로 서로의 행을 지워 3건이 실패했다(admin 'list masks PII', phone-masked 2건). 개별 실행과 package.json test:integration의 순차 실행(`&&`)에서는 모두 통과. 기존 admin 스위트도 같은 TRUNCATE 방식을 쓰므로 이는 WS-28 설계 결함이 아니라 '스위트당 전용 DB, 동시 실행 금지' 전제의 증거다."
+    },
+    {
+      "check": "schema-compatibility.mjs",
+      "command": "실행하지 않음",
+      "result": "NOT_RUN",
+      "evidence": "이 스크립트는 KG_SCHEMA_TEST_DATABASE='kg_release_ci' 고정 이름·특정 pgdata 경로·node v24.22.2를 요구하는 별도 릴리스 하네스라 이번 로컬 환경에서 실행하지 않았다. 결과를 추정해 통과로 쓰지 않는다."
+    },
+    {
+      "check": "원격 쓰기(git commit/push, gh, railway/cf) 및 배포 후 실제 거래 검증",
+      "command": "실행하지 않음(작업 지시로 금지)",
+      "result": "NOT_RUN",
+      "evidence": "커밋·push·PR·Railway/Cloudflare 쓰기를 수행하지 않았다. 따라서 dev-kimgosu/Cloudflare 경유 실제 거래와 Railway 개발 DB 적용은 미실시이며, 로컬 PostgreSQL 검증을 배포 증거로 대체하지 않는다."
+    }
+  ],
+  "contractChanges": [],
+  "migrations": [
+    "services/backend/migrations/015_phone_masked.sql"
+  ],
+  "open": [
+    "PLAN은 015에 members.phone_masked만 명시했으나, 원문을 받는 지점(POST /v1/auth/sms/send)과 가입 시점 사이에 마스킹 값을 전달할 곳이 없어 registration_tickets.phone_masked 컬럼을 같은 015 안에 함께 추가했다(동일 CHECK). 원문은 저장하지 않고 티켓→회원으로 값만 이관한다. 이 확장이 허용 범위인지 오케스트레이터 확인 필요. 다른 마이그레이션 번호는 만들지 않았다.",
+    "전화번호를 '받는' 다른 지점(향후 프로필 수정·재가입·관리자 수동 입력 등)은 아직 없다. 새 입력 경로가 생기면 maskPhone과 동일 규칙으로 마스킹 저장을 연결해야 하며, 원문 컬럼은 여전히 만들지 않는다.",
+    "관리자 웹 화면(AdminApp.vue)에는 아직 전화번호 표시 항목이 없다. 이번에는 API 클라이언트가 phoneMasked를 버리지 않고 전달하도록만 고쳤고(타입 string|null), 화면 노출 여부·표기 위치는 UIUX/오케스트레이터 결정이 필요하다.",
+    "admin 라우트 응답 스키마(contracts/)에 phoneMasked가 등재돼 있지 않다. 계약 정본 등재는 WS-27/오케스트레이터 범위이며 이번 작업에서 계약 파일을 수정하지 않았다."
+  ],
+  "risks": [
+    "phone_masked는 표시용이다. 조회·중복 판정의 유일한 키는 여전히 phone_digest(MAC)이며, 마스킹 값으로는 동일 번호 여부를 판정할 수 없다(의도).",
+    "회원 탈퇴 시 phone_masked를 지우지 않는다. PLAN에 탈퇴 처리 규칙이 없어 임의로 삭제·보존 정책을 만들지 않았다. 보존기간·파기 규칙은 정책 결정 사항(OPEN).",
+    "sms/send가 전화번호를 바꿀 때마다 티켓의 phone_masked를 새 값으로 덮어쓴다. 이전 번호의 마스킹 값은 남지 않으며, 검증된 번호의 digest와 마스킹 값이 항상 같은 요청에서 함께 쓰이므로 불일치가 생기지 않는다.",
+    "가입 트랜잭션에서 CHECK 위반이 나면 signup 전체가 500이 아니라 SQL 오류로 실패한다. phone_masked는 서버가 생성하는 값이라 정상 경로에서는 발생하지 않지만, 향후 외부 입력으로 마스킹 값을 받게 되면 Fastify 스키마 검증을 먼저 두어야 한다.",
+    "kgtest_ws28은 이번 검증용 데이터베이스다. 기존 kgtest/kgtest_ws15 등 다른 스위트 DB는 건드리지 않았고, 운영·Railway DB에는 아무 것도 적용하지 않았다."
+  ],
+  "next": [
+    "오케스트레이터가 이 작업트리에서 `npx tsc --noEmit`, `npm test`, `tests/contract` 계약 테스트, `tests/phone-masked.integration.test.ts`, `tests/admin.integration.test.ts`, `apps/web npm run test:unit && npm run build`를 다시 실행해 병합 판정.",
+    "재실행 시 각 통합 스위트를 전용 DB(예: kgtest_ws28)에서 순차 실행할 것 — 같은 DB에 두 스위트를 동시에 돌리면 TRUNCATE 간섭으로 실패한다.",
+    "015를 Railway 개발 DB에 적용할지 결정. 적용 시 members/registration_tickets ADD COLUMN(비파괴)·CHECK 신설이며 기존 행은 null로 유지된다. 운영 반영은 별도 승인.",
+    "registration_tickets.phone_masked 추가가 PLAN 범위를 벗어난 확장인지 확인하고, 계약(auth-membership v0.3) 또는 WS-27 계약 파일에 phoneMasked 등재 여부 결정.",
+    "관리자 콘솔 화면에 전화번호 표시를 넣을지 UIUX와 결정."
+  ]
+}

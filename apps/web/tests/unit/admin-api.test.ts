@@ -26,7 +26,7 @@ function client(handler: (call: Call) => Response | Promise<Response>) {
 
 const member = {
   id: '11111111-1111-4111-8111-111111111111', customerNumber: '12', name: '김고수', nickname: '고수',
-  emailMasked: 'ki***@dev.invalid', status: 'ACTIVE', expertActive: true,
+  emailMasked: 'ki***@dev.invalid', phoneMasked: '010-****-5678', status: 'ACTIVE', expertActive: true,
   createdAt: '2026-11-03T00:00:00.000Z', withdrawnAt: null,
 };
 
@@ -99,6 +99,7 @@ test('WS19 list and detail responses are validated, not trusted', async () => {
   ok.api.setToken(TOKEN);
   const page = await ok.api.members({});
   assert.equal(page.members[0]!.emailMasked, 'ki***@dev.invalid');
+  assert.equal(page.members[0]!.phoneMasked, '010-****-5678', 'the masked phone from the API reaches the console row');
   assert.equal(Object.hasOwn(page.members[0]!, 'email'), false, 'the list row type carries no raw email');
 
   const detail = await ok.api.member(member.id);

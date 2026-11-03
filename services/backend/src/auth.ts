@@ -7,6 +7,13 @@ import { currentDocumentsSelect, requiredGrantKinds, requiredReadyKindsForGrant,
 export type Authenticate = (request: FastifyRequest, reply: FastifyReply) => Promise<Row | null>;
 const body = (properties: Record<string, unknown>, required = Object.keys(properties)) => ({ body: { type: 'object', additionalProperties: false, properties, required } });
 const string = (minLength: number, maxLength: number) => ({ type: 'string', minLength, maxLength });
+/**
+ * WS-28: the only phone-derived value that is ever persisted. Input is the
+ * schema-validated `010[0-9]{8}` form, so the result is always `010-****-1234`.
+ * The middle four digits are dropped here and never stored.
+ */
+const maskPhone = (phone: string) => `${phone.slice(0, 3)}-****-${phone.slice(7)}`;
+
 const documentInput = consentInputSchema;
 export async function issueSession(sql: Sql, memberId: unknown, family?: unknown) {
   const accessToken = opaque(); const refreshToken = opaque();
@@ -70,7 +77,7 @@ export async function finalizeRegistration(sql: Sql, input: RegistrationInput) {
   rejectWaiting(phone);
   const restricted = (await sql.query(`SELECT id FROM kg_membership.restrictions WHERE principal_id=$1 AND revoked_at IS NULL AND starts_at<=now() AND (ends_at IS NULL OR ends_at>now())`, [principalId])).rows.length > 0;
   const memberId = randomUUID();
-  await sql.query(`INSERT INTO kg_membership.members(id,principal_id,name,email,nickname,status,expert_active,phone_digest,age14_confirmed_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,now())`, [memberId, principalId, input.name.trim(), input.email, '고수' + opaque().slice(0, 8).replace(/[-_]/g, 'A'), 'ACTIVE', input.expertRequested && !restricted, t.phone_digest]);
+  await sql.query(`INSERT INTO kg_membership.members(id,principal_id,name,email,nickname,status,expert_active,phone_digest,age14_confirmed_at,phone_masked) VALUES($1,$2,$3,$4,$5,$6,$7,$8,now(),$9)`, [memberId, principalId, input.name.trim(), input.email, '고수' + opaque().slice(0, 8).replace(/[-_]/g, 'A'), 'ACTIVE', input.expertRequested && !restricted, t.phone_digest, t.phone_masked ?? null]);
   await recordGrants(sql, memberId, input.consents, input.expectedPolicyRevision);
   await sql.query(`INSERT INTO kg_membership.notification_preferences(member_id) VALUES($1)`, [memberId]);
   await sql.query(`UPDATE kg_membership.registration_tickets SET consumed_at=now() WHERE ticket_digest=$1`, [t.ticket_digest]);
@@ -150,8 +157,11 @@ export function registerAuthRoutes(app: FastifyInstance, db: Sql, authenticate: 
       const existing = await sql.query(`SELECT id FROM kg_membership.members WHERE phone_digest=$1 AND withdrawn_at IS NULL`, [pd]);
       if (existing.rows[0]) throw new ApiError(409, 'PHONE_ALREADY_REGISTERED');
       await sql.query(`UPDATE kg_membership.sms_challenges SET invalidated_at=now() WHERE ticket_digest=$1 AND invalidated_at IS NULL`, [t.ticket_digest]);
-      await sql.query(`UPDATE kg_membership.registration_tickets SET phone_digest=NULL,phone_verified_at=NULL WHERE ticket_digest=$1`, [t.ticket_digest]);
+      await sql.query(`UPDATE kg_membership.registration_tickets SET phone_digest=NULL,phone_masked=NULL,phone_verified_at=NULL WHERE ticket_digest=$1`, [t.ticket_digest]);
       const id = randomUUID(); const code = String(randomInt(0, 100000)).padStart(5, '0');
+      // WS-28: keep only the masked form of the number this ticket is being verified for.
+      await sql.query(`UPDATE kg_membership.registration_tickets SET phone_masked=$2 WHERE ticket_digest=$1`, [t.ticket_digest, maskPhone(req.body.phone)]);
+
       const timing = (await sql.query(`INSERT INTO kg_membership.sms_challenges(id,ticket_digest,phone_digest,code_mac,expires_at) VALUES($1,$2,$3,$4,now()+interval '60 seconds') RETURNING now() AS "serverTime",expires_at AS "expiresAt",created_at+interval '60 seconds' AS "retryAfter"`, [id, t.ticket_digest, pd, mac(needKey(), 'sms:' + id, code)])).rows[0];
       try { await sms.send(req.body.phone, code); } catch { throw new ApiError(502, 'SMS_DELIVERY_FAILED'); }
       return { challengeId: id, expiresInSeconds: 60, codeDigits: 5, serverTime: new Date(String(timing.serverTime)).toISOString(), expiresAt: new Date(String(timing.expiresAt)).toISOString(), retryAfter: new Date(String(timing.retryAfter)).toISOString() };
