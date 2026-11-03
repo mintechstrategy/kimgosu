@@ -19,7 +19,7 @@ struct KGAuthView: View {
                         .frame(width: 44, height: 44)
                 }.accessibilityLabel("닫기 또는 이전 화면")
                 kgCopy(surface.title, size: 18, bold: true).frame(maxWidth: .infinity)
-                Color.clear.frame(width: 44, height: 44)
+                environmentMarker
             }.padding(.horizontal, 20)
             if state.preview {
                 kgCopy("개발용 UI 예시 · 실제 인증·동의·거래 아님", size: 12)
@@ -51,6 +51,22 @@ struct KGAuthView: View {
         case "member": member
         default: status
         }
+    }
+    // 개발 빌드에서만 44pt 슬롯 안쪽에 환경 표시를 그린다. 운영 빌드는 기존과 같은 빈 슬롯이므로 제목 위치가 바뀌지 않는다.
+    @ViewBuilder private var environmentMarker: some View {
+        #if DEBUG
+        if KGEnvironment.isConfigured && !KGEnvironment.isProduction {
+            kgCopy(KGEnvironment.label, size: 10, bold: true, color: kgMuted)
+                .padding(.horizontal, 6).frame(minHeight: 18)
+                .background(kgSoft, in: Capsule()).overlay(Capsule().stroke(kgBorder))
+                .frame(width: 44, height: 44, alignment: .trailing)
+                .accessibilityElement().accessibilityLabel("개발 서버 연결")
+        } else {
+            Color.clear.frame(width: 44, height: 44)
+        }
+        #else
+        Color.clear.frame(width: 44, height: 44)
+        #endif
     }
     private func send(_ action: KGAuthAction, _ key: String = "", _ value: String = "") { onEvent(KGAuthEvent(action: action, key: key, value: value)) }
     private func heading(_ text: String) -> some View { kgCopy(text, size: 20, bold: true).accessibilityAddTraits(.isHeader) }

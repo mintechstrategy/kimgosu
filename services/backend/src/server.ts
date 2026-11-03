@@ -28,6 +28,9 @@ const app = buildApp(postgresSql(pool), release, {
   providers: configuredProviders(process.env),
   identityKey: process.env.KG_IDENTITY_HMAC_KEY,
   corsOrigins: (process.env.KG_CORS_LOCAL_ORIGINS ?? '').split(',').filter(Boolean),
+  // Temporary tester login: dev deployment only. A production boot cannot turn
+  // this on even if the flag leaks into the environment.
+  devLogin: process.env.KG_DEV_LOGIN === '1' && process.env.RAILWAY_ENVIRONMENT_NAME === 'dev',
   // No SMS provider is selected/approved. No adapter is wired and no SMS is sent.
 });
 await app.listen({ host: '0.0.0.0', port: Number(process.env.PORT ?? 8080) });

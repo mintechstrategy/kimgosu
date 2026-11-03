@@ -89,7 +89,7 @@ try {
   } catch { failed = true; result.cleanup = 'BLOCKED'; result.namespace = store.namespace; result.owner = store.owner; }
   result.finishedAt = new Date().toISOString();
   if (failed) result.status = 'FAIL';
-  await writeFile(new URL('../../../../engineering/env-resolve-02/PUBLIC-RESULT.json', import.meta.url), JSON.stringify(result, null, 2) + '\n');
+  await writeFile(new URL('../../../../records/engineering/env-resolve-02/PUBLIC-RESULT.json', import.meta.url), JSON.stringify(result, null, 2) + '\n');
   console.log(JSON.stringify(result, null, 2));
 }
 if (failed) process.exitCode = 1;

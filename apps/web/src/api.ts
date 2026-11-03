@@ -195,6 +195,7 @@ export const safeMessage = (e: unknown): string => {
   if (privateFailure(e) === 'reconsent') return '필수 문서의 재동의가 필요합니다. 이용 제한이나 세션 만료가 아닙니다. 약관 및 정책을 확인해주세요. 현재 웹 재동의 저장 기능은 준비 중이며 이전 요청은 자동 실행하지 않습니다.';
   if (e.status === 409) return e.code === 'MARKETING_CONSENT_REQUIRED' ? '광고 알림을 켜려면 별도 마케팅 동의가 필요합니다.' : '다른 곳에서 설정이 변경됐습니다. 최신 설정을 확인한 후 다시 저장해주세요.';
   if (e.status === 404) return '문서를 준비 중이거나 현재 API가 아직 제공되지 않습니다.';
+  if (e.code === 'CONFIG_UNAVAILABLE' || e.code === 'CONFIG_PENDING') return '회원 서비스 준비 상태를 확인하지 못했습니다. 서비스 상태 다시 확인을 누른 뒤 다시 시도해주세요.';
   if (e.code === 'BROWSER_AUTH_NOT_CONFIGURED') return '소셜 로그인을 준비 중입니다. 제공자 연결과 웹 인증 설정이 완료된 뒤 이용할 수 있습니다.';
   if (e.code === 'TIMEOUT') return '응답 시간이 초과됐습니다. 저장 결과가 불확실하면 최신 상태부터 확인해주세요.';
   if (e.code === 'INVALID_RESPONSE') return '서비스 응답을 확인할 수 없습니다. 새 회원 API 연결을 확인한 후 다시 시도해주세요.';

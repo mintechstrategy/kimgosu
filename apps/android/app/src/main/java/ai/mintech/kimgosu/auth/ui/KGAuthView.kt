@@ -191,16 +191,18 @@ private val NotificationLabels = listOf("advertising" to "광고 알림", "chat"
     NotificationLabels.forEach { (key, title) ->
         Row(Modifier.fillMaxWidth().heightIn(min = 56.dp), verticalAlignment = Alignment.CenterVertically) {
             Copy(title, bold = true, modifier = Modifier.weight(1f))
-            Switch(s.notifications[key] == true, { emit(AuthEvent(AuthAction.CHANGE_NOTIFICATION, key, it.toString())) }, enabled = !s.busy && (key != "advertising" || s.marketingConsented),
+            // An absent preferences payload (failed fetch) must not render as "all off" or accept a PATCH.
+            Switch(s.notifications[key] == true, { emit(AuthEvent(AuthAction.CHANGE_NOTIFICATION, key, it.toString())) }, enabled = !s.busy && s.notifications.isNotEmpty() && (key != "advertising" || s.marketingConsented),
                 colors = SwitchDefaults.colors(checkedThumbColor = Navy, checkedTrackColor = Lime, uncheckedThumbColor = Navy, uncheckedTrackColor = Color(0xFFDDE5EE), uncheckedBorderColor = Muted), modifier = Modifier.semantics { contentDescription = title })
         }
     }
-    Panel("마케팅 정보 수신 동의: ${if (s.marketingConsented) "동의" else "미동의"}\n광고알림 OFF만으로 동의가 철회되지 않습니다. 철회는 아래 동의 내역에서 별도로 진행하세요.")
+    if (s.notifications.isNotEmpty()) Panel("마케팅 정보 수신 동의: ${if (s.marketingConsented) "동의" else "미동의"}\n광고알림 OFF만으로 동의가 철회되지 않습니다. 철회는 아래 동의 내역에서 별도로 진행하세요.")
     Action("동의 내역·철회", event = AuthEvent(AuthAction.OPEN, AuthScreen.CONSENT_HISTORY.name), onEvent = emit)
 }
 @Composable private fun History(s: AuthState, emit: (AuthEvent) -> Unit) {
     Heading("내 동의 내역"); Copy(AuthSurfaces.getValue(s.screen).body)
-    if (s.records.isEmpty()) Panel("표시할 동의 내역이 없습니다.")
+    // Only an actually loaded, empty consent list may read as "no records"; a failed fetch already shows its error.
+    if (s.records.isEmpty() && s.error.isEmpty() && !s.busy) Panel("표시할 동의 내역이 없습니다.")
     s.records.forEach { Panel("${it.title}\n버전 ${it.version} · ${it.status}\n${it.recordedAt}") }
     Action("마케팅 동의 철회", s.marketingConsented && !s.busy, event = AuthEvent(AuthAction.OPEN, AuthScreen.CONSENT_WITHDRAW_CONFIRM.name), onEvent = emit)
     Action("마케팅 동의문 열람", event = AuthEvent(AuthAction.OPEN_DOCUMENT, AuthDocumentKind.MARKETING.name), onEvent = emit)

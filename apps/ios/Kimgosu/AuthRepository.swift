@@ -3,6 +3,30 @@ import Security
 import CryptoKit
 
 enum KGAuthRequestContext { case unknown, `public`, `private` }
+
+/// Debug/Release 서버 구분은 빌드 설정의 `KG_API_BASE_URL`(→ Info.plist `KGAPIBaseURL`) 하나로만 정한다.
+/// 코드에 호스트를 하드코딩하지 않으며, 값이 없거나 형식이 틀리면 요청을 만들지 않는다(fail-closed).
+enum KGEnvironment {
+    static let apiBaseURL: String = {
+        guard let raw = Bundle.main.object(forInfoDictionaryKey: "KGAPIBaseURL") as? String else { return "" }
+        var value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        while value.hasSuffix("/") { value.removeLast() }
+        guard let url = URL(string: value), url.scheme == "https", let host = url.host, host.contains("."),
+              url.user == nil, url.password == nil, url.port == nil, url.query == nil,
+              url.fragment == nil, url.path.isEmpty else { return "" }
+        return value
+    }()
+    /// 환경 이름도 빌드 설정(`KG_ENVIRONMENT` → Info.plist `KGEnvironment`)에서만 온다. 값이 없거나 알 수 없으면 운영으로 보지 않는다.
+    static let name: String = {
+        guard let raw = Bundle.main.object(forInfoDictionaryKey: "KGEnvironment") as? String else { return "" }
+        let value = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return ["dev", "prod"].contains(value) ? value : ""
+    }()
+    static var isConfigured: Bool { !apiBaseURL.isEmpty && !name.isEmpty }
+    static var isProduction: Bool { name == "prod" }
+    static var label: String { isProduction ? "운영" : "개발" }
+    static func configurationError() -> KGAuthAPIError { KGAuthAPIError(status: 0, code: "API_BASE_URL_UNAVAILABLE") }
+}
 struct KGAuthAPIError: Error {
     let status: Int
     let code: String
@@ -73,8 +97,8 @@ final class KGMembershipHTTP: KGAuthTransport {
     }
     deinit { session.invalidateAndCancel() }
     func request(_ method: String, _ path: String, token: String? = nil, body: [String: Any]? = nil) async throws -> [String: Any] {
-        guard path.hasPrefix("/v1/") || path == "/health",
-              let url = URL(string: "https://api-dev-kimgosu.mintech.ai" + path) else { throw KGAuthAPIError(status: 0, code: "INVALID_PATH") }
+        guard path.hasPrefix("/v1/") || path == "/health" else { throw KGAuthAPIError(status: 0, code: "INVALID_PATH") }
+        guard KGEnvironment.isConfigured, let url = URL(string: KGEnvironment.apiBaseURL + path) else { throw KGEnvironment.configurationError() }
         var request = URLRequest(url: url); request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("no-store", forHTTPHeaderField: "Cache-Control")

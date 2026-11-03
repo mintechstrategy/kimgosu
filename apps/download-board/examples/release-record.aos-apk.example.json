@@ -1,0 +1,29 @@
+{
+  "_example": "예시 레코드 템플릿입니다. 실제 게시에는 쓰지 마세요. 각 값은 실제 최종빌드/QA 증거 값으로 바꿉니다. 경로는 발행자 로컬 경로이며 site/나 공개 releases.json에 복사되지 않습니다.",
+  "_flow": "QA PASS·부모 증거 수용 → 동일 소스로 최종 APK 빌드 → 이 레코드 작성 → python3 publish_release.py --release-record <레코드> [--deploy]",
+  "_notes": "artifact는 QA 이후에 만들어진 최종 파일이어야 하고(qaCompletedAt < builtAt, 파일 mtime >= qaCompletedAt), 25MiB를 넘을 수 없습니다. version/build는 APK aapt2 badging 값과 정확히 같아야 합니다. 같은 version+build는 다른 바이트로 다시 게시할 수 없습니다(게시 시 자동 거부).",
+  "stage": "post-qa-final",
+  "qaAccepted": true,
+  "candidate": "candidate-YYYYMMDD-NN",
+  "qaCompletedAt": "2026-11-05T10:20:00+09:00",
+  "builtAt": "2026-11-05T11:05:00+09:00",
+  "artifact": "/absolute/path/to/kimgosu-aos-0.2.0-b2.apk",
+  "artifactSHA256": "REPLACE_WITH_SHA256_OF_ARTIFACT",
+  "platform": "aos",
+  "kind": "android-apk",
+  "version": "0.2.0",
+  "build": "2",
+  "notes": [
+    "사용자에게 보이는 변경사항을 한 줄씩 적습니다",
+    "로그·오류 문구·내부 경로·개인정보는 넣지 않습니다"
+  ],
+  "aapt2": "/absolute/path/to/aapt2",
+  "qaResult": {
+    "path": "/absolute/path/to/qa-verdict.json",
+    "sha256": "REPLACE_WITH_SHA256_OF_QA_VERDICT"
+  },
+  "sourceManifest": {
+    "path": "/absolute/path/to/source-manifest.json",
+    "sha256": "REPLACE_WITH_SHA256_OF_SOURCE_MANIFEST"
+  }
+}

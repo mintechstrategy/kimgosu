@@ -146,6 +146,10 @@ class MainActivity : ComponentActivity() {
         val verify = BuildConfig.DEBUG && intent.getBooleanExtra("verify_api", false)
         val offlineTransport = BuildConfig.DEBUG && intent.getBooleanExtra("offline_transport", false)
         setContent {
+            // Social providers are not connected yet, so development builds start on
+            // the temporary tester login. Production builds never see it.
+            val devLoginRequired = remember { BuildConfig.API_BASE_URL.contains("dev-") }
+            var devReady by remember { mutableStateOf(!devLoginRequired) }
             val fonts = remember { FontFamily(Font("regular.otf", assets), Font("semibold.otf", assets, FontWeight.SemiBold), Font("bold.otf", assets, FontWeight.Bold)) }
             MaterialTheme(colorScheme = lightColorScheme(primary = Navy, onPrimary = Color.White, surface = Color.White, onSurface = Navy)) {
                 CompositionLocalProvider(LocalBrandFont provides fonts) {
@@ -164,6 +168,8 @@ class MainActivity : ComponentActivity() {
                             withFrameNanos { }
                             model.prepare(hold, verify, offlineTransport)
                         }
+                    } else if (!devReady) {
+                        DevTestLoginGate { devReady = true }
                     } else model.home?.let { home ->
                         // The root screen has no splash entry in its back stack.
                         BackHandler { moveTaskToBack(true) }

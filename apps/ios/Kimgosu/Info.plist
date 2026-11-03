@@ -3,7 +3,11 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleDisplayName</key>
-	<string>김고수</string>
+	<string>$(KG_DISPLAY_NAME)</string>
+	<key>KGAPIBaseURL</key>
+	<string>$(KG_API_BASE_URL)</string>
+	<key>KGEnvironment</key>
+	<string>$(KG_ENVIRONMENT)</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>

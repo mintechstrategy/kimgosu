@@ -16,6 +16,9 @@ ROOT=Path(__file__).resolve().parents[2]
 SITE=Path(__file__).resolve().parent/'site'
 PROJECT='kimgosu-app-downloads'
 ORIGIN='https://appdownload.mintech.ai'
+# Every final-build record must carry these fields; examples/release-record.aos-apk.example.json is the template.
+REQUIRED_FIELDS=('stage','qaAccepted','candidate','qaCompletedAt','builtAt','artifact','artifactSHA256',
+                 'platform','kind','version','build','notes','qaResult','sourceManifest')
 def digest(p): return hashlib.sha256(p.read_bytes()).hexdigest()
 def load(p): return json.loads(Path(p).read_text())
 def timestamp(text):
@@ -25,6 +28,8 @@ def timestamp(text):
 
 def prepare(record_path):
     r=load(record_path)
+    missing=[k for k in REQUIRED_FIELDS if k not in r]
+    if missing: raise ValueError('Release record is missing required fields: '+', '.join(missing))
     notes=r.get('notes')
     if not isinstance(notes,list) or not notes or any(not isinstance(n,str) or not n.strip() for n in notes):
         raise ValueError('At least one non-empty change note is required')
@@ -70,14 +75,24 @@ def prepare(record_path):
     else: raise ValueError('Unsupported platform/kind combination')
     sha=digest(artifact);filename=f'kimgosu-{platform}-{version}-b{build}-{sha[:12]}{artifact.suffix}'
     relative=f'downloads/v{version}/{filename}';target=SITE/relative;target.parent.mkdir(parents=True,exist_ok=True)
+    data=load(SITE/'releases.json')
+    published=[x for x in data.get('releases',[]) if x.get('platform')==platform and x.get('status')=='published']
+    # Accumulation is keyed on platform+version+build, not on the hash-bearing file name:
+    # a filename always embeds the hash, so a path lookup can never catch a re-publish.
+    same=[x for x in published if x.get('version')==version and str(x.get('build'))==build]
+    if same:
+        if any(x.get('sha256')!=sha for x in same):
+            raise ValueError(f'{platform} {version} build {build} is already published with a different artifact; bump version/build instead of replacing it')
+        entry=same[0]
+        if not target.exists(): shutil.copyfile(artifact,target)
+        elif digest(target)!=sha: raise ValueError('Published file was modified: '+relative)
+        return entry
+    older=[x for x in published if x.get('version')==version and str(x.get('build','')).isdigit() and int(x['build'])>int(build)]
+    if older: raise ValueError(f'{platform} {version} build {older[0]["build"]} is already published; refusing to add older build {build}')
     if target.exists() and digest(target)!=sha: raise ValueError('Never overwrite a published version')
     if not target.exists(): shutil.copyfile(artifact,target)
-    data=load(SITE/'releases.json');existing=next((x for x in data['releases'] if x['file']=='/'+relative),None)
     entry={'platform':platform,'kind':kind,'kindLabel':label,'version':version,'build':build,'builtAt':r['builtAt'],'publishedAt':datetime.now(timezone.utc).isoformat(),'status':'published','qaStatus':'PASS','file':'/'+relative,'bytes':artifact.stat().st_size,'sha256':sha,'installationNotice':notice,'notes':r.get('notes',[])}
-    if existing:
-        if existing['sha256']!=sha: raise ValueError('Conflicting release')
-        entry=existing
-    else: data['releases'].append(entry)
+    data['releases'].append(entry)
     data['updatedAt']=datetime.now(timezone.utc).isoformat();data.pop('message',None)
     (SITE/'releases.json').write_text(json.dumps(data,ensure_ascii=False,indent=2))
     return entry

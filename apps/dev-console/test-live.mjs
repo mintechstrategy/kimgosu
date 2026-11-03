@@ -5,7 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { chromium } from 'playwright';
 import { RailwayStore } from '../../services/samples/railway-db/src/store.ts';
 const root = new URL('../../', import.meta.url);
-const evidence = new URL('engineering/env-resolve-02/', root);
+const evidence = new URL('records/engineering/env-resolve-02/', root);
 const session = JSON.parse(await readFile(`${homedir()}/.hermes/profiles/project-lead/cache/scratch/kg-env-sample-01/session.json`, 'utf8'));
 const githubSHA = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
 const store = new RailwayStore(session.runId, session.ownerId);

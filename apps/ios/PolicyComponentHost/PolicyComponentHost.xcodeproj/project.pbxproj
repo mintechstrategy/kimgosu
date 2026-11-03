@@ -53,7 +53,7 @@ D00000000000000000000002 = {isa = PBXBuildFile; fileRef = D100000000000000000000
 		B10000000000000000000006 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Kimgosu/AuthHost.swift; sourceTree = "<group>"; };
 		C10000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Tests/CoreRepairChecks.swift; sourceTree = "<group>"; };
 D10000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Tests/PolicySnapshotChecks.swift; sourceTree = "<group>"; };
-D10000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = folder; path = "../../../engineering/auth-v03-app-01/test-inputs"; sourceTree = "<group>"; };
+D10000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = folder; path = "../../../records/engineering/auth-v03-app-01/test-inputs"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */

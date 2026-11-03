@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { makeFixture } from './fixture.mjs';
 import { snapshotFixture } from './snapshot-fixture.mjs';
 const root=fileURLToPath(new URL('../../',import.meta.url));
-const out=process.env.WEB_REPAIR_EVIDENCE_DIR || fileURLToPath(new URL('../../../../engineering/auth-core-repair-01/web/repair-browser/',import.meta.url));
+const out=process.env.WEB_REPAIR_EVIDENCE_DIR || fileURLToPath(new URL('../../../../records/engineering/auth-core-repair-01/web/repair-browser/',import.meta.url));
 mkdirSync(out,{recursive:true});
 process.env.PLAYWRIGHT_BROWSERS_PATH=root+'.cache/ms-playwright';
 const {chromium}=await import('playwright');

@@ -2,20 +2,20 @@
 
 ## 백엔드 비즈니스 로직 정본 원칙 — 사용자 확정
 - 앞으로 앱/웹의 비즈니스 로직은 가급적 백엔드에서 최종 판단·집행한다. 클라이언트는 표시·입력보조·내비게이션/취소·복구·OS 연동·보안 로컬저장을 맡고, 직접 API 호출도 서버가 독립 재검증한다. 클라이언트가 보낸 상태·금액·동의가능/verified 플래그는 권한 근거가 아니다.
-- 정책값·제약·허용행동·기한/버전과 호환·캐시·오래된 클라이언트의 상세 정본은 `engineering/BACKEND-AUTHORITY.md`다. 원칙 채택과 기존 코드 준수 검수/수정은 별개다. 정책·새 기능/법무 결정·광범위 리팩터링 권한을 추가하지 않으며 API/플랫폼 변화에는 앱 배포가 여전히 필요할 수 있다.
+- 정책값·제약·허용행동·기한/버전과 호환·캐시·오래된 클라이언트의 상세 정본은 `records/engineering/BACKEND-AUTHORITY.md`다. 원칙 채택과 기존 코드 준수 검수/수정은 별개다. 정책·새 기능/법무 결정·광범위 리팩터링 권한을 추가하지 않으며 API/플랫폼 변화에는 앱 배포가 여전히 필요할 수 있다.
 
 ## 2026-10-31 최신 3트랙 병행 구현 지시
-- 사용자1397: 앱 프론트1(AOS+iOS), 웹 프론트1, Railway 백엔드1의 native 서브에이전트 세 개를 실제 동시 구현시킨다. project-lead 부모는 인터페이스/계약·공통파일·배포/결과회수·기존 uiux 대응QA를 총괄한다. 같은 프로필 CLI 독립복제는 금지하며 역할/모델설정은 유지한다. 현재 범위와 쓰기 소유권은 engineering/auth-three-tracks-01/ORCHESTRATION.md, API정본 contracts/auth-membership.v0.1.json. 병행 한도나 카드수를 실제실행수로 보고하지 않는다.
+- 사용자1397: 앱 프론트1(AOS+iOS), 웹 프론트1, Railway 백엔드1의 native 서브에이전트 세 개를 실제 동시 구현시킨다. project-lead 부모는 인터페이스/계약·공통파일·배포/결과회수·기존 uiux 대응QA를 총괄한다. 같은 프로필 CLI 독립복제는 금지하며 역할/모델설정은 유지한다. 현재 범위와 쓰기 소유권은 records/engineering/auth-three-tracks-01/ORCHESTRATION.md, API정본 contracts/auth-membership.v0.1.json. 병행 한도나 카드수를 실제실행수로 보고하지 않는다.
 
 ## 2026-10-31 30분 진행점검·중단 복구/재개 배치
-- 사용자 message1388에 따라 cron 1e1253eb2436을 현재 재개발 기준으로 교체·활성화했다. 30분마다 실제 카드/소유자/산출물·검증을 점검하고 중단 시 승인된 비위험 원인을 해소한 뒤 실제 다음 개발/QA 명령·결과를 남긴다. 점검성공/문서상 재개를 개발재개로 부르지 않는다. 제어 정본 engineering/progress-watchdog/CONTROL.json, 작업/대응QA tasks/KG-PROGRESS-WATCH-30*.md. 정상진행 무보고·KST23-06 발송보류. 살아있는 부모/uiux 작업 중복기동·강제종료·retry보호초기화·옛삭제작업복원 금지.
+- 사용자 message1388에 따라 cron 1e1253eb2436을 현재 재개발 기준으로 교체·활성화했다. 30분마다 실제 카드/소유자/산출물·검증을 점검하고 중단 시 승인된 비위험 원인을 해소한 뒤 실제 다음 개발/QA 명령·결과를 남긴다. 점검성공/문서상 재개를 개발재개로 부르지 않는다. 제어 정본 records/engineering/progress-watchdog/CONTROL.json, 작업/대응QA tasks/KG-PROGRESS-WATCH-30*.md. 정상진행 무보고·KST23-06 발송보류. 살아있는 부모/uiux 작업 중복기동·강제종료·retry보호초기화·옛삭제작업복원 금지.
 
 ## 2026-10-31 비위험 작업 포괄 실행 승인
 - 사용자 최신 직접 지시: 앞으로 위험하지 않은 작업은 다시 승인받지 말고 계속 실행한다. 현재 김고수 개발·비파괴 개발계 변경·일상적 SDK 복구/검증·기존 uiux 대응QA를 기존 수용 기준까지 연결한다. 필요한 사실 입력과 위험한 작업 승인은 구별한다. 데이터 손실/운영 영향/새 비용/실결제/인증·모델 변경 등 위험·별도 경계는 임의 확대하지 않는다. 저장 승인설정·보호장치나 자동 디스패치는 변경하지 않는다.
-- 이 새 승인으로 직전 미응답인 데이터보존 CoreSimulator 1회 재시작 및 현재 후보 제한 검증은 실행 가능해졌다. 과거 미응답을 소급 승인으로 바꾸지 않는다. 실제 결과는 engineering/auth-publishing-01/ios-recovery-02/RESULT.json.
+- 이 새 승인으로 직전 미응답인 데이터보존 CoreSimulator 1회 재시작 및 현재 후보 제한 검증은 실행 가능해졌다. 과거 미응답을 소급 승인으로 바꾸지 않는다. 실제 결과는 records/engineering/auth-publishing-01/ios-recovery-02/RESULT.json.
 
 ## 2026-10-30 신규 사용자 지시 (아래 과거 중단 상태보다 우선)
-- 최신 최초 기능 구현 지시: 전체 화면·기능을 세분화하고 순서를 정하되 회원가입·로그인·회원관리/서비스 이용정책을 첫 묶음으로 구현한다. 먼저 기존 정의 정책을 검토하고 공백/충돌을 사용자에게 질문한다. 정본은 product/MEMBERSHIP-SERVICE-POLICY.md, 작업은 tasks/KG-AUTH-POLICY-01.md. 임시 테스트계정 로그인으로 정식 회원가입/로그인 구현을 대체하지 않는다.
+- 최신 최초 기능 구현 지시: 전체 화면·기능을 세분화하고 순서를 정하되 회원가입·로그인·회원관리/서비스 이용정책을 첫 묶음으로 구현한다. 먼저 기존 정의 정책을 검토하고 공백/충돌을 사용자에게 질문한다. 정본은 records/product/MEMBERSHIP-SERVICE-POLICY.md, 작업은 tasks/KG-AUTH-POLICY-01.md. 임시 테스트계정 로그인으로 정식 회원가입/로그인 구현을 대체하지 않는다.
 - 정책 질문/미정은 임의 확정하지 않는다. UIUX가 해당 화면의 디자인·Compose/SwiftUI 퍼블리싱을 완료하여 인계한 후 project-lead가 실제 양 앱·Railway 개발계 테이블/API를 통합 구현한다. 개발 지시와 실제 uiux QA는 한 세트다. 최초 완료는 정책 문서 표시만이 아니라 동의/철회·버전·계정/서비스 권한을 서버·DB에 적용하고 양 앱 각각 실제 API 거래·DB 저장/재조회·QA/결함 재검증까지 수행한 상태다. 필요한 개발계 비파괴적 테이블/컬럼/인덱스·마이그레이션은 이번 범위에 포함하되 운영·데이터 손실 변경·새 비용/유료 발송·인증 설정 변경은 별도 경계다.
 - 최신 배포 경계: Apple 회사 가입 승인 전 IPA 생성·실기기 서명·IPA 게시를 하지 않는다. 승인 후 서명은 사용자가 직접 한다. AOS·iOS 시뮬레이터의 개발 검증/독립 QA/양 앱 결과 동등성 QA는 가입 승인과 별개로 완료한다. 가입 대기를 전체 QA 중단 사유로 삼지 않는다. 시뮬레이터 로컬 ad-hoc codesign은 실행에 필요한 것으로 실기기 배포 서명/IPA 생성과 구분한다.
 - 최초 제품 앱 착수 승인: 동일 기획 요건으로 AOS/iOS를 항상 함께 개발한다. 승인 스플래시→A1 메인 범위는 `tasks/KG-APP-LAUNCH-01.md`, 공통 입력은 `apps/mobile-shared/`다. 이번 구현/빌드 승인을 전체 기능·추가 프로필·외부 push/배포 승인으로 확대하지 않는다.
@@ -67,9 +67,9 @@
 - 게시판 개발에도 대응 uiux QA를 배정하며 실제 슬롯이 끝난 뒤 단일 프로필로 실행한다. 소스/인증/QA 로그·비공개 문서를 공개 site/에 넣지 않는다. 과거 버전은 불변 경로에 누적한다.
 
 ## 보존한 기준 자료
-- 원본 기획/UIUX 정본: `../../decisions/kimgosu-design-v0.1/`, 프로젝트 `product/`, `design/`.
+- 원본 기획/UIUX 정본: `../../decisions/kimgosu-design-v0.1/`, 프로젝트 `records/product/`, `design/`.
 - 승인 디자인: 정본의 `CURRENT-FULL-DESIGN.json` 및 `runs/full-design-v0.2-brand-final/`; 프로젝트 `decisions/APPROVAL-20261019-ICON-TONE-01.json`과 `APPROVAL-20261019-SPLASH-IMAGE-01.json`.
-- DB 설계·의미 검토: `engineering/db-v0.1/`, `engineering/db-review-008/`, `decisions/db-v0.1-excel/`. 설계 보존은 DB 승인이나 실제 적용 승인을 의미하지 않는다.
+- DB 설계·의미 검토: `records/engineering/db-v0.1/`, `records/engineering/db-review-008/`, `decisions/db-v0.1-excel/`. 설계 보존은 DB 승인이나 실제 적용 승인을 의미하지 않는다.
 - 인프라: `RAILWAY.md`, `railway.json`, `Dockerfile`, `.gitignore`, `.dockerignore`, `decisions/ENVIRONMENTS.json` 및 보존된 인증/Cloudflare/SSH 설정 문서. 비밀값은 출력·업로드하지 않는다.
 - 개발 웹 `https://dev-kimgosu.mintech.ai`, 운영 웹 `https://kimsogu.mintech.ai`의 정확한 철자를 유지한다.
 
