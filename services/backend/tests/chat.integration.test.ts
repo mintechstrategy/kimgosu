@@ -480,3 +480,38 @@ test('동시 삭제 요청은 한 번만 성공하고 audit도 1건이다', asyn
   const row = (await pool.query(`SELECT deleted_at FROM kg_membership.chat_messages WHERE id=$1`, [id])).rows[0];
   assert.ok(row.deleted_at);
 });
+
+// 회귀: 커서가 밀리초로 잘리면 같은 밀리초 안의 마이크로초 차이 행을 건너뛴다.
+// created_at을 인위적으로 같은 밀리초(.123456 / .123999)로 맞춰 결정적으로 재현한다.
+test('같은 밀리초에 생성된 메시지도 커서 페이지네이션에서 누락되지 않는다', async () => {
+  await pool.query(`DELETE FROM kg_membership.chat_messages WHERE ledger_id=$1`, [LEDGER]);
+  const ids: string[] = [];
+  for (let i = 0; i < 4; i += 1) {
+    const res = await app.inject({
+      method: 'POST', url: `/v1/ledgers/${LEDGER}/messages`, headers: bearer(EXPERT.token),
+      payload: { body: `동일밀리초 ${i}` },
+    });
+    assert.equal(res.statusCode, 201);
+    ids.push(res.json().id);
+  }
+  // 두 행을 같은 밀리초, 다른 마이크로초로 고정한다.
+  await pool.query(
+    `UPDATE kg_membership.chat_messages SET created_at='2026-01-01 00:00:00.123456+00' WHERE id=$1::uuid`, [ids[1]],
+  );
+  await pool.query(
+    `UPDATE kg_membership.chat_messages SET created_at='2026-01-01 00:00:00.123999+00' WHERE id=$1::uuid`, [ids[2]],
+  );
+
+  const collected: string[] = [];
+  let cursor: string | null = null;
+  for (let page = 0; page < 10; page += 1) {
+    const url: string = `/v1/ledgers/${LEDGER}/messages?limit=1${cursor ? `&before=${cursor}` : ''}`;
+    const res = await app.inject({ method: 'GET', url, headers: bearer(EXPERT.token) });
+    assert.equal(res.statusCode, 200, res.body);
+    collected.push(...res.json().messages.map((m: { id: string }) => m.id));
+    cursor = res.json().nextCursor;
+    if (!cursor) break;
+  }
+  assert.equal(collected.length, 4, '같은 밀리초 행이 누락되면 안 된다');
+  assert.equal(new Set(collected).size, 4, '페이지 간 중복이 없어야 한다');
+});

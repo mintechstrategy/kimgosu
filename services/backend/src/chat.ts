@@ -135,7 +135,11 @@ export function registerChatRoutes(app: FastifyInstance, db: Sql, authenticate: 
     let cursor: { createdAt: unknown; id: string } | undefined;
     if (request.query.before !== undefined) {
       const row = (await db.query(
-        `SELECT created_at AS "createdAt", id FROM kg_membership.chat_messages WHERE id=$1 AND ledger_id=$2`,
+        // created_at must round-trip at full (microsecond) precision: node-postgres
+        // parses timestamptz into a JS Date, which truncates to milliseconds, and a
+        // truncated cursor silently skips rows that share that millisecond.
+        `SELECT to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS "createdAt", id
+           FROM kg_membership.chat_messages WHERE id=$1 AND ledger_id=$2`,
         [request.query.before, request.params.id],
       )).rows[0];
       // A cursor from another ledger (or a deleted/unknown id) would silently
