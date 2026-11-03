@@ -1,0 +1,87 @@
+{
+  "ws": "WS-14",
+  "status": "DONE",
+  "summary": "견적 제시→고객 수락/거절→양측 확인 완료 흐름을 009_quotes.sql과 /v1/quotes API로 구현하고 실 PostgreSQL 통합 테스트 7종(참여자 격리·만료·양측확인·잘못된 전이·클라이언트 상태 주입·audit)과 기존 agreement 회귀를 실제 실행해 통과했다.",
+  "changedFiles": [
+    "services/backend/migrations/009_quotes.sql",
+    "services/backend/src/quotes.ts",
+    "services/backend/src/app.ts",
+    "services/backend/tests/quotes.integration.test.ts",
+    "services/backend/package.json",
+    ".github/workflows/development.yml"
+  ],
+  "verification": [
+    {
+      "check": "TypeScript 타입체크",
+      "command": "cd services/backend && npx tsc --noEmit",
+      "result": "PASS",
+      "evidence": "출력 없음, exit 0"
+    },
+    {
+      "check": "기존 유닛 스위트",
+      "command": "cd services/backend && npm test",
+      "result": "PASS",
+      "evidence": "tests 23 / pass 23 / fail 0"
+    },
+    {
+      "check": "계약 회귀 (라우트 인벤토리 포함, app.ts 변경 영향)",
+      "command": "node --test tests/contract/contract.test.ts",
+      "result": "PASS",
+      "evidence": "tests 15 / pass 15 / fail 0 — app.ts에 추가한 registerQuoteRoutes 호출은 app.(get|post|patch|options) 패턴을 늘리지 않아 21개 operation 인벤토리 유지"
+    },
+    {
+      "check": "신규 견적 통합 테스트 (실 PostgreSQL, 루프백 전용)",
+      "command": "KG_TEST_DATABASE_URL=postgres://postgres@127.0.0.1:55444/kgtest node --test tests/quotes.integration.test.ts",
+      "result": "PASS",
+      "evidence": "tests 7 / pass 7 / fail 0. 검증 항목: 비참여자 create/list/respond 404, 고객의 견적 생성 403 EXPERT_ONLY, 제시 후 DB 영속+quote_transitions 1행+audit QUOTE_PROPOSED, status/amount/confirmedAt 주입 400 INVALID_REQUEST 및 상태 불변, 만료 견적 수락 409 QUOTE_EXPIRED+DB EXPIRED+effectiveStatus EXPIRED, 거절 후 수락/완료 409 INVALID_TRANSITION, 양측 확인 전 status ACCEPTED 유지·동일측 중복 확인 409·양측 확인 후 COMPLETED 및 연결 agreement COMPLETED, audit_log 6종 액션 존재. after 훅에서 생성 데이터 삭제 후 잔여 0행 단언 통과"
+    },
+    {
+      "check": "기존 agreement/ledger 회귀 (실 PostgreSQL)",
+      "command": "KG_TEST_DATABASE_URL=postgres://postgres@127.0.0.1:55444/kgtest node --test tests/ledger.integration.test.ts",
+      "result": "PASS",
+      "evidence": "tests 6 / pass 6 / fail 0 (revieweligibility, agreement accept/complete 포함)"
+    },
+    {
+      "check": "통합 스위트 전체 (CI와 동일 명령)",
+      "command": "cd services/backend && KG_TEST_DATABASE_URL=... npm run test:integration",
+      "result": "PASS",
+      "evidence": "ledger 6/6, quotes 7/7, local-db 33/33 통과"
+    },
+    {
+      "check": "009 마이그레이션 재적용 안전성(멱등) + 런타임 롤 권한",
+      "command": "psql -f migrations/009_quotes.sql (2회차) / has_table_privilege·has_sequence_privilege 조회 as kg_dev_runtime",
+      "result": "PASS",
+      "evidence": "2회차는 NOTICE skipping으로 종료(exit 0). kg_dev_runtime: quotes SELECT/INSERT/UPDATE=t, quote_transitions SELECT/INSERT=t, quote_transitions_id_seq USAGE=t, 실제 SELECT 동작 확인"
+    },
+    {
+      "check": "GitHub–Railway–Cloudflare 실제 개발계 거래(배포 후 API 호출·DB 재조회)",
+      "command": "(실행하지 않음 — 이 작업 단위는 원격 쓰기/배포/커밋 금지)",
+      "result": "NOT_RUN",
+      "evidence": "PLAN 공통 규칙 2에 따라 push/deploy/railway/cf 쓰기를 하지 않았다. 따라서 프로젝트 필수 완료 기준인 실제 개발계 거래 검증은 이 WS에서 충족되지 않았다."
+    }
+  ],
+  "contractChanges": [],
+  "migrations": [
+    "services/backend/migrations/009_quotes.sql"
+  ],
+  "open": [
+    "견적 금액 정책 미확정: 현재 KRW 정수(amount integer, 1~2,147,483,647)만 저장하며 부가세 포함/별도, 통화, 시급·총액 구분을 임의 확정하지 않았다. 사용자 결정 필요.",
+    "견적 유효기간(TTL) 정책 미확정: 발급자는 임의의 미래 시각을 만료시각으로 지정할 수 있고 서버는 최소 1분 이상만 강제한다. 기본 TTL·최대 TTL 확정 필요.",
+    "견적 API가 버전 계약(contracts/auth-membership.v0.3.json 등)에 미등재: 웨이브 1의 ledger/agreement 라우트와 같은 상태다. 계약 인벤토리에 견적 operation을 추가할지 사용자/오케스트레이터 결정 필요.",
+    "완료 확인 후 취소·분쟁(DISPUTED) 전이, 견적 수정(재제시) 경로는 이번 범위에 없다. 필요 여부 결정 필요."
+  ],
+  "risks": [
+    "고객 수락 시 agreements 행을 자동 생성(REQUESTED 없이 ACCEPTED, requester=expert)한다. 웨이브 1 agreement API로 같은 쌍에 별도 agreement가 추가로 생길 수 있으며, 중복 방지 제약은 없다(의도적: 복수 거래 허용). 리뷰 자격은 COMPLETED agreement 존재 여부만 보므로 동작상 문제는 없으나, 운영 리포트에서 거래 건수가 견적/수동합의로 이중 집계될 수 있다.",
+    "만료 처리는 지연(lazy) 방식이다. 만료 시각이 지난 PROPOSED 견적은 respond/complete 시점에 EXPIRED로 기록되고, 목록 조회는 effectiveStatus로만 EXPIRED를 표시한다(읽기 경로는 쓰기 없음). 배치 만료 작업은 없다.",
+    "공통 파일 2건을 최소 수정했다: services/backend/package.json(test:integration에 신규 스위트 추가), .github/workflows/development.yml(마이그레이션 적용 glob 00[5-9]). 병렬 WS가 같은 줄을 수정하면 병합 충돌 가능. 또한 이 glob은 010 이후 마이그레이션을 포함하지 않으므로 WS-15/16이 각자 확장해야 한다.",
+    "CI(development.yml)는 이 작업트리에서 실행하지 않았다. 워크플로 변경의 실제 GitHub Actions 통과는 오케스트레이터 재실행으로 확인해야 한다.",
+    "테스트를 공유 클러스터(127.0.0.1:55432) 대신 격리 클러스터(127.0.0.1:55444, PGDATA=~/.hermes/profiles/kg-04/cache/scratch/pgdata-ws14)에서 실행했다. 다른 WS와 동시 TRUNCATE 충돌을 피하기 위한 선택이며, 오케스트레이터가 55432에서 재실행할 때는 009 마이그레이션이 먼저 적용돼 있어야 한다.",
+    "services/backend/scripts/local-db.sh는 여전히 001-004만 적용한다(웨이브 1부터의 기존 공백). 이 스크립트로 새 클러스터를 만들면 ledger/quotes 통합 테스트가 실패한다. 공유 스크립트라 임의 수정하지 않았다."
+  ],
+  "next": [
+    "오케스트레이터: 009_quotes.sql을 테스트 DB에 적용한 뒤 `cd services/backend && npm run test:integration`과 `node --test tests/contract/contract.test.ts`를 재실행해 PASS를 독립 확인할 것(작업자 PASS 주장만으로 병합 금지).",
+    "개발계(Railway dev) 배포 후 실제 거래 검증: expert 제안 → customer 수락 → 양측 완료 확인 → /v1/ledgers/:id/quotes 재조회로 영속성 확인. 이 WS는 원격 쓰기 금지로 미실행.",
+    "local-db.sh 마이그레이션 목록(001-009) 정합화는 별도 작업으로 처리 필요.",
+    "WS-15(채팅)·WS-16(리뷰)은 이 견적 흐름의 COMPLETED agreement를 리뷰 자격 근거로 그대로 사용할 수 있다."
+  ]
+}
