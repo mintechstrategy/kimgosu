@@ -1,12 +1,6 @@
 import SwiftUI
 import UIKit
 
-private let kgNavy = Color(red: 11/255, green: 30/255, blue: 53/255)
-private let kgLime = Color(red: 197/255, green: 251/255, blue: 31/255)
-private let kgBorder = Color(red: 214/255, green: 223/255, blue: 232/255)
-private let kgMuted = Color(red: 82/255, green: 98/255, blue: 119/255)
-private let kgSoft = Color(red: 239/255, green: 248/255, blue: 216/255)
-
 struct KGAuthView: View {
     let state: KGAuthState
     let onEvent: (KGAuthEvent) -> Void
@@ -23,7 +17,7 @@ struct KGAuthView: View {
             }.padding(.horizontal, 20)
             if state.preview {
                 kgCopy("개발용 UI 예시 · 실제 인증·동의·거래 아님", size: 12)
-                    .frame(maxWidth: .infinity).padding(8).background(kgSoft)
+                    .frame(maxWidth: .infinity).padding(8).background(DesignTokens.soft)
             }
             if state.busy { ProgressView("처리 중").padding(8).accessibilityLabel("처리 중") }
             ScrollView {
@@ -34,7 +28,7 @@ struct KGAuthView: View {
                 }.frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 20).padding(.vertical, 20)
             }.scrollDismissesKeyboard(.interactively)
             footer
-        }.background(Color.white).foregroundStyle(kgNavy).tint(kgNavy)
+        }.background(Color.white).foregroundStyle(DesignTokens.navy).tint(DesignTokens.navy)
             .font(.custom("Pretendard-Regular", size: 14, relativeTo: .body))
             .preferredColorScheme(.light)
     }
@@ -56,9 +50,9 @@ struct KGAuthView: View {
     @ViewBuilder private var environmentMarker: some View {
         #if DEBUG
         if KGEnvironment.isConfigured && !KGEnvironment.isProduction {
-            kgCopy(KGEnvironment.label, size: 10, bold: true, color: kgMuted)
+            kgCopy(KGEnvironment.label, size: 10, bold: true, color: DesignTokens.muted)
                 .padding(.horizontal, 6).frame(minHeight: 18)
-                .background(kgSoft, in: Capsule()).overlay(Capsule().stroke(kgBorder))
+                .background(DesignTokens.soft, in: Capsule()).overlay(Capsule().stroke(DesignTokens.border))
                 .frame(width: 44, height: 44, alignment: .trailing)
                 .accessibilityElement().accessibilityLabel("개발 서버 연결")
         } else {
@@ -71,14 +65,14 @@ struct KGAuthView: View {
     private func send(_ action: KGAuthAction, _ key: String = "", _ value: String = "") { onEvent(KGAuthEvent(action: action, key: key, value: value)) }
     private func heading(_ text: String) -> some View { kgCopy(text, size: 20, bold: true).accessibilityAddTraits(.isHeader) }
     private func panel(_ text: String) -> some View {
-        kgCopy(text).frame(maxWidth: .infinity, alignment: .leading).padding(14).background(kgSoft, in: RoundedRectangle(cornerRadius: 6))
+        kgCopy(text).frame(maxWidth: .infinity, alignment: .leading).padding(14).background(DesignTokens.soft, in: RoundedRectangle(cornerRadius: 6))
     }
     private func action(_ title: String, enabled: Bool = true, primary: Bool = false, _ event: KGAuthAction, key: String = "") -> some View {
         Button { send(event, key) } label: {
-            kgCopy(title, size: primary ? 15 : 14, bold: primary, color: enabled ? (primary ? .white : kgNavy) : kgMuted)
+            kgCopy(title, size: primary ? 15 : 14, bold: primary, color: enabled ? (primary ? .white : DesignTokens.navy) : DesignTokens.muted)
                 .frame(maxWidth: .infinity, minHeight: 48).padding(.horizontal, 12)
-                .background(primary ? (enabled ? kgNavy : kgBorder) : .white, in: RoundedRectangle(cornerRadius: 6))
-                .overlay(RoundedRectangle(cornerRadius: 6).stroke(primary ? .clear : kgBorder))
+                .background(primary ? (enabled ? DesignTokens.navy : DesignTokens.border) : .white, in: RoundedRectangle(cornerRadius: 6))
+                .overlay(RoundedRectangle(cornerRadius: 6).stroke(primary ? .clear : DesignTokens.border))
         }.disabled(!enabled)
     }
     private var login: some View {
@@ -88,9 +82,9 @@ struct KGAuthView: View {
             Image(uiImage: UIImage(named: "MobileAssets/app_icon.png")!)
                 .resizable().scaledToFit().frame(width: 146, height: 146)
                 .padding(8).frame(maxWidth: .infinity)
-                .overlay(RoundedRectangle(cornerRadius: 12).stroke(kgBorder)).accessibilityLabel("우리동네 김고수")
-            provider("kakao", "카카오로 시작", Color(red: 254/255, green: 229/255, blue: 0))
-            provider("naver", "네이버로 시작", Color(red: 3/255, green: 169/255, blue: 77/255))
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(DesignTokens.border)).accessibilityLabel("우리동네 김고수")
+            provider("kakao", "카카오로 시작", DesignTokens.kakao)
+            provider("naver", "네이버로 시작", DesignTokens.naver)
             provider("google", "Google로 시작", .white)
             #if DEBUG
             devLoginSection
@@ -103,8 +97,8 @@ struct KGAuthView: View {
     @ViewBuilder private var devLoginSection: some View {
         if KGEnvironment.isConfigured && !KGEnvironment.isProduction {
             VStack(alignment: .leading, spacing: 10) {
-                Divider().overlay(kgBorder)
-                kgCopy("개발용 테스트 계정 · 실제 서버 세션 발급", size: 12, color: kgMuted)
+                Divider().overlay(DesignTokens.border)
+                kgCopy("개발용 테스트 계정 · 실제 서버 세션 발급", size: 12, color: DesignTokens.muted)
                 if state.devAccounts.isEmpty {
                     action(state.devAccountsLoading ? "테스트 계정 목록 불러오는 중…" : "테스트 계정 목록 불러오기",
                            enabled: !state.busy && !state.devAccountsLoading, .LOAD_DEV_ACCOUNTS)
@@ -123,8 +117,8 @@ struct KGAuthView: View {
                         HStack(spacing: 8) {
                             kgCopy(selectedDevAccountText, size: 14)
                             Spacer(minLength: 0)
-                            Image(systemName: "chevron.down").font(.system(size: 12)).foregroundStyle(kgMuted)
-                        }.padding(12).frame(maxWidth: .infinity, minHeight: 48).overlay(RoundedRectangle(cornerRadius: 6).stroke(kgBorder))
+                            Image(systemName: "chevron.down").font(.system(size: 12)).foregroundStyle(DesignTokens.muted)
+                        }.padding(12).frame(maxWidth: .infinity, minHeight: 48).overlay(RoundedRectangle(cornerRadius: 6).stroke(DesignTokens.border))
                     }.accessibilityIdentifier("dev-account-menu")
                     action("테스트 계정으로 로그인", enabled: !state.busy, primary: true, .DEV_LOGIN)
                 }
@@ -144,14 +138,14 @@ struct KGAuthView: View {
                 }
                 kgCopy(title, size: 16, color: id == "naver" ? .white : Color(white: 0.12))
             }.frame(maxWidth: .infinity, minHeight: 48).background(color, in: RoundedRectangle(cornerRadius: 6))
-                .overlay(RoundedRectangle(cornerRadius: 6).stroke(id == "google" ? Color(red: 116/255, green: 119/255, blue: 117/255) : .clear))
+                .overlay(RoundedRectangle(cornerRadius: 6).stroke(id == "google" ? DesignTokens.googleBorder : .clear))
         }.disabled(state.busy).accessibilityLabel(title)
     }
     private func check(_ label: String, checked: Bool, enabled: Bool, change: @escaping (Bool) -> Void) -> some View {
         Button { change(!checked) } label: {
             HStack(alignment: .center, spacing: 12) {
                 Image(systemName: checked ? "checkmark.square.fill" : "square")
-                    .foregroundStyle(kgNavy).background(checked ? kgLime : .white).font(.system(size: 20))
+                    .foregroundStyle(DesignTokens.navy).background(checked ? DesignTokens.lime : .white).font(.system(size: 20))
                 kgCopy(label).frame(maxWidth: .infinity, alignment: .leading)
             }.frame(minHeight: 48)
         }.disabled(!enabled).accessibilityLabel(label).accessibilityValue(checked ? "선택됨" : "선택 안 됨")
@@ -171,8 +165,8 @@ struct KGAuthView: View {
                         send(.CHANGE_CONSENT, option.id, String($0))
                     }
                     if let kind = option.document {
-                        Button { send(.OPEN_DOCUMENT, kind.rawValue) } label: { kgCopy("전문 보기  ›", color: kgMuted).frame(minHeight: 44) }
-                        if state.documents[kind]?.canConsent != true { kgCopy("문서 준비·승인 확인 후 동의할 수 있습니다.", size: 12, color: kgMuted) }
+                        Button { send(.OPEN_DOCUMENT, kind.rawValue) } label: { kgCopy("전문 보기  ›", color: DesignTokens.muted).frame(minHeight: 44) }
+                        if state.documents[kind]?.canConsent != true { kgCopy("문서 준비·승인 확인 후 동의할 수 있습니다.", size: 12, color: DesignTokens.muted) }
                     }
                 }
             }
@@ -196,7 +190,7 @@ struct KGAuthView: View {
             TextField(label, text: binding, axis: multiline ? .vertical : .horizontal)
                 .lineLimit(multiline ? 3...5 : 1...1).keyboardType(keyboard).textInputAutocapitalization(.never)
                 .autocorrectionDisabled().padding(12).frame(minHeight: 48)
-                .overlay(RoundedRectangle(cornerRadius: 6).stroke(kgBorder))
+                .overlay(RoundedRectangle(cornerRadius: 6).stroke(DesignTokens.border))
                 .disabled(state.busy).accessibilityLabel(label)
                 .textContentType(key == "code" ? .oneTimeCode : (key == "email" ? .emailAddress : nil))
         }
@@ -210,7 +204,7 @@ struct KGAuthView: View {
             if !state.smsAvailable { panel("문자 인증 서비스 연결 준비 중입니다. 실제 문자는 발송되지 않으며 가입을 완료할 수 없습니다.") }
             if state.challengeActive { kgCopy("남은 시간 \(max(0, state.remainingSeconds))초 · 인증번호 5자리") }
             input("code", "인증번호 · 숫자 5자리", keyboard: .numberPad)
-            kgCopy("재전송하면 이전 인증번호는 사용할 수 없습니다. SMS 점유 인증은 실명 확인이 아닙니다.", size: 12, color: kgMuted)
+            kgCopy("재전송하면 이전 인증번호는 사용할 수 없습니다. SMS 점유 인증은 실명 확인이 아닙니다.", size: 12, color: DesignTokens.muted)
             if state.screen == .SMS_DUPLICATE { action("계정 확인", .OTHER_LOGIN) }
         }
     }
@@ -230,22 +224,22 @@ struct KGAuthView: View {
             case .READY, .DRAFT:
                 if let doc {
                     if !doc.canConsent { panel("사용자 검토용 초안 · 법률 확정·실제 동의용 아님") }
-                    kgCopy("버전: \(doc.version.isEmpty ? "미확정" : doc.version)\n시행일: \(doc.effectiveDate.isEmpty ? "미확정" : doc.effectiveDate)\n운영자: \(doc.operator.isEmpty ? "미확정" : doc.operator)", size: 12, color: kgMuted)
+                    kgCopy("버전: \(doc.version.isEmpty ? "미확정" : doc.version)\n시행일: \(doc.effectiveDate.isEmpty ? "미확정" : doc.effectiveDate)\n운영자: \(doc.operator.isEmpty ? "미확정" : doc.operator)", size: 12, color: DesignTokens.muted)
                     kgCopy(doc.body).textSelection(.enabled)
                 }
             }
-            kgCopy("문서를 열거나 닫는 동작은 동의가 아닙니다.", size: 12, color: kgMuted)
+            kgCopy("문서를 열거나 닫는 동작은 동의가 아닙니다.", size: 12, color: DesignTokens.muted)
         }
     }
     private var account: some View {
         VStack(alignment: .leading, spacing: 16) {
             action("프로필 수정 · 후속 단계", enabled: false, .OPEN, key: "PROFILE_EDIT")
             HStack(spacing: 12) {
-                Image(systemName: "person").font(.system(size: 24)).padding(12).background(kgSoft, in: Circle()).accessibilityHidden(true)
+                Image(systemName: "person").font(.system(size: 24)).padding(12).background(DesignTokens.soft, in: Circle()).accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 4) {
                     kgCopy(state.nickname.isEmpty ? "회원 정보 확인 중" : state.nickname, bold: true)
-                    kgCopy(state.email, size: 12, color: kgMuted)
-                    kgCopy("고객번호 \(state.customerNumber.isEmpty ? "서버 확인 중" : state.customerNumber)", size: 12, color: kgMuted)
+                    kgCopy(state.email, size: 12, color: DesignTokens.muted)
+                    kgCopy("고객번호 \(state.customerNumber.isEmpty ? "서버 확인 중" : state.customerNumber)", size: 12, color: DesignTokens.muted)
                 }
             }
             action("견적요청/서비스 관리 · 후속 단계", enabled: false, .OPEN)
@@ -257,13 +251,13 @@ struct KGAuthView: View {
             action("회원탈퇴", enabled: !state.busy, .OPEN, key: "F5")
             action("고객센터", enabled: !state.busy && state.supportAvailable, .SUPPORT)
             action("고수 모드 · 후속 단계", enabled: false, .OPEN)
-            kgCopy("고수는 필수정보 입력·신청 후 즉시 활성화합니다. 자격 인증 배지는 별도 확인 전 표시하지 않습니다.", size: 12, color: kgMuted)
+            kgCopy("고수는 필수정보 입력·신청 후 즉시 활성화합니다. 자격 인증 배지는 별도 확인 전 표시하지 않습니다.", size: 12, color: DesignTokens.muted)
         }
     }
     private var notifications: some View {
         VStack(alignment: .leading, spacing: 16) {
             heading("앱 푸시"); kgCopy(surface.body)
-            kgCopy("OS 알림 권한: \(state.osPermission)", size: 12, color: kgMuted)
+            kgCopy("OS 알림 권한: \(state.osPermission)", size: 12, color: DesignTokens.muted)
             action("OS 알림 설정 열기", .OPEN_OS_SETTINGS)
             ForEach(["advertising", "chat", "comment", "quote", "inquiry"], id: \.self) { key in
                 let titles = ["advertising": "광고 알림", "chat": "채팅 알림", "comment": "댓글 알림", "quote": "신규 견적 알림", "inquiry": "신규 문의/제안 알림"]
@@ -296,7 +290,7 @@ struct KGAuthView: View {
                 }.disabled(state.busy).accessibilityValue(state.input("withdrawReason") == reason ? "선택됨" : "선택 안 됨")
             }
             input("withdrawDetail", "상세 사유 (선택, 최대 500자)", multiline: true)
-            kgCopy("\(state.input("withdrawDetail").unicodeScalars.count)/500", size: 12, color: kgMuted).frame(maxWidth: .infinity, alignment: .trailing)
+            kgCopy("\(state.input("withdrawDetail").unicodeScalars.count)/500", size: 12, color: DesignTokens.muted).frame(maxWidth: .infinity, alignment: .trailing)
         }
     }
     private var member: some View {
@@ -306,7 +300,7 @@ struct KGAuthView: View {
             input("email", "이메일 (필수)", keyboard: .emailAddress)
             input("nickname", "자동 생성 닉네임 수정 (선택)")
             if !state.input("nickname").isEmpty && !KGAuthInput.validNickname(state.input("nickname")) { kgCopy("닉네임은 문자·숫자만 최대 10자입니다. 공백·특수문자를 제외해주세요.", size: 12) }
-            kgCopy("공급자 필수정보가 없으면 확인·보완 후 진행합니다. 고객번호와 자동 닉네임은 서버가 부여합니다.", size: 12, color: kgMuted)
+            kgCopy("공급자 필수정보가 없으면 확인·보완 후 진행합니다. 고객번호와 자동 닉네임은 서버가 부여합니다.", size: 12, color: DesignTokens.muted)
         }
     }
     private var status: some View {
@@ -337,7 +331,7 @@ struct KGAuthView: View {
     }
     @ViewBuilder private var footer: some View {
         if ["login", "terms", "sms", "withdraw", "member", "document"].contains(surface.family) {
-            Divider().overlay(kgBorder)
+            Divider().overlay(DesignTokens.border)
             Group {
                 switch surface.family {
                 case "login": action("둘러보기", .BROWSE)
@@ -351,7 +345,7 @@ struct KGAuthView: View {
         }
     }
 }
-private func kgCopy(_ text: String, size: CGFloat = 14, bold: Bool = false, color: Color = kgNavy) -> some View {
+private func kgCopy(_ text: String, size: CGFloat = 14, bold: Bool = false, color: Color = DesignTokens.navy) -> some View {
     Text(text).font(.custom(bold ? "Pretendard-Bold" : "Pretendard-Regular", size: size, relativeTo: .body))
         .foregroundStyle(color).lineSpacing(4).fixedSize(horizontal: false, vertical: true)
 }
@@ -361,9 +355,9 @@ private struct KGAuthSwitchStyle: ToggleStyle {
         HStack(spacing: 16) {
             configuration.label.font(.custom("Pretendard-SemiBold", size: 14, relativeTo: .body)).frame(maxWidth: .infinity, alignment: .leading)
             Button { configuration.isOn.toggle() } label: {
-                Capsule().fill(configuration.isOn ? kgLime : Color(red: 221/255, green: 229/255, blue: 238/255))
-                    .overlay(Capsule().stroke(kgNavy))
-                    .overlay(Circle().fill(kgNavy).frame(width: 18, height: 18).padding(3), alignment: configuration.isOn ? .trailing : .leading)
+                Capsule().fill(configuration.isOn ? DesignTokens.lime : DesignTokens.track)
+                    .overlay(Capsule().stroke(DesignTokens.navy))
+                    .overlay(Circle().fill(DesignTokens.navy).frame(width: 18, height: 18).padding(3), alignment: configuration.isOn ? .trailing : .leading)
                     .frame(width: 40, height: 24).frame(width: 48, height: 48)
             }.accessibilityLabel(label).accessibilityValue(configuration.isOn ? "켜짐" : "꺼짐")
         }.frame(minHeight: 56)

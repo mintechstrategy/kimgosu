@@ -1,12 +1,6 @@
 import SwiftUI
 import UIKit
 
-private let navy = Color(red: 11/255, green: 30/255, blue: 53/255)
-private let lime = Color(red: 197/255, green: 251/255, blue: 31/255)
-private let soft = Color(red: 239/255, green: 248/255, blue: 216/255)
-private let muted = Color(red: 82/255, green: 98/255, blue: 119/255)
-private let brandBorder = Color(red: 214/255, green: 223/255, blue: 232/255)
-
 struct HomeItem: Decodable, Sendable { let label: String; let icon: String }
 struct HomeContent: Decodable, Sendable {
     let screenId, designVersion, brand, introduction, search, quoteCopy, quoteAction: String
@@ -149,12 +143,12 @@ final class OfflineProtocol: URLProtocol {
                         .onAppear { model.record("main-appeared") }
                 }
             }.frame(maxWidth: .infinity, maxHeight: .infinity).background(Color.white)
-                .preferredColorScheme(.light).tint(navy)
+                .preferredColorScheme(.light).tint(DesignTokens.navy)
         }
     }
 }
 
-private func copy(_ text: String, size: CGFloat = 14, bold: Bool = false, color: Color = navy, semibold: Bool = false) -> some View {
+private func copy(_ text: String, size: CGFloat = 14, bold: Bool = false, color: Color = DesignTokens.navy, semibold: Bool = false) -> some View {
     Text(text).font(.custom(semibold ? "Pretendard-SemiBold" : (bold ? "Pretendard-Bold" : "Pretendard-Regular"), size: size, relativeTo: .body)).foregroundStyle(color)
 }
 private func asset(_ name: String, size: CGFloat) -> some View {
@@ -179,7 +173,7 @@ struct HomeView: View {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
                             copy(home.brand, size: 23, bold: true)
-                            Capsule().fill(lime).frame(width: 26, height: 3)
+                            Capsule().fill(DesignTokens.lime).frame(width: 26, height: 3)
                         }
                         Spacer()
                         Button { onProtected("알림") } label: {
@@ -189,8 +183,8 @@ struct HomeView: View {
                     copy(home.introduction, size: 20, bold: true).multilineTextAlignment(.center)
                         .frame(maxWidth: .infinity).padding(.top, 20).accessibilityIdentifier("main-introduction")
                     Button { notice = "검색" } label: {
-                        HStack(spacing: 14) { asset("nav_1.png", size: 20); copy(home.search, size: 16, color: muted); Spacer(minLength: 0) }
-                            .padding(14).frame(minHeight: 48).overlay(RoundedRectangle(cornerRadius: 6).stroke(brandBorder))
+                        HStack(spacing: 14) { asset("nav_1.png", size: 20); copy(home.search, size: 16, color: DesignTokens.muted); Spacer(minLength: 0) }
+                            .padding(14).frame(minHeight: 48).overlay(RoundedRectangle(cornerRadius: 6).stroke(DesignTokens.border))
                     }.padding(.top, 16).accessibilityIdentifier("search")
                     GeometryReader { geometry in
                         ScrollView(.horizontal, showsIndicators: false) {
@@ -226,8 +220,8 @@ struct HomeView: View {
                             ForEach(Array(home.popularTabs.enumerated()), id: \.offset) { index, title in
                                 Button { popular = index } label: {
                                     copy(title).padding(.horizontal, 14).frame(minHeight: 36)
-                                        .background(popular == index ? soft : Color.white, in: Capsule())
-                                        .overlay(Capsule().stroke(brandBorder))
+                                        .background(popular == index ? DesignTokens.soft : Color.white, in: Capsule())
+                                        .overlay(Capsule().stroke(DesignTokens.border))
                                 }.frame(minHeight: 44).accessibilityAddTraits(popular == index ? .isSelected : [])
                             }
                         }
@@ -237,19 +231,19 @@ struct HomeView: View {
                     sessionCard
                     Button("서비스 운영정책") { onPolicy("OPERATIONS") }.frame(minHeight: 44)
                     Button("개인정보 처리방침") { onPolicy("PRIVACY_POLICY") }.frame(minHeight: 44)
-                    copy("소셜 로그인·문자 인증은 준비 중이며, 공개 탐색은 계속 이용할 수 있습니다.", size: 12, color: muted).padding(.vertical, 24)
-                    if let apiStatus { copy(apiStatus, size: 12, color: muted).padding(.bottom, 16).accessibilityIdentifier("api-status") }
+                    copy("소셜 로그인·문자 인증은 준비 중이며, 공개 탐색은 계속 이용할 수 있습니다.", size: 12, color: DesignTokens.muted).padding(.vertical, 24)
+                    if let apiStatus { copy(apiStatus, size: 12, color: DesignTokens.muted).padding(.bottom, 16).accessibilityIdentifier("api-status") }
                 }.padding(.horizontal, 20)
             }.accessibilityIdentifier("main-scroll")
-            Rectangle().fill(brandBorder).frame(height: 1)
+            Rectangle().fill(DesignTokens.border).frame(height: 1)
             HStack(spacing: 0) {
                 ForEach(Array(home.navigation.enumerated()), id: \.offset) { index, item in
                     Button { if index != 0 { open(item.label) } } label: {
                         VStack(spacing: 3) {
                             asset(item.icon, size: 26)
-                            copy(item.label, size: 11, bold: index == 0, color: index == 0 ? navy : muted)
+                            copy(item.label, size: 11, bold: index == 0, color: index == 0 ? DesignTokens.navy : DesignTokens.muted)
                         }.frame(maxWidth: .infinity, minHeight: 58)
-                            .background(index == 0 ? soft : Color.white, in: RoundedRectangle(cornerRadius: 8)).padding(.horizontal, 4)
+                            .background(index == 0 ? DesignTokens.soft : Color.white, in: RoundedRectangle(cornerRadius: 8)).padding(.horizontal, 4)
                     }.accessibilityIdentifier("nav-\(index)").accessibilityAddTraits(index == 0 ? .isSelected : [])
                 }
             }.padding(.vertical, 5)
@@ -265,16 +259,16 @@ struct HomeView: View {
         case .loading:
             HStack(spacing: 12) {
                 ProgressView().controlSize(.small)
-                copy("회원 정보를 불러오는 중입니다.", size: 14, color: muted)
+                copy("회원 정보를 불러오는 중입니다.", size: 14, color: DesignTokens.muted)
                 Spacer(minLength: 0)
             }.padding(14).frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
-                .overlay(RoundedRectangle(cornerRadius: 6).stroke(brandBorder))
+                .overlay(RoundedRectangle(cornerRadius: 6).stroke(DesignTokens.border))
                 .accessibilityElement(children: .combine).accessibilityIdentifier("main-session-loading")
         case .signedOut:
             VStack(alignment: .leading, spacing: 2) {
                 Button("로그인/가입 · 회원관리") { onLogin() }.frame(minHeight: 44)
                     .accessibilityIdentifier("main-session-empty")
-                copy("로그인하면 내 정보와 원장을 확인할 수 있습니다.", size: 12, color: muted)
+                copy("로그인하면 내 정보와 원장을 확인할 수 있습니다.", size: 12, color: DesignTokens.muted)
             }
         case .loaded(let member):
             VStack(alignment: .leading, spacing: 6) {
@@ -283,15 +277,15 @@ struct HomeView: View {
                     Spacer(minLength: 0)
                     Button("마이페이지") { onProtected("마이페이지") }.frame(minHeight: 44)
                 }
-                copy("고객번호 " + member.customerNumber, size: 12, color: muted).accessibilityIdentifier("main-member-customer-number")
-                copy(member.email, size: 12, color: muted).accessibilityIdentifier("main-member-email")
-                if member.expertActive { copy("고수 활동 중", size: 12, color: muted).accessibilityIdentifier("main-member-expert") }
+                copy("고객번호 " + member.customerNumber, size: 12, color: DesignTokens.muted).accessibilityIdentifier("main-member-customer-number")
+                copy(member.email, size: 12, color: DesignTokens.muted).accessibilityIdentifier("main-member-email")
+                if member.expertActive { copy("고수 활동 중", size: 12, color: DesignTokens.muted).accessibilityIdentifier("main-member-expert") }
             }.padding(14).frame(maxWidth: .infinity, alignment: .leading)
-                .overlay(RoundedRectangle(cornerRadius: 6).stroke(brandBorder))
+                .overlay(RoundedRectangle(cornerRadius: 6).stroke(DesignTokens.border))
         case .failed(let failure):
             VStack(alignment: .leading, spacing: 4) {
                 copy(failure == .network ? "네트워크에 연결할 수 없습니다. 연결을 확인해주세요." : "회원 정보를 불러오지 못했습니다.",
-                     size: 14, color: navy)
+                     size: 14, color: DesignTokens.navy)
                     .accessibilityIdentifier(failure == .network ? "main-session-network-failure" : "main-session-error")
                 HStack(spacing: 16) {
                     Button("다시 시도") { onRetryMember() }.frame(minHeight: 44)
@@ -299,7 +293,7 @@ struct HomeView: View {
                     Button("로그인/가입") { onLogin() }.frame(minHeight: 44)
                 }
             }.padding(14).frame(maxWidth: .infinity, alignment: .leading)
-                .overlay(RoundedRectangle(cornerRadius: 6).stroke(brandBorder))
+                .overlay(RoundedRectangle(cornerRadius: 6).stroke(DesignTokens.border))
         }
     }
     private func open(_ title: String) {
@@ -320,7 +314,7 @@ struct HomeView: View {
         }
     }
     private func empty(_ message: String) -> some View {
-        copy(message, color: muted).frame(maxWidth: .infinity, alignment: .leading).padding(20)
-            .overlay(RoundedRectangle(cornerRadius: 6).stroke(brandBorder)).padding(.top, 13)
+        copy(message, color: DesignTokens.muted).frame(maxWidth: .infinity, alignment: .leading).padding(20)
+            .overlay(RoundedRectangle(cornerRadius: 6).stroke(DesignTokens.border)).padding(.top, 13)
     }
 }

@@ -1,0 +1,164 @@
+{
+  "ws": "WS-35",
+  "status": "DONE",
+  "summary": "design/tokens.json(색 9 + 폰트 1)을 정본으로 scripts/generate-tokens.mjs가 웹 CSS·iOS Swift·AOS Kotlin 토큰을 생성하고, 세 플랫폼의 하드코딩된 브랜드 색을 그 참조로 교체했다. 토큰 9개 × 3플랫폼 전후 값이 전부 동일(픽셀 동일)함을 스크립트로 대조했고, 생성 재실행 diff 0, 웹 typecheck·빌드·단위 230/230, AOS :app:assembleDevDebug, iOS xcodebuild 3개 프로젝트(CODE_SIGNING_ALLOWED=NO)가 모두 성공했다.",
+  "changedFiles": [
+    "design/tokens.json",
+    "scripts/generate-tokens.mjs",
+    "apps/web/src/tokens.css",
+    "apps/web/src/main.ts",
+    "apps/web/src/style.css",
+    "apps/ios/Kimgosu/DesignTokens.swift",
+    "apps/ios/Kimgosu/KimgosuApp.swift",
+    "apps/ios/Kimgosu/KGAuthView.swift",
+    "apps/ios/Kimgosu.xcodeproj/project.pbxproj",
+    "apps/ios/PolicyComponentHost/PolicyComponentHost.xcodeproj/project.pbxproj",
+    "apps/ios/LocalWriteComponentHost/LocalWriteComponentHost.xcodeproj/project.pbxproj",
+    "apps/android/app/src/main/java/ai/mintech/kimgosu/ui/DesignTokens.kt",
+    "apps/android/app/src/main/java/ai/mintech/kimgosu/MainActivity.kt",
+    "apps/android/app/src/main/java/ai/mintech/kimgosu/auth/ui/KGAuthView.kt",
+    "apps/android/app/src/main/java/ai/mintech/kimgosu/DevTestLogin.kt",
+    ".gitignore",
+    "records/parallel-10/WS-35/RESULT.json"
+  ],
+  "tokenSource": {
+    "file": "design/tokens.json",
+    "count": 10,
+    "colors": {
+      "navy": "#0B1E35",
+      "lime": "#C5FB1F",
+      "soft": "#EFF8D8",
+      "border": "#D6DFE8 (web #d5dce3)",
+      "muted": "#526277 (web #526173)",
+      "track": "#DDE5EE (web #d4dbe2)",
+      "kakao": "#FEE500",
+      "naver": "#03A94D",
+      "googleBorder": "#747775 (web #c6cdd5)"
+    },
+    "typography": {
+      "fontFamily": "'Pretendard Variable',Pretendard,-apple-system,BlinkMacSystemFont,sans-serif (CSS 전용)"
+    },
+    "note": "코드에 실제로 쓰이는 값만 넣었다. UI-SPEC에만 있는 토큰은 넣지 않았다. web 값이 네이티브와 다른 4개는 값이 갈라져 있어 '바꾸지 않는다'를 지키려고 web 재정의로 보존했다."
+  },
+  "generator": {
+    "file": "scripts/generate-tokens.mjs",
+    "inputs": ["design/tokens.json"],
+    "outputs": [
+      "apps/web/src/tokens.css",
+      "apps/ios/Kimgosu/DesignTokens.swift",
+      "apps/android/app/src/main/java/ai/mintech/kimgosu/ui/DesignTokens.kt"
+    ],
+    "dependencies": "none (node:fs, node:path만 사용)"
+  },
+  "colorComparison": {
+    "allEqual": true,
+    "method": "각 토큰의 변경 전 리터럴을 git HEAD(=origin/dev 8bb7bbc) 파일에서 읽어 RGB로 정규화하고, 생성물이 방출한 값과 플랫폼별로 비교",
+    "rows": [
+      { "token": "navy", "before": { "web": "#0B1E35", "ios": "#0B1E35", "android": "#0B1E35" }, "after": { "web": "#0B1E35", "ios": "#0B1E35", "android": "#0B1E35" }, "unchanged": true },
+      { "token": "lime", "before": { "web": "#C5FB1F", "ios": "#C5FB1F", "android": "#C5FB1F" }, "after": { "web": "#C5FB1F", "ios": "#C5FB1F", "android": "#C5FB1F" }, "unchanged": true },
+      { "token": "soft", "before": { "web": "#EFF8D8", "ios": "#EFF8D8", "android": "#EFF8D8" }, "after": { "web": "#EFF8D8", "ios": "#EFF8D8", "android": "#EFF8D8" }, "unchanged": true },
+      { "token": "border", "before": { "web": "#D5DCE3", "ios": "#D6DFE8", "android": "#D6DFE8" }, "after": { "web": "#D5DCE3", "ios": "#D6DFE8", "android": "#D6DFE8" }, "unchanged": true },
+      { "token": "muted", "before": { "web": "#526173", "ios": "#526277", "android": "#526277" }, "after": { "web": "#526173", "ios": "#526277", "android": "#526277" }, "unchanged": true },
+      { "token": "track", "before": { "web": "#D4DBE2", "ios": "#DDE5EE", "android": "#DDE5EE" }, "after": { "web": "#D4DBE2", "ios": "#DDE5EE", "android": "#DDE5EE" }, "unchanged": true },
+      { "token": "kakao", "before": { "web": "#FEE500", "ios": "#FEE500", "android": "#FEE500" }, "after": { "web": "#FEE500", "ios": "#FEE500", "android": "#FEE500" }, "unchanged": true },
+      { "token": "naver", "before": { "web": "#03A94D", "ios": "#03A94D", "android": "#03A94D" }, "after": { "web": "#03A94D", "ios": "#03A94D", "android": "#03A94D" }, "unchanged": true },
+      { "token": "googleBorder", "before": { "web": "#C6CDD5", "ios": "#747775", "android": "#747775" }, "after": { "web": "#C6CDD5", "ios": "#747775", "android": "#747775" }, "unchanged": true }
+    ]
+  },
+  "verification": [
+    {
+      "check": "생성 스크립트 재실행 결과 동일(멱등)",
+      "command": "node scripts/generate-tokens.mjs && shasum -a 256 <3개 생성물> && node scripts/generate-tokens.mjs && shasum -a 256 <3개 생성물> && diff",
+      "result": "PASS",
+      "evidence": "diff 0. 토큰 변경 후 최종 해시: tokens.css 35e0b4d3…b4762, DesignTokens.swift a3cdb812…47263, DesignTokens.kt 9e5e0c19…50c4."
+    },
+    {
+      "check": "웹 typecheck",
+      "command": "cd apps/web && npm run typecheck",
+      "result": "PASS",
+      "evidence": "vue-tsc --noEmit exit 0, 출력 없음."
+    },
+    {
+      "check": "웹 build",
+      "command": "cd apps/web && npm run build",
+      "result": "PASS",
+      "evidence": "vite build ✓ built in 520ms. dist/assets/main-*.css에 --navy:#0B1E35 … --google-border:#c6cdd5, --font-sans가 포함됨을 grep으로 확인."
+    },
+    {
+      "check": "웹 단위 테스트",
+      "command": "cd apps/web && npm run test:unit",
+      "result": "PASS",
+      "evidence": "tests 230 / pass 230 / fail 0. 1차 실행은 228/230(unicode-policy.test.ts 1건 실패)이었고 원인은 코드가 아니라 services/backend/node_modules 미설치로 ajv 해석 실패였다. CI 순서대로 `npm ci` in services/backend 후 재실행해 230/230."
+    },
+    {
+      "check": "Android :app:assembleDevDebug",
+      "command": "JAVA_HOME=.local-toolchains/jdk17/jdk-17.0.21+9/Contents/Home ANDROID_HOME=.local-toolchains/android-sdk python3 apps/android/build.py --offline :app:assembleDevDebug",
+      "result": "PASS",
+      "evidence": "BUILD SUCCESSFUL in 22s / 38 actionable tasks: 38 executed. (build.py의 JDK 자동탐색은 .local-toolchains/jdk17 아래 JDK가 2개라 실패하므로 JAVA_HOME·ANDROID_HOME을 명시했다.)"
+    },
+    {
+      "check": "iOS xcodebuild (Kimgosu)",
+      "command": "xcodebuild -project apps/ios/Kimgosu.xcodeproj -scheme Kimgosu -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build",
+      "result": "PASS",
+      "evidence": "** BUILD SUCCEEDED ** (Xcode 27.0)."
+    },
+    {
+      "check": "iOS xcodebuild (PolicyComponentHost / LocalWriteComponentHost)",
+      "command": "동일 옵션으로 두 호스트 프로젝트 각각 build",
+      "result": "PASS",
+      "evidence": "두 프로젝트 모두 ** BUILD SUCCEEDED **. 두 호스트는 ../Kimgosu/KGAuthView.swift를 함께 컴파일하므로 DesignTokens.swift를 두 프로젝트에도 등록했고, 등록 전에는 컴파일이 깨졌을 변경이다."
+    },
+    {
+      "check": "3개 xcodeproj 파일 문법",
+      "command": "plutil -lint <project.pbxproj> × 3",
+      "result": "PASS",
+      "evidence": "세 파일 모두 OK."
+    },
+    {
+      "check": "색상 값 전후 비교표",
+      "command": "git show HEAD:<file> 리터럴 ↔ 생성물 값 대조 스크립트",
+      "result": "PASS",
+      "evidence": "9개 토큰 × 3플랫폼 = 27개 값이 전부 동일(allEqual=true). 표는 colorComparison.rows."
+    },
+    {
+      "check": "브라우저 렌더/E2E 시각 검증",
+      "command": "(실행 안 함)",
+      "result": "NOT_RUN",
+      "evidence": "카드 수용 기준에 없고, tests/browser/run.mjs는 개발 서버와 백엔드 기동이 필요하다. 픽셀 동일성은 CSS 변수 값 동일(27/27)과 빌드 산출 CSS의 변수 포함 확인으로 대체 증명했다."
+    },
+    {
+      "check": "원격 배포/Railway·Cloudflare 실제 거래 검증",
+      "command": "(실행 안 함)",
+      "result": "NOT_RUN",
+      "evidence": "이번 WS 규칙상 push·배포·원격 쓰기 금지. 이 카드는 빌드 시점 정적 토큰만 다루고 API·DB를 건드리지 않는다."
+    }
+  ],
+  "replaced": {
+    "web": "style.css의 :root 색 정의 6개를 tokens.css로 이관하고, --pale→--soft / --neutral→--track 이름을 토큰명에 맞췄다. 남아 있던 리터럴 #FEE500·#03A94D·#c6cdd5(kakao/naver/google 버튼)와 button:disabled의 #d5dce3를 var() 참조로 바꿨다. main.ts가 tokens.css를 style.css 앞에 import한다.",
+    "ios": "KimgosuApp.swift의 navy/lime/soft/muted/brandBorder 5개 private 상수와 KGAuthView.swift의 kgNavy/kgLime/kgBorder/kgMuted/kgSoft 5개를 삭제하고 DesignTokens.* 참조로 교체. 카카오·네이버·구글 테두리·스위치 트랙 인라인 Color도 토큰 참조로 교체.",
+    "android": "MainActivity.kt와 auth/ui/KGAuthView.kt의 Navy/Lime/Soft/Muted/Border 상수, DevTestLogin.kt의 DevNavy를 삭제하고 DesignTokens.* 참조로 교체. 0xFFFEE500·0xFF03A94D·0xFF747775·0xFFDDE5EE·0xFFEFF8D8 인라인도 토큰화."
+  },
+  "notTokenized": [
+    "apps/web/src/admin/*.vue — 운영자 콘솔 전용 팔레트(약 28색: #101a2b 헤더, #1b53c8 primary, #172033 등). iOS/AOS와 공유되는 값이 하나도 없어 중복 제거 대상이 아니고, 토큰화하면 웹 전용 토큰 20여 개가 늘어 '토큰 최소' 기준과 충돌한다. 별도 판단 필요.",
+    "구성원 웹 일회용 색: #8b281c(오류 문구 2회), #aeb9c5(입력 테두리 2회), #f5f7f9, #fff3ef/#edc8bf/#7f251b(notice.error), #eef0f2/#65717d(disabled), #92b916, #647282, #53632c, #e8ebef, #171717, #0b1e3540/#0b1e3580(dialog 그림자) — 대응 네이티브 값이 없거나 플랫폼별로 달라 공유 토큰으로 만들면 값이 바뀐다.",
+    "AOS 일회용: Color(0xFFF4F4F4) 진단 박스, Color(0xFFAF2635) 오류 문구, Color(0xFF1F1F1F), DevTestLogin의 Color(0xFF5F6B7A)/Color(0xFFB42332).",
+    "iOS 일회용: 오류 문구 .red(시스템 색), Color(white: 0.12), Color(white: 0.957), Color.white 계열."
+  ],
+  "migrations": [],
+  "open": [
+    "생성물 드리프트를 막는 검사가 아직 없다. WS-36의 루트 package.json/CI에 `node scripts/generate-tokens.mjs && git diff --exit-code`(또는 생성물 해시 비교) 단계를 넣으면 tokens.json만 고치고 생성물을 안 갱신하는 변경을 차단할 수 있다.",
+    "운영자 콘솔(admin) 팔레트를 토큰에 포함할지 결정 필요. 포함하면 web 전용 토큰 약 20개가 늘어난다.",
+    "오류 문구 색이 플랫폼별로 다르다(웹 #8b281c / AOS #AF2635 / iOS .red). 통일은 값 변경이므로 별도 승인·디자인 판단이 필요하다."
+  ],
+  "risks": [
+    ".gitignore를 `/design/` → `/design/*` + `!/design/tokens.json`으로 바꿨다. design/ 아래에는 추적 중이던 파일이 원래 없었지만(git ls-files 0건), 앞으로 design/에 파일을 추가하면 여전히 무시되고 tokens.json만 추적된다.",
+    "iOS는 pbxproj를 직접 편집해 DesignTokens.swift를 3개 프로젝트에 등록했다. Xcode가 파일을 자동 동기화하지 않는 구형 project format이므로, 이후 파일을 옮기면 세 곳을 같이 고쳐야 한다.",
+    "web 값(border/muted/track/googleBorder)이 네이티브와 미세하게 다르다. 이번 작업은 차이를 보존했을 뿐 통일하지 않았다.",
+    "이 환경에서 apps/android/build.py의 JDK 자동탐색이 실패한다(.local-toolchains/jdk17 아래 JDK 2개). 이번 작업은 환경변수를 직접 지정해 우회했고 build.py는 고치지 않았다(WS 경계 밖)."
+  ],
+  "next": [
+    "병합 전 재실행: (1) node scripts/generate-tokens.mjs (2) git diff --exit-code -- apps/web/src/tokens.css apps/ios/Kimgosu/DesignTokens.swift apps/android/app/src/main/java/ai/mintech/kimgosu/ui/DesignTokens.kt (3) cd apps/web && npm run typecheck && npm run test:unit && npm run build (4) JAVA_HOME/ANDROID_HOME 지정 후 python3 apps/android/build.py --offline :app:assembleDevDebug (5) xcodebuild -project apps/ios/Kimgosu.xcodeproj -scheme Kimgosu ... CODE_SIGNING_ALLOWED=NO build.",
+    "WS-36에서 CI에 토큰 드리프트 검사 단계 추가.",
+    "오류 색·admin 팔레트 통일 여부는 오케스트레이터/디자인 판단 후 별도 카드로."
+  ]
+}
