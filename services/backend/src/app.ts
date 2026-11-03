@@ -95,7 +95,6 @@ export function buildApp(db: Sql, release: string, options: AuthOptions = {}) {
     }) } : { rows: await readinessDocuments(db) };
     const configured = options.providers ?? {};
     const identityReady = Boolean(options.identityKey && options.identityKey.length >= 32);
-    const docsReady = requiredReadyKindsForGrant.every(kind => documents.rows.some(d => d.kind === kind && d.canConsent === true));
     // 정식 소셜 로그인 경로의 실제 연결 상태. 자격증명이 없으면 connected:false로
     // 정직하게 노출하고, 해당 provider의 start는 503으로 거부된다.
     const oauthProviders = OAUTH_PROVIDERS.map(id => ({
@@ -103,11 +102,12 @@ export function buildApp(db: Sql, release: string, options: AuthOptions = {}) {
       connected: Boolean(configured[id]) && identityReady,
       ...(!configured[id] || !identityReady ? { reason: 'PROVIDER_INTEGRATION_NOT_CONNECTED' } : {}),
     }));
-    return { release, signupReady: docsReady && identityReady && Boolean(options.sms) && Object.keys(configured).length > 0,
+    // 웨이브 2: WS-11(소셜 로그인 연결 상태)과 WS-12(가입 준비 상태)가 같은 응답을
+    // 확장했으므로 하나의 return으로 합친다. signupReady는 readiness 판정을 쓴다.
+    const readiness = registrationReadiness(documents.rows, options);
+    return { release, signupReady: readiness.signupReady,
       oauth: { providers: oauthProviders, stateTtlSeconds: OAUTH_STATE_TTL_SECONDS, startPath: '/v1/auth/oauth/:provider/start', callbackPath: '/v1/auth/oauth/:provider/callback' },
       providers: (['kakao', 'naver', 'google'] as const).map(id => ({ id, enabled: Boolean(configured[id]) && identityReady, ...(!configured[id] || !identityReady ? { reason: 'PROVIDER_INTEGRATION_NOT_CONNECTED' } : {}) })),
-    const readiness = registrationReadiness(documents.rows, options);
-    return { release, signupReady: readiness.signupReady, providers: (['kakao', 'naver', 'google'] as const).map(id => ({ id, enabled: Boolean(configured[id]) && identityReady, ...(!configured[id] || !identityReady ? { reason: 'PROVIDER_INTEGRATION_NOT_CONNECTED' } : {}) })),
       sms: { available: Boolean(options.sms) && identityReady, codeDigits: 5, expiresInSeconds: 60, phonePattern: '^010[0-9]{8}$' },
       requiredFields: ['name', 'email'], minimumAgeAcknowledgement: 14, collectsGender: false, collectsAgeGroup: false,
       rejoinWaitDays: 30, retention: { purpose: '거래상대방 보호', startsAt: 'WITHDRAWAL_CONFIRMED', calendarYears: 1, rejoinResetsClock: false },
