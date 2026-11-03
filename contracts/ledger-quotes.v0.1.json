@@ -14,6 +14,8 @@
     "State transitions are decided by the server. Clients never send status/amount/confirmation flags; unknown properties are rejected with 400 INVALID_REQUEST (additionalProperties:false on every body).",
     "Not a participant => 404 LEDGER_NOT_FOUND so the ledger's existence is not disclosed.",
     "version is optimistic-concurrency state: a stale expectedVersion returns 409 VERSION_CONFLICT.",
+    "Quote terms (WS-24): amount is authoritative and the server derives the money fields. vatIncluded=false means amount is the VAT-exclusive supply price (부가세 별도, the default); vatIncluded=true means amount is the final payable total. VAT_RATE is 0.1. priceType is HOURLY or TOTAL (default TOTAL); an HOURLY quote requires hourlyRate and a TOTAL quote must not carry one.",
+    "Quote TTL (WS-24): expiresAt is optional. Omitted => now + 7 days. The server rejects an expiry at or before now + 60 seconds (400 INVALID_EXPIRY) and anything beyond now + 30 days (400 EXPIRY_EXCEEDS_MAX_TTL).",
     "Route spelling: the pre-existing singular /v1/ledger for the expert's ledger list/detail, plural /v1/ledgers/:id for quotes. Unifying the spelling is explicitly out of scope for this wave."
   ],
   "operations": [
@@ -287,12 +289,15 @@
       "requestSchema": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["amount", "message", "expiresAt"],
+        "required": ["amount", "message"],
         "properties": {
           "amount": { "type": "integer", "minimum": 1, "maximum": 2147483647 },
           "message": { "type": "string", "minLength": 1, "maxLength": 2000 },
           "expiresAt": { "type": "string", "format": "date-time" },
-          "scheduleAt": { "type": "string", "format": "date-time" }
+          "scheduleAt": { "type": "string", "format": "date-time" },
+          "priceType": { "type": "string", "enum": ["HOURLY", "TOTAL"] },
+          "vatIncluded": { "type": "boolean" },
+          "hourlyRate": { "type": "integer", "minimum": 1, "maximum": 2147483647 }
         }
       },
       "responses": {
@@ -301,6 +306,9 @@
       "errors": [
         { "status": 400, "code": "INVALID_REQUEST", "when": "schema violation" },
         { "status": 400, "code": "INVALID_EXPIRY", "when": "expiresAt is not at least 60 seconds in the future" },
+        { "status": 400, "code": "EXPIRY_EXCEEDS_MAX_TTL", "when": "expiresAt is more than 30 days in the future" },
+        { "status": 400, "code": "HOURLY_RATE_REQUIRED", "when": "priceType=HOURLY but hourlyRate is omitted" },
+        { "status": 400, "code": "HOURLY_RATE_NOT_ALLOWED", "when": "priceType=TOTAL but hourlyRate is present" },
         { "status": 401, "code": "AUTH_REQUIRED", "when": "missing or malformed Authorization header" },
         { "status": 403, "code": "ACCOUNT_RESTRICTED", "when": "member has an active restriction" },
         { "status": 403, "code": "EXPERT_ONLY", "when": "caller is a participant but not the ledger's expert" },
@@ -413,7 +421,7 @@
     }
   ],
   "openItems": [
-    "Currency/VAT/price_type and quote TTL policy are not decided at v0.1; the schema only carries the integer amount and the caller-supplied expiresAt. Wave-3 WS-24 is the card that adds price_type/vat_included/hourly_rate and the 7/30-day TTL rule.",
+    "Quote terms are the user-confirmed WS-24 policy: VAT is quoted separately by default (vatIncluded=false), priceType distinguishes HOURLY from TOTAL, and the TTL is 7 days by default with a 30-day maximum. The server derives supplyAmount/vatAmount/totalAmount from amount; a client-sent derived amount is rejected by additionalProperties:false.",
     "GET /v1/ledger is expert-only by design; a customer-side ledger list does not exist.",
     "Route spelling singular /v1/ledger vs plural /v1/ledgers/:id is intentionally unchanged; unification is a separate post-merge refactor."
   ],
@@ -466,12 +474,14 @@
       }
     },
     "Quote": {
+      "description": "Wire projection of present(): the stored quote row plus the server-derived money fields. amount is the stored authoritative amount; supplyAmount/vatAmount/totalAmount are computed by quoteAmounts(amount, vatIncluded) with VAT_RATE 0.1.",
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "id", "ledgerId", "expertMemberId", "customerMemberId", "amount", "scheduleAt", "message",
-        "status", "version", "expiresAt", "agreementId", "createdAt", "acceptedAt", "rejectedAt",
-        "customerConfirmedAt", "expertConfirmedAt", "completedAt"
+        "id", "ledgerId", "expertMemberId", "customerMemberId", "amount", "priceType", "vatIncluded",
+        "hourlyRate", "scheduleAt", "message", "status", "version", "expiresAt", "agreementId",
+        "createdAt", "acceptedAt", "rejectedAt", "customerConfirmedAt", "expertConfirmedAt", "completedAt",
+        "currency", "vatRate", "supplyAmount", "vatAmount", "totalAmount"
       ],
       "properties": {
         "id": { "$ref": "#/definitions/Uuid" },
@@ -479,6 +489,9 @@
         "expertMemberId": { "$ref": "#/definitions/Uuid" },
         "customerMemberId": { "$ref": "#/definitions/Uuid" },
         "amount": { "type": "integer", "minimum": 1 },
+        "priceType": { "type": "string", "enum": ["HOURLY", "TOTAL"] },
+        "vatIncluded": { "type": "boolean" },
+        "hourlyRate": { "type": ["integer", "null"], "minimum": 1 },
         "scheduleAt": { "$ref": "#/definitions/NullableTimestamp" },
         "message": { "type": "string" },
         "status": { "$ref": "#/definitions/QuoteStatus" },
@@ -490,17 +503,23 @@
         "rejectedAt": { "$ref": "#/definitions/NullableTimestamp" },
         "customerConfirmedAt": { "$ref": "#/definitions/NullableTimestamp" },
         "expertConfirmedAt": { "$ref": "#/definitions/NullableTimestamp" },
-        "completedAt": { "$ref": "#/definitions/NullableTimestamp" }
+        "completedAt": { "$ref": "#/definitions/NullableTimestamp" },
+        "currency": { "type": "string", "const": "KRW" },
+        "vatRate": { "type": "number", "const": 0.1 },
+        "supplyAmount": { "type": "integer", "minimum": 0 },
+        "vatAmount": { "type": "integer", "minimum": 0 },
+        "totalAmount": { "type": "integer", "minimum": 0 }
       }
     },
     "QuoteWithEffectiveStatus": {
-      "description": "List projection = the quote row plus effectiveStatus: a PROPOSED quote past expiresAt reads as EXPIRED before the row is transitioned.",
+      "description": "List projection = the Quote wire object plus effectiveStatus: a PROPOSED quote past expiresAt reads as EXPIRED before the row is transitioned.",
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "id", "ledgerId", "expertMemberId", "customerMemberId", "amount", "scheduleAt", "message",
-        "status", "version", "expiresAt", "agreementId", "createdAt", "acceptedAt", "rejectedAt",
-        "customerConfirmedAt", "expertConfirmedAt", "completedAt", "effectiveStatus"
+        "id", "ledgerId", "expertMemberId", "customerMemberId", "amount", "priceType", "vatIncluded",
+        "hourlyRate", "scheduleAt", "message", "status", "version", "expiresAt", "agreementId",
+        "createdAt", "acceptedAt", "rejectedAt", "customerConfirmedAt", "expertConfirmedAt", "completedAt",
+        "currency", "vatRate", "supplyAmount", "vatAmount", "totalAmount", "effectiveStatus"
       ],
       "properties": {
         "id": { "$ref": "#/definitions/Uuid" },
@@ -508,6 +527,9 @@
         "expertMemberId": { "$ref": "#/definitions/Uuid" },
         "customerMemberId": { "$ref": "#/definitions/Uuid" },
         "amount": { "type": "integer", "minimum": 1 },
+        "priceType": { "type": "string", "enum": ["HOURLY", "TOTAL"] },
+        "vatIncluded": { "type": "boolean" },
+        "hourlyRate": { "type": ["integer", "null"], "minimum": 1 },
         "scheduleAt": { "$ref": "#/definitions/NullableTimestamp" },
         "message": { "type": "string" },
         "status": { "$ref": "#/definitions/QuoteStatus" },
@@ -520,7 +542,12 @@
         "rejectedAt": { "$ref": "#/definitions/NullableTimestamp" },
         "customerConfirmedAt": { "$ref": "#/definitions/NullableTimestamp" },
         "expertConfirmedAt": { "$ref": "#/definitions/NullableTimestamp" },
-        "completedAt": { "$ref": "#/definitions/NullableTimestamp" }
+        "completedAt": { "$ref": "#/definitions/NullableTimestamp" },
+        "currency": { "type": "string", "const": "KRW" },
+        "vatRate": { "type": "number", "const": 0.1 },
+        "supplyAmount": { "type": "integer", "minimum": 0 },
+        "vatAmount": { "type": "integer", "minimum": 0 },
+        "totalAmount": { "type": "integer", "minimum": 0 }
       }
     }
   }
