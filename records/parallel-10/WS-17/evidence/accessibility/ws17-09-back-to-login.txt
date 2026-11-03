@@ -1,0 +1,72 @@
+Attributes: Application, 0x10adfb700, pid: 32305, label: '김고수 개발'
+Element subtree:
+ →Application, 0x10adfb700, pid: 32305, label: '김고수 개발'
+    Window (Main), 0x10adf9040, {{0.0, 0.0}, {402.0, 874.0}}
+      Other, 0x10adf8dc0, {{0.0, 0.0}, {402.0, 874.0}}
+        Other, 0x10adfbac0, {{0.0, 0.0}, {402.0, 874.0}}
+          Other, 0x10adfb480, {{0.0, 0.0}, {402.0, 874.0}}
+            Other, 0x10adfb980, {{0.0, 0.0}, {402.0, 874.0}}
+              Other, 0x10adfbe80, {{0.0, 0.0}, {402.0, 874.0}}
+                Other, 0x10adfb840, {{0.0, 0.0}, {402.0, 874.0}}
+                  Other, 0x10adfbd40, {{0.0, 0.0}, {402.0, 874.0}}
+                    Other, 0x10adf88c0, {{0.0, 0.0}, {402.0, 874.0}}
+                      Other, 0x10adfbc00, {{0.0, 0.0}, {402.0, 874.0}}
+                        Button, 0x10adfa080, {{20.0, 62.0}, {44.0, 44.0}}, identifier: 'xmark', label: '닫기 또는 이전 화면'
+                        StaticText, 0x10adf8500, {{158.7, 73.2}, {84.7, 21.7}}, label: '로그인/가입'
+                        Other, 0x10adf8b40, {{352.2, 74.5}, {30.3, 19.0}}, label: '개발 서버 연결'
+                          StaticText, 0x10adf8a00, {{358.7, 78.0}, {17.3, 12.0}}, label: '개발'
+                        ScrollView, 0x10adf9a40, {{0.0, 106.0}, {402.0, 669.7}}
+                          Other, 0x10adf8140, {{0.0, 106.0}, {402.0, 719.3}}
+                            StaticText, 0x10adf8780, {{156.8, 142.0}, {88.3, 40.7}}, label: '김고수'
+                            StaticText, 0x10adfae40, {{73.0, 202.7}, {256.0, 52.0}}, label: '전문가 서비스를 더욱 합리적으로
+오로지 김고수에서!'
+                            Image, 0x10adf8640, {{19.5, 274.2}, {363.0, 163.0}}, label: '우리동네 김고수'
+                            Button, 0x10adf9680, {{20.0, 456.7}, {362.0, 48.0}}, label: '카카오로 시작'
+                            Button, 0x10adf83c0, {{20.0, 524.7}, {362.0, 48.0}}, label: '네이버로 시작'
+                            Button, 0x10adf97c0, {{20.0, 592.7}, {362.0, 48.0}}, label: 'Google로 시작'
+                              StaticText, 0x10adfa940, {{20.0, 592.7}, {362.0, 48.0}}, label: 'Google로 시작'
+                              Image, 0x10adf9900, {{138.0, 607.7}, {17.3, 18.0}}
+                            StaticText, 0x10adf9e00, {{20.0, 675.0}, {190.3, 14.3}}, identifier: 'dev-login-section', label: '개발용 테스트 계정 · 실제 서버 세션 발급'
+                            Button, 0x10adf9cc0, {{20.0, 699.3}, {362.0, 48.0}}, identifier: 'dev-login-section', label: '일반 사용자 01 · 테스트01'
+                              Button, 0x10adf9b80, {{20.0, 699.3}, {362.0, 48.0}}
+                                StaticText, 0x10adfa300, {{32.0, 714.8}, {143.7, 17.0}}, label: '일반 사용자 01 · 테스트01'
+                                Image, 0x10adf92c0, {{358.3, 720.3}, {10.3, 6.0}}, identifier: 'chevron.down', label: '아래로 이동'
+                            Button, 0x10adfa1c0, {{20.0, 757.3}, {362.0, 48.0}}, identifier: 'dev-login-section', label: '테스트 계정으로 로그인'
+                          Other, 0x10adfa440, {{369.0, 106.0}, {30.0, 669.7}}, label: 'Vertical scroll bar, 2 pages', value: 0%
+                            Other, 0x10adfa800, {{396.0, 659.7}, {3.0, 7.0}}
+                          Other, 0x10adfa6c0, {{369.0, 106.0}, {30.0, 669.7}}, label: 'Vertical scroll bar, 2 pages', value: 0%
+                            Other, 0x10adfa580, {{396.0, 659.7}, {3.0, 7.0}}
+                        Button, 0x10adf9f40, {{20.0, 784.0}, {362.0, 48.0}}, label: '둘러보기'
+                Toolbar, 0x10adf9400, {{0.0, 0.0}, {402.0, 874.0}}, identifier: 'Toolbar', label: 'Toolbar'
+                  Other, 0x10adf9540, {{0.0, 0.0}, {402.0, 874.0}}
+              ScrollView, 0x10adf9180, {{0.0, 0.0}, {402.0, 771.0}}, identifier: 'main-scroll'
+                Other, 0x10adfaa80, {{0.0, 0.0}, {402.0, 771.0}}
+                  Other, 0x10adf8c80, {{0.0, 0.0}, {402.0, 102.0}}
+                Other, 0x10adfabc0, {{0.0, 0.0}, {402.0, 771.0}}
+                Other, 0x10adfb200, {{0.0, 62.0}, {402.0, 1255.7}}
+                Other, 0x10adfaf80, {{369.0, 62.0}, {30.0, 709.0}}, label: 'Vertical scroll bar, 2 pages', value: 0%
+                  Other, 0x10adf8280, {{396.0, 65.0}, {3.0, 412.7}}
+                Other, 0x10adfb0c0, {{369.0, 62.0}, {30.0, 709.0}}, label: 'Vertical scroll bar, 2 pages', value: 0%
+                  Other, 0x10adfb340, {{396.0, 65.0}, {3.0, 412.7}}
+              Button, 0x10adfad00, {{0.0, 777.0}, {80.3, 58.0}}, identifier: 'nav-0', label: '홈', Selected
+                StaticText, 0x10adf8000, {{0.0, 777.0}, {80.3, 58.0}}, label: '홈'
+                Image, 0x106e87ac0, {{27.3, 785.0}, {26.0, 26.0}}
+              Button, 0x106e87c00, {{80.3, 777.0}, {80.3, 58.0}}, identifier: 'nav-1', label: '검색'
+                StaticText, 0x106e87700, {{80.3, 777.0}, {80.3, 58.0}}, label: '검색'
+                Image, 0x106e87840, {{107.7, 785.0}, {26.0, 26.0}}
+              Button, 0x106e87d40, {{160.7, 777.0}, {80.7, 58.0}}, identifier: 'nav-2', label: '등록'
+                StaticText, 0x106e87980, {{160.7, 777.0}, {80.7, 58.0}}, label: '등록'
+                Image, 0x109c5ef80, {{188.0, 785.0}, {26.0, 26.0}}
+              Button, 0x109c5fe80, {{241.3, 777.0}, {80.3, 58.0}}, identifier: 'nav-3', label: '채팅'
+                StaticText, 0x109c5e300, {{241.3, 777.0}, {80.3, 58.0}}, label: '채팅'
+                Image, 0x109c5e940, {{268.3, 785.0}, {26.0, 26.0}}
+              Button, 0x109c5d2c0, {{321.7, 777.0}, {80.3, 58.0}}, identifier: 'nav-4', label: '마이'
+                StaticText, 0x109c5fac0, {{321.7, 777.0}, {80.3, 58.0}}, label: '마이'
+                Image, 0x109c5d180, {{348.7, 785.0}, {26.0, 26.0}}
+Path to element:
+ →Application, 0x10adfb700, pid: 32305, label: '김고수 개발'
+Query chain:
+ →Find: Target Application 'ai.mintech.kimgosu.dev'
+  Output: {
+    Application, 0x109c5e080, pid: 32305, label: '김고수 개발'
+  }

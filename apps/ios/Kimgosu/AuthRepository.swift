@@ -32,6 +32,39 @@ struct KGAuthAPIError: Error {
     let code: String
     var requestContext: KGAuthRequestContext = .unknown
 }
+/// 네트워크 도달 실패(전송 계층)와 서버 응답 오류를 구분한다. 재시도 안내 문구와 상태 표시가 다르다.
+enum KGNetworkFailure {
+    static func isNetwork(_ error: Error) -> Bool {
+        if error is URLError { return true }
+        let ns = error as NSError
+        return ns.domain == NSURLErrorDomain || ns.domain == (URLError.errorDomain)
+    }
+}
+#if DEBUG
+/// 결정론적 개발 검증용 스위치. 기본값은 꺼짐이며 릴리스 빌드에는 포함되지 않는다.
+/// 성공을 위조하지 않고 전송 계층 실패·지연만 주입한다(기존 `--offline`/`--hold-splash`와 같은 방식).
+enum KGDebugHooks {
+    static var apiOffline: Bool { ProcessInfo.processInfo.arguments.contains("--api-offline") }
+    static var apiDelayMs: Int {
+        guard let raw = ProcessInfo.processInfo.arguments.first(where: { $0.hasPrefix("--api-delay-ms=") }) else { return 0 }
+        return max(0, min(10_000, Int(raw.dropFirst("--api-delay-ms=".count)) ?? 0))
+    }
+    static var devLoginSlot: Int? {
+        guard let raw = ProcessInfo.processInfo.arguments.first(where: { $0.hasPrefix("--dev-login-slot=") }) else { return nil }
+        return Int(raw.dropFirst("--dev-login-slot=".count))
+    }
+    static var injectExpiredSession: Bool { ProcessInfo.processInfo.arguments.contains("--inject-expired-session") }
+    /// 클라이언트 측 오류 주입(성공 위조 아님). 서버 오류 화면·재시도를 결정론적으로 확인하기 위한 것이며,
+    /// 실제 서버 5xx를 받은 것으로 표시하지 않는다.
+    static var apiFailStatus: Int? {
+        guard let raw = ProcessInfo.processInfo.arguments.first(where: { $0.hasPrefix("--api-fail-status=") }) else { return nil }
+        guard let value = Int(raw.dropFirst("--api-fail-status=".count)), (400...599).contains(value) else { return nil }
+        return value
+    }
+    /// 테스트 시작 상태를 결정론적으로 만들기 위한 Keychain 초기화. 성공을 위조하지 않는다.
+    static var clearSession: Bool { ProcessInfo.processInfo.arguments.contains("--clear-session") }
+}
+#endif
 
 func decodeMembershipResponse(_ status: Int, _ data: Data) throws -> [String: Any] {
     guard data.count <= 1_000_000,
@@ -64,7 +97,7 @@ struct KGSecureSession: KGSessionStorage {
         let status = SecItemCopyMatching(q as CFDictionary, &item)
         if status == errSecItemNotFound { return nil }
         guard status == errSecSuccess, let data = item as? Data, let value = String(data: data, encoding: .utf8) else {
-            throw KGAuthAPIError(status: 0, code: "SESSION_STORAGE_UNAVAILABLE")
+            throw KGAuthAPIError(status: 0, code: "SESSION_STORAGE_UNAVAILABLE_\(status)")
         }
         return value
     }
@@ -104,6 +137,11 @@ final class KGMembershipHTTP: KGAuthTransport {
         request.setValue("no-store", forHTTPHeaderField: "Cache-Control")
         if let token { request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization") }
         if let body { request.setValue("application/json; charset=utf-8", forHTTPHeaderField: "Content-Type"); request.httpBody = try JSONSerialization.data(withJSONObject: body) }
+        #if DEBUG
+        if KGDebugHooks.apiDelayMs > 0 { try await Task.sleep(for: .milliseconds(KGDebugHooks.apiDelayMs)) }
+        if KGDebugHooks.apiOffline { throw URLError(.notConnectedToInternet) }
+        if let status = KGDebugHooks.apiFailStatus { throw KGAuthAPIError(status: status, code: "INJECTED_TEST_FAULT") }
+        #endif
         let (data, response) = try await session.data(for: request)
         try Task.checkCancellation()
         #if DEBUG
@@ -160,6 +198,13 @@ struct KGAuthRepository {
         return try await request(.private, "POST", "/v1/auth/signup", body: body)
     }
     func logout(_ token: String) async throws -> [String: Any] { try await request(.private, "POST", "/v1/auth/logout", token: token) }
+    /// 개발 환경 전용 임시 로그인. 운영 빌드에서는 호출하지 않는다(KGEnvironment.isProduction 가드).
+    /// 응답은 실제 서버가 발급한 세션이며 클라이언트가 토큰을 만들지 않는다.
+    func devAccounts() async throws -> [String: Any] { try await request(.public, "GET", "/v1/auth/dev/accounts") }
+    func devLogin(slot: Int) async throws -> [String: Any] {
+        guard (1...20).contains(slot) else { throw KGAuthAPIError(status: 0, code: "INVALID_DEV_SLOT") }
+        return try await request(.private, "POST", "/v1/auth/dev/login", body: ["slot": slot])
+    }
 }
 
 // v0.3 wire DTOs. IDs/revisions/versions remain opaque; local time never grants/vetoes.

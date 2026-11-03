@@ -1,0 +1,89 @@
+{
+  "ws": "WS-17",
+  "status": "DONE",
+  "summary": "iOS A1 메인을 실제 개발 API(/v1/auth/dev/login → /v1/me)에 연결하고 로딩·빈·오류(재시도)·네트워크 실패 4상태와 401 만료 복귀를 시뮬레이터에서 실행 검증(PASS 4/4)했고 CODE_SIGNING_ALLOWED=NO 빌드와 기존 LaunchTests 3건 회귀도 통과했다.",
+  "changedFiles": [
+    "apps/ios/Kimgosu/AuthModel.swift",
+    "apps/ios/Kimgosu/AuthRepository.swift",
+    "apps/ios/Kimgosu/KGAuthModels.swift",
+    "apps/ios/Kimgosu/KGAuthView.swift",
+    "apps/ios/Kimgosu/KimgosuApp.swift",
+    "apps/ios/Kimgosu.xcodeproj/project.pbxproj",
+    "apps/ios/KimgosuUITests/WS17MainDataTests.swift",
+    "apps/ios/Kimgosu/Kimgosu.entitlements",
+    "records/parallel-10/WS-17/RESULT.json",
+    "records/parallel-10/WS-17/evidence/*.png (10장)",
+    "records/parallel-10/WS-17/evidence/accessibility/*.txt (10개)"
+  ],
+  "verification": [
+    {
+      "check": "Debug 빌드(서명 미사용)",
+      "command": "cd apps/ios && xcodebuild -project Kimgosu.xcodeproj -scheme Kimgosu -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 18 Pro' -derivedDataPath $TMPDIR/ws17-final-dd CODE_SIGNING_ALLOWED=NO build",
+      "result": "PASS",
+      "evidence": "** BUILD SUCCEEDED ** (Xcode 27.0 / iOS 27 시뮬레이터, ai.mintech.kimgosu.dev, KGEnvironment=dev, KGAPIBaseURL=https://api-dev-kimgosu.mintech.ai)"
+    },
+    {
+      "check": "WS-17 시나리오 4종 UI 테스트(실 개발 API 호출)",
+      "command": "xcodebuild -project Kimgosu.xcodeproj -scheme Kimgosu -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 18 Pro' -resultBundlePath $TMPDIR/ws17.xcresult -only-testing:KimgosuUITests/WS17MainDataTests test",
+      "result": "PASS",
+      "evidence": "4 tests, 0 failures — test01 빈 상태→dev 로그인→A1 실데이터, test02 Keychain 재시작 자동 로그인, test03 로딩/네트워크 실패/서버 오류·재시도, test04 만료 401→로그인 복귀 및 세션 삭제. (중간 실행에서 test02 1회 flaky 실패 후 진단 보강·재실행에서 통과, 최종 전체 스위트 4/4 통과)"
+    },
+    {
+      "check": "기존 승인 플로우 회귀(LaunchTests)",
+      "command": "xcodebuild ... -only-testing:KimgosuUITests/LaunchTests/test01SplashThreeSecondsThenFormalE1 -only-testing:.../test02ProtectedCancelPreservesA1 -only-testing:.../test03PublicPolicyRealApiResultAndReturn test",
+      "result": "PASS",
+      "evidence": "3 tests, 0 failures, ** TEST SUCCEEDED ** (스플래시 3초→E1, 보호화면 취소 후 A1 복귀, 공개 정책 실 API 결과)"
+    },
+    {
+      "check": "개발 API 실제 응답과 화면 데이터 일치",
+      "command": "curl -s https://api-dev-kimgosu.mintech.ai/v1/auth/dev/login -X POST -H 'Content-Type: application/json' -d '{\"slot\":1}' / curl -s https://api-dev-kimgosu.mintech.ai/v1/me -H 'Authorization: Bearer <redacted>'",
+      "result": "PASS",
+      "evidence": "/health 200, /v1/auth/dev/accounts 200, dev/login 200(세션 발급), /v1/me 200 {nickname:'테스트01', customerNumber:'13', email:'test01@dev.invalid', expertActive:false} — 화면 표시값과 동일. 토큰 값은 기록하지 않음."
+    },
+    {
+      "check": "상태 4종 화면 표시(스크린샷+접근성 트리)",
+      "command": "xcrun xcresulttool export attachments --path $TMPDIR/ws17.xcresult",
+      "result": "PASS",
+      "evidence": "evidence/ws17-01-empty-state.png(main-session-empty '로그인/가입 · 회원관리'), ws17-05-loading-state.png(main-session-loading '회원 정보를 불러오는 중입니다.'), ws17-06-network-failure-state.png(main-session-network-failure), ws17-07-server-error-retry.png(main-session-error + main-session-retry), ws17-03-main-loaded-real-data.png('테스트01님'/'고객번호 13'/'test01@dev.invalid')"
+    },
+    {
+      "check": "토큰 Keychain 저장(UserDefaults 금지)",
+      "command": "grep -rn 'UserDefaults' apps/ios/Kimgosu/ ; grep -n 'kSecClassGenericPassword|kSecAttrService' apps/ios/Kimgosu/AuthRepository.swift",
+      "result": "PASS",
+      "evidence": "UserDefaults 사용 0건. KGSecureSession이 kSecClassGenericPassword(kSecAttrService=ai.mintech.kimgosu.auth, kSecAttrAccessibleWhenUnlockedThisDeviceOnly)로 저장/조회/삭제. 재시작 후 자동 로그인은 test02로 실행 확인."
+    },
+    {
+      "check": "Pretendard 번들 포함 및 다이나믹 타입 설정",
+      "command": "ls Kimgosu.app/MobileAssets | grep otf ; /usr/libexec/PlistBuddy -c 'Print :UIAppFonts' Kimgosu.app/Info.plist ; grep -n 'relativeTo: .body' apps/ios/Kimgosu/KimgosuApp.swift",
+      "result": "PASS",
+      "evidence": "빌드 산출물에 regular/semibold/bold.otf 포함, Info.plist UIAppFonts 등록, 텍스트는 .custom(..., size:, relativeTo: .body)로 스케일링"
+    },
+    {
+      "check": "확대 다이나믹 타입에서 실제 렌더 확인",
+      "command": "(미실행)",
+      "result": "NOT_RUN",
+      "evidence": "시뮬레이터 글자 크기를 확대한 상태에서 화면 캡처/겹침 확인은 실행하지 않음. 코드 수준 설정만 확인."
+    }
+  ],
+  "contractChanges": [],
+  "migrations": [],
+  "open": [
+    "A1 승인 디자인의 '로그인/가입 · 회원관리' 버튼 자리를 세션 카드(닉네임·고객번호·이메일·고수 표시)로 대체했다. 승인 디자인 대비 UI delta이므로 uiux/사용자 확인이 필요하다(임의 재설계로 확정하지 않음).",
+    "E1 로그인 화면에 DEBUG 전용 개발용 테스트 계정 섹션(--dev-login-section)을 추가했다. 승인 디자인에는 없는 요소이므로 운영 전 제거/위치 확정이 필요하다(릴리스 빌드에는 컴파일되지 않음).",
+    "세션이 있는 콜드 스타트에서 E1(로그인) 대신 A1을 먼저 표시하고 로딩 상태를 보여주도록 AuthModel.start() 동작을 바꿨다. 기존 승인 플로우(E1→둘러보기→A1)는 유지되지만 이 표시 순서 변경의 수용 여부는 사용자 확정이 필요하다.",
+    "서버 오류(오류·재시도) 상태는 클라이언트 오류 주입(--api-fail-status=503)으로만 확인했다. 실제 서버 5xx 응답을 받은 증거는 없으며, 개발 API의 실제 오류 응답 검증은 미실행이다.",
+    "실기기 서명·IPA 생성·배포는 범위 밖(Apple 회사 가입 승인 전 금지)이며 이번 작업에서 수행하지 않았다."
+  ],
+  "risks": [
+    "동시 작업 충돌: 같은 워크트리(projects/wt-WS-17)에서 동일 WS-17 프롬프트로 실행된 다른 Hermes 프로세스(17:04, 17:40 시작)가 이 세션과 동시에 파일을 수정하고 같은 시뮬레이터에서 테스트를 돌렸다. 해당 프로세스가 apps/ios/KimgosuUITests/WS17DebugDump.swift(진단용)와 apps/ios/Kimgosu/Kimgosu.entitlements, project.pbxproj 항목을 추가했다. 최종 빌드/테스트는 그 상태를 포함해 수행했으나, RESULT 작성 이후에도 파일이 다시 바뀔 수 있다.",
+    "WS17DebugDump.swift는 임시 진단용 테스트(주석에 '작업 후 삭제')이며 병합 전 제거 판단이 필요하다.",
+    "네트워크 실패·서버 오류 상태는 클라이언트 측 주입이며 실제 서버 장애 응답 증거가 아니다.",
+    "test02(Keychain 세션 재시작)는 전체 스위트 실행 중 1회 flaky 실패가 있었다(단독 재실행 및 최종 전체 실행은 통과). 시뮬레이터 동시 사용으로 인한 타이밍 영향 가능성을 배제하지 못했다."
+  ],
+  "next": [
+    "오케스트레이터가 이 워크트리에서 대응 UI 테스트를 재실행한 뒤 병합 여부를 결정한다(작업자 PASS 주장만으로 병합하지 않음).",
+    "WS-18(AOS)는 같은 API·같은 화면·같은 4상태 기준으로 동등성 구현을 이어받는다.",
+    "uiux QA: 세션 카드/개발 로그인 섹션/A1 진입 순서 변경이 승인 디자인·기획에 부합하는지 판정 필요.",
+    "확대 다이나믹 타입 렌더 확인과 실제 서버 오류(5xx) 응답 경로 검증은 후속 카드로 남긴다."
+  ]
+}

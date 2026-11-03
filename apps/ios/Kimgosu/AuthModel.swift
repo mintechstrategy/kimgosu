@@ -18,6 +18,7 @@ struct KGReturnTarget {
     private let sessions: KGSessionStorage
     private var token: String?
     private var task: Task<Void, Never>?
+    private var automation: Task<Void, Never>?
     private var sequence = 0
     private var version: Int?
     private var started = false
@@ -34,12 +35,81 @@ struct KGReturnTarget {
     }
     func start() {
         guard !started else { return }; started = true
+        #if DEBUG
+        // 만료 토큰 주입은 실제 서버 401 응답을 받기 위한 개발 검증용 훅이다(성공 위조 아님).
+        if KGDebugHooks.clearSession { try? sessions.clear() }
+        if KGDebugHooks.injectExpiredSession, let expired = sessionForExpiryCheck { try? sessions.write(expired) }
+        #endif
         execute {
             self.token = try self.sessions.read()
             if self.token != nil {
+                // 세션이 있으면 A1을 먼저 표시하고(로딩 상태) /v1/me 결과로 채운다.
+                // 실패하면 A1이 오류/네트워크 실패 상태를 그대로 보여준다(failure()가 401·403 화면을 얹는다).
+                self.browsing = true; self.stack = []
                 try await self.loadAccount()
-                if self.state.screen != .ACCOUNT_RESTRICTED { self.browsing = true; self.stack = [] }
-            } else { _ = try await self.loadConfig(); try await self.loadPolicies() }
+                if self.state.screen == .ACCOUNT_RESTRICTED { self.browsing = false }
+            } else {
+                self.state.member = .signedOut
+                _ = try await self.loadConfig(); try await self.loadPolicies()
+            }
+        }
+        loadDevAccounts()
+        #if DEBUG
+        if let slot = KGDebugHooks.devLoginSlot, KGEnvironment.isConfigured, !KGEnvironment.isProduction {
+            automation = Task { @MainActor [weak self] in
+                while let self, self.state.busy { try? await Task.sleep(for: .milliseconds(50)); if Task.isCancelled { return } }
+                self?.devLogin(slot: slot)
+            }
+        }
+        #endif
+    }
+    #if DEBUG
+    /// 32자 이상 형식은 만족하지만 서버에 없는 토큰 → /v1/me가 실제 401 SESSION_INVALID를 반환한다.
+    private var sessionForExpiryCheck: String? { "expired-session-" + String(repeating: "0", count: 16) }
+    #endif
+    /// A1 표시용 회원 정보 재조회. 실패 시 상태만 바꾸고 로그인 흐름은 유지한다.
+    func retryMember() {
+        execute {
+            self.token = try self.sessions.read()
+            guard self.token != nil else { self.state.member = .signedOut; return }
+            try await self.loadAccount()
+        }
+    }
+    /// 개발 환경 전용 임시 로그인 계정 목록. 운영 빌드에서는 호출하지 않는다.
+    func loadDevAccounts() {
+        guard KGEnvironment.isConfigured, !KGEnvironment.isProduction else { return }
+        state.devAccountsLoading = true; state.devAccountsError = false
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                let result = try await self.repository.devAccounts(); try Task.checkCancellation()
+                guard let rows = result["accounts"] as? [[String: Any]] else { throw KGAuthAPIError(status: 0, code: "INVALID_API_RESPONSE") }
+                self.state.devAccounts = rows.compactMap { row in
+                    guard let slot = row["slot"] as? Int, let label = row["label"] as? String,
+                          let nickname = row["nickname"] as? String, let role = row["role"] as? String else { return nil }
+                    return KGDevAccount(slot: slot, label: label, nickname: nickname, role: role)
+                }
+                self.state.devAccountsError = self.state.devAccounts.isEmpty
+                if self.state.input("devSlot").isEmpty, let first = self.state.devAccounts.first { self.state.inputs["devSlot"] = String(first.slot) }
+            } catch {
+                if !Task.isCancelled { self.state.devAccountsError = true }
+            }
+            self.state.devAccountsLoading = false
+        }
+    }
+    /// 서버가 실제로 발급한 세션으로만 로그인한다. 클라이언트가 토큰을 만들지 않는다.
+    func devLogin(slot: Int) {
+        guard !state.busy, KGEnvironment.isConfigured, !KGEnvironment.isProduction else { return }
+        state.inputs["devSlot"] = String(slot)
+        execute {
+            let result = try await self.repository.devLogin(slot: slot); try Task.checkCancellation()
+            guard let session = result["session"] as? [String: Any], let bearer = session["accessToken"] as? String else { throw KGAuthAPIError(status: 0, code: "INVALID_API_RESPONSE") }
+            let me = try await self.repository.me(bearer); try Task.checkCancellation()
+            guard let status = me["status"] as? String, ["ACTIVE", "RESTRICTED"].contains(status) else { throw KGAuthAPIError(status: 0, code: "INVALID_API_RESPONSE") }
+            try self.sessions.write(bearer); self.token = bearer; self.mutationUnknown = false
+            try await self.loadAccount()
+            if status == "ACTIVE" { self.stack = []; self.browsing = true }
+            self.state.devAccountsError = false
         }
     }
     func enter(_ target: KGReturnTarget = KGReturnTarget(), origin: String = "PROTECTED") {
@@ -86,6 +156,11 @@ struct KGReturnTarget {
         }
     }
     func failure(_ error: Error) {
+        if let d = try? FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("ws17-error-log.txt"),
+           let data = ("WS17ERR \(type(of: error)) :: \(error)\n").data(using: .utf8) {
+            let h = try? FileHandle(forWritingTo: d)
+            if let h { h.seekToEndOfFile(); h.write(data); try? h.close() } else { try? data.write(to: d) }
+        }
         let api = error as? KGAuthAPIError
         let status = api?.status
         if api?.requestContext == .public {
@@ -103,6 +178,7 @@ struct KGReturnTarget {
             var cleared = true
             do { try sessions.clear() } catch { cleared = false }
             token = nil; version = nil
+            state.member = .signedOut
             state.nickname = ""; state.email = ""; state.customerNumber = ""; state.records = []; state.notifications = [:]; state.marketingConsented = false
             stack = [.E1, .SESSION_EXPIRED]; show(.SESSION_EXPIRED); entry = "SESSION_EXPIRED"
             if !cleared { state.error = "안전한 세션 저장소를 정리하지 못했습니다. 다시 시도해주세요." }
@@ -190,11 +266,26 @@ struct KGReturnTarget {
         }
     }
     private func loadAccount() async throws {
-        guard let token else { throw KGAuthAPIError(status: 401, code: "SESSION_REQUIRED", requestContext: .private) }
-        let me = try await repository.me(token); try Task.checkCancellation()
+        guard let token else {
+            state.member = .signedOut
+            throw KGAuthAPIError(status: 401, code: "SESSION_REQUIRED", requestContext: .private)
+        }
+        // A1은 이 상태를 그대로 표시한다: 로딩 → 성공/오류(재시도)/네트워크 실패.
+        state.member = .loading
+        let me: [String: Any]
+        do {
+            me = try await repository.me(token); try Task.checkCancellation()
+        } catch {
+            if !Task.isCancelled { state.member = .failed(KGNetworkFailure.isNetwork(error) ? .network : .server) }
+            throw error
+        }
         guard let status = me["status"] as? String, ["ACTIVE", "RESTRICTED"].contains(status),
-              let nickname = me["nickname"] as? String, let email = me["email"] as? String, let number = me["customerNumber"] as? String else { throw KGAuthAPIError(status: 0, code: "INVALID_API_RESPONSE") }
-        state.nickname = nickname; state.email = email; state.customerNumber = number
+              let member = KGMember(payload: me) else {
+            state.member = .failed(.server)
+            throw KGAuthAPIError(status: 0, code: "INVALID_API_RESPONSE")
+        }
+        state.nickname = member.nickname; state.email = member.email; state.customerNumber = member.customerNumber
+        state.member = .loaded(member)
         if status == "RESTRICTED" { stack = [.F1, .ACCOUNT_RESTRICTED]; show(.ACCOUNT_RESTRICTED) }
     }
     private func preferences(_ json: [String: Any]) throws {
@@ -388,9 +479,11 @@ struct KGReturnTarget {
                 do { _ = try await self.repository.me(token); throw KGAuthAPIError(status: 409, code: "REVOCATION_NOT_CONFIRMED") }
                 catch let error as KGAuthAPIError { if error.status != 401 || !["AUTH_REQUIRED", "SESSION_INVALID"].contains(error.code) { throw error } }
                 try Task.checkCancellation(); guard self.token == token else { return }; try self.sessions.clear(); self.token = nil; self.version = nil
-                self.state = KGAuthState(screen: .HOME_SIGNED_OUT); self.stack = []; self.browsing = true
+                self.state = KGAuthState(screen: .HOME_SIGNED_OUT); self.state.member = .signedOut; self.stack = []; self.browsing = true
             }
         case .REFRESH_ACCOUNT: execute { try await self.loadAccount() }
+        case .LOAD_DEV_ACCOUNTS: loadDevAccounts()
+        case .DEV_LOGIN: if !state.busy, let slot = Int(state.input("devSlot")) { devLogin(slot: slot) }
         case .SUBMIT_CONSENTS: if state.canContinue && !mutationUnknown { submitConsents() }
         case .SUBMIT_MEMBER:
             if state.canSubmitMember {

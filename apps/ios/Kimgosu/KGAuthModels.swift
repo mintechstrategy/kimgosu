@@ -6,6 +6,32 @@ enum KGAuthAction: String {
     case SEND_SMS, VERIFY_SMS, VERIFY_LINK_OWNERSHIP, CONFIRM_LINK, OTHER_LOGIN, SUPPORT, REFRESH_ACCOUNT
     case CONFIRM_WITHDRAW, CONTINUE_REJOIN, WITHDRAW_MARKETING, CONFIRM_LOGOUT
     case CHANGE_NOTIFICATION, OPEN_OS_SETTINGS
+    case LOAD_DEV_ACCOUNTS, DEV_LOGIN
+}
+
+/// A1 세션 표시 상태. 서버가 최종 판정하며 클라이언트는 표시만 한다.
+enum KGMemberLoadFailure: Equatable { case network, server }
+struct KGMember: Equatable {
+    let nickname, email, customerNumber: String
+    let expertActive: Bool
+    /// `/v1/me` 응답에서 표시 가능한 필드만 옮긴다. 형식이 다르면 nil(임의 표시 금지).
+    init?(payload: [String: Any]) {
+        guard let nickname = payload["nickname"] as? String, let email = payload["email"] as? String,
+              let customerNumber = payload["customerNumber"] as? String else { return nil }
+        self.nickname = nickname; self.email = email; self.customerNumber = customerNumber
+        self.expertActive = payload["expertActive"] as? Bool ?? false
+    }
+}
+enum KGMemberState: Equatable {
+    case loading
+    case signedOut
+    case loaded(KGMember)
+    case failed(KGMemberLoadFailure)
+}
+struct KGDevAccount: Identifiable, Equatable {
+    let slot: Int
+    let label, nickname, role: String
+    var id: Int { slot }
 }
 struct KGAuthEvent { let action: KGAuthAction; var key = ""; var value = "" }
 enum KGAuthDocumentKind: String, CaseIterable { case TERMS, PRIVACY_CONSENT, PRIVACY_POLICY, MARKETING, OPERATIONS }
@@ -63,6 +89,10 @@ struct KGAuthState {
     var nickname = ""
     var email = ""
     var customerNumber = ""
+    var member: KGMemberState = .loading
+    var devAccounts: [KGDevAccount] = []
+    var devAccountsLoading = false
+    var devAccountsError = false
     var provider = ""
     var detail = ""
     var error = ""

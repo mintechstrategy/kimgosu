@@ -12,6 +12,8 @@
 		A00000000000000000000042 /* Kimgosu/LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000032 /* Kimgosu/LaunchScreen.storyboard */; };
 		A00000000000000000000043 /* Kimgosu/Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000033 /* Kimgosu/Assets.xcassets */; };
 		A00000000000000000000044 /* KimgosuUITests/LaunchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000034 /* KimgosuUITests/LaunchTests.swift */; };
+		A00000000000000000000045 /* KimgosuUITests/WS17MainDataTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000035 /* KimgosuUITests/WS17MainDataTests.swift */; };
+		A00000000000000000000046 /* KimgosuUITests/WS17DebugDump.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000036 /* KimgosuUITests/WS17DebugDump.swift */; };
 		B00000000000000000000001 = {isa = PBXBuildFile; fileRef = B10000000000000000000001; };
 		B00000000000000000000002 = {isa = PBXBuildFile; fileRef = B10000000000000000000002; };
 		B00000000000000000000003 = {isa = PBXBuildFile; fileRef = B10000000000000000000003; };
@@ -45,6 +47,8 @@ D00000000000000000000002 = {isa = PBXBuildFile; fileRef = D100000000000000000000
 		A00000000000000000000032 /* Kimgosu/LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = Kimgosu/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		A00000000000000000000033 /* Kimgosu/Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Kimgosu/Assets.xcassets; sourceTree = "<group>"; };
 		A00000000000000000000034 /* KimgosuUITests/LaunchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KimgosuUITests/LaunchTests.swift; sourceTree = "<group>"; };
+		A00000000000000000000035 /* KimgosuUITests/WS17MainDataTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KimgosuUITests/WS17MainDataTests.swift; sourceTree = "<group>"; };
+		A00000000000000000000036 /* KimgosuUITests/WS17DebugDump.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KimgosuUITests/WS17DebugDump.swift; sourceTree = "<group>"; };
 		B10000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Kimgosu/KGAuthModels.swift; sourceTree = "<group>"; };
 		B10000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Kimgosu/KGAuthSurfaces.swift; sourceTree = "<group>"; };
 		B10000000000000000000003 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Kimgosu/KGAuthView.swift; sourceTree = "<group>"; };
@@ -88,6 +92,8 @@ D10000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = folder; 
 				A00000000000000000000032 /* Kimgosu/LaunchScreen.storyboard */,
 				A00000000000000000000033 /* Kimgosu/Assets.xcassets */,
 				A00000000000000000000034 /* KimgosuUITests/LaunchTests.swift */,
+				A00000000000000000000035 /* KimgosuUITests/WS17MainDataTests.swift */,
+				A00000000000000000000036 /* KimgosuUITests/WS17DebugDump.swift */,
 				C10000000000000000000005,
 				A00000000000000000000004 /* Products */,
 			);
@@ -214,6 +220,8 @@ D10000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = folder; 
 			buildActionMask = 2147483647;
 			files = (
 				A00000000000000000000044 /* KimgosuUITests/LaunchTests.swift in Sources */,
+				A00000000000000000000045 /* KimgosuUITests/WS17MainDataTests.swift in Sources */,
+				A00000000000000000000046 /* KimgosuUITests/WS17DebugDump.swift in Sources */,
 				C00000000000000000000001,
 				C00000000000000000000002,
 				C00000000000000000000003,
@@ -265,6 +273,7 @@ D10000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = folder; 
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Kimgosu/Kimgosu.entitlements;
 				DEVELOPMENT_TEAM = LQJPNJ7JS8;
 				INFOPLIST_FILE = Kimgosu/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -284,6 +293,7 @@ D10000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = folder; 
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Kimgosu/Kimgosu.entitlements;
 				DEVELOPMENT_TEAM = LQJPNJ7JS8;
 				INFOPLIST_FILE = Kimgosu/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
