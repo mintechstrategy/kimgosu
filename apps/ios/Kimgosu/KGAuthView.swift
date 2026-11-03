@@ -92,8 +92,50 @@ struct KGAuthView: View {
             provider("kakao", "카카오로 시작", Color(red: 254/255, green: 229/255, blue: 0))
             provider("naver", "네이버로 시작", Color(red: 3/255, green: 169/255, blue: 77/255))
             provider("google", "Google로 시작", .white)
+            #if DEBUG
+            devLoginSection
+            #endif
         }.frame(maxWidth: .infinity)
     }
+    #if DEBUG
+    // 승인 디자인의 소셜 로그인 버튼은 그대로 두고, 개발 환경에서만 실제 서버 세션을 만드는
+    // 임시 테스트 로그인을 덧붙인다. 운영 빌드에는 컴파일되지 않는다.
+    @ViewBuilder private var devLoginSection: some View {
+        if KGEnvironment.isConfigured && !KGEnvironment.isProduction {
+            VStack(alignment: .leading, spacing: 10) {
+                Divider().overlay(kgBorder)
+                kgCopy("개발용 테스트 계정 · 실제 서버 세션 발급", size: 12, color: kgMuted)
+                if state.devAccounts.isEmpty {
+                    action(state.devAccountsLoading ? "테스트 계정 목록 불러오는 중…" : "테스트 계정 목록 불러오기",
+                           enabled: !state.busy && !state.devAccountsLoading, .LOAD_DEV_ACCOUNTS)
+                    if state.devAccountsError {
+                        kgCopy("테스트 계정 목록을 불러오지 못했습니다. 네트워크를 확인해주세요.", size: 12, color: .red)
+                            .accessibilityIdentifier("dev-accounts-error")
+                    }
+                } else {
+                    Menu {
+                        ForEach(state.devAccounts) { account in
+                            Button("\(account.slot). \(account.label) · \(account.nickname)") {
+                                send(.CHANGE_INPUT, "devSlot", String(account.slot))
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 8) {
+                            kgCopy(selectedDevAccountText, size: 14)
+                            Spacer(minLength: 0)
+                            Image(systemName: "chevron.down").font(.system(size: 12)).foregroundStyle(kgMuted)
+                        }.padding(12).frame(maxWidth: .infinity, minHeight: 48).overlay(RoundedRectangle(cornerRadius: 6).stroke(kgBorder))
+                    }.accessibilityIdentifier("dev-account-menu")
+                    action("테스트 계정으로 로그인", enabled: !state.busy, primary: true, .DEV_LOGIN)
+                }
+            }.padding(.top, 4).accessibilityIdentifier("dev-login-section")
+        }
+    }
+    private var selectedDevAccountText: String {
+        guard let slot = Int(state.input("devSlot")), let account = state.devAccounts.first(where: { $0.slot == slot }) else { return "테스트 계정 선택" }
+        return "\(account.label) · \(account.nickname)"
+    }
+    #endif
     private func provider(_ id: String, _ title: String, _ color: Color) -> some View {
         Button { send(.START_SOCIAL, id) } label: {
             HStack(spacing: 12) {

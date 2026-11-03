@@ -1,0 +1,103 @@
+Attributes: Application, 0x10adf6a80, pid: 31166, label: '김고수 개발'
+Element subtree:
+ →Application, 0x10adf6a80, pid: 31166, label: '김고수 개발'
+    Window (Main), 0x10adf6bc0, {{0.0, 0.0}, {402.0, 874.0}}
+      Other, 0x10adf6d00, {{0.0, 0.0}, {402.0, 874.0}}
+        Other, 0x10adf6e40, {{0.0, 0.0}, {402.0, 874.0}}
+          Other, 0x10adf6f80, {{0.0, 0.0}, {402.0, 874.0}}
+            Other, 0x10adf70c0, {{0.0, 0.0}, {402.0, 874.0}}
+              ScrollView, 0x10adf7200, {{0.0, 0.0}, {402.0, 771.0}}, identifier: 'main-scroll'
+                Other, 0x10adf7340, {{0.0, -480.3}, {402.0, 1308.0}}
+                  StaticText, 0x10adf6800, {{20.0, -466.7}, {59.7, 27.7}}, label: '김고수'
+                  Button, 0x10adf5e00, {{338.0, -472.3}, {44.0, 44.0}}, label: '알림'
+                    Image, 0x10adf5f40, {{338.0, -472.3}, {44.0, 44.0}}
+                  StaticText, 0x10adf6080, {{84.0, -408.3}, {234.0, 48.0}}, identifier: 'main-introduction', label: '내 주변 전문가를
+김고수에서 편리하게 찾으세요'
+                  Button, 0x10adf61c0, {{20.0, -344.3}, {362.0, 48.0}}, identifier: 'search', label: '어떤 서비스를 찾으시나요?'
+                    StaticText, 0x10adf6300, {{20.0, -344.3}, {362.0, 48.0}}, label: '어떤 서비스를 찾으시나요?'
+                    Image, 0x10adf6440, {{34.0, -330.3}, {20.0, 20.0}}
+                  ScrollView, 0x10adf6580, {{20.0, -280.3}, {362.0, 198.0}}, identifier: 'categories'
+                    Other, 0x10adf66c0, {{20.0, -280.3}, {398.7, 198.0}}
+                      Button, 0x10adf7480, {{20.0, -280.3}, {73.3, 94.0}}, label: '디자인/개발'
+                        StaticText, 0x10adf75c0, {{20.0, -280.3}, {73.3, 94.0}}, label: '디자인/개발'
+                        Image, 0x10adf7700, {{32.7, -276.3}, {48.0, 48.0}}
+                      Button, 0x10adf7840, {{101.3, -280.3}, {73.3, 94.0}}, label: '영상편집'
+                        StaticText, 0x10adf7980, {{101.3, -280.3}, {73.3, 94.0}}, label: '영상편집'
+                        Image, 0x10adf7ac0, {{114.0, -276.3}, {48.0, 48.0}}
+                      Button, 0x10adf7c00, {{182.7, -280.3}, {73.3, 94.0}}, label: '번역'
+                        StaticText, 0x10adf7d40, {{182.7, -280.3}, {73.3, 94.0}}, label: '번역'
+                        Image, 0x10adf7e80, {{195.3, -276.3}, {48.0, 48.0}}
+                      Button, 0x109c5f200, {{264.0, -280.3}, {73.3, 94.0}}, label: '법률'
+                        StaticText, 0x109c5de00, {{264.0, -280.3}, {73.3, 94.0}}, label: '법률'
+                        Image, 0x109c5ef80, {{276.7, -276.3}, {48.0, 48.0}}
+                      Button, 0x109c5e080, {{20.0, -176.3}, {73.3, 94.0}}, label: '청소/인테리어'
+                        StaticText, 0x109c5e300, {{20.0, -176.3}, {73.3, 94.0}}, label: '청소/인테리어'
+                        Image, 0x109c5e1c0, {{32.7, -172.3}, {48.0, 48.0}}
+                      Button, 0x109c5e580, {{101.3, -176.3}, {73.3, 94.0}}, label: '반려'
+                        StaticText, 0x109c5e440, {{101.3, -176.3}, {73.3, 94.0}}, label: '반려'
+                        Image, 0x109c5f700, {{114.0, -172.3}, {48.0, 48.0}}
+                      Button, 0x109c5e800, {{182.7, -176.3}, {73.3, 94.0}}, label: '헤어/미용'
+                        StaticText, 0x109c5fac0, {{182.7, -176.3}, {73.3, 94.0}}, label: '헤어/미용'
+                        Image, 0x109c5fc00, {{195.3, -172.3}, {48.0, 48.0}}
+                      Button, 0x109c5f980, {{264.0, -176.3}, {73.3, 94.0}}, label: '레슨'
+                        StaticText, 0x109c5fd40, {{264.0, -176.3}, {73.3, 94.0}}, label: '레슨'
+                        Image, 0x109c5fe80, {{276.7, -172.3}, {48.0, 48.0}}
+                  StaticText, 0x109c5e940, {{34.0, -40.3}, {260.7, 36.0}}, label: '구체적인 요구사항이 있다면 견적을 작성하고
+전문가에게 직접 제안을 받아보세요!'
+                  Button, 0x109c5c640, {{34.0, 1.7}, {334.0, 44.0}}, label: '견적 등록하기'
+                    StaticText, 0x109c5ca00, {{264.3, 15.2}, {76.0, 17.0}}, label: '견적 등록하기'
+                    Image, 0x109c5f840, {{350.3, 17.3}, {15.7, 12.7}}, identifier: 'arrow.right', label: '오른쪽'
+                  StaticText, 0x109c5f5c0, {{20.0, 79.7}, {210.3, 23.0}}, label: '최근 등록된 전문가의 서비스'
+                  StaticText, 0x109c5da40, {{40.0, 135.7}, {175.0, 17.0}}, label: '서비스 목록 연결 준비 중입니다.'
+                  StaticText, 0x109c5df40, {{34.0, 204.7}, {281.7, 18.0}}, label: '실제 고객과 함께 만들어가는 나만의 포트폴리오!'
+                  Button, 0x109c5d400, {{34.0, 228.7}, {334.0, 44.0}}, label: '무료로 서비스 등록하기'
+                    StaticText, 0x109c5db80, {{212.7, 242.2}, {127.7, 17.0}}, label: '무료로 서비스 등록하기'
+                    Image, 0x109c5d540, {{350.3, 244.3}, {15.7, 12.7}}, identifier: 'arrow.right', label: '오른쪽'
+                  StaticText, 0x109c5f0c0, {{20.0, 306.7}, {210.3, 23.0}}, label: '김고수의 비대면 인기 서비스'
+                  ScrollView, 0x109c5f480, {{20.0, 337.7}, {362.0, 44.0}}
+                    Other, 0x106e87700, {{20.0, 337.7}, {385.3, 44.0}}
+                      Button, 0x106e87ac0, {{20.0, 341.7}, {88.7, 36.0}}, label: '프로그래밍', Selected
+                      Button, 0x106e87980, {{116.7, 341.7}, {64.3, 36.0}}, label: '마케팅'
+                      Button, 0x106e87c00, {{189.0, 341.7}, {52.3, 36.0}}, label: '도배'
+                      Button, 0x106e87840, {{249.3, 341.7}, {52.3, 36.0}}, label: '번역'
+                      Button, 0x106e85400, {{309.7, 341.7}, {95.7, 36.0}}, label: '세탁기  청소'
+                  StaticText, 0x106e87d40, {{40.0, 414.7}, {175.0, 17.0}}, label: '서비스 목록 연결 준비 중입니다.'
+                  StaticText, 0x106e85540, {{20.0, 471.7}, {140.3, 23.0}}, label: '최근 검색한 서비스'
+                  StaticText, 0x10adf83c0, {{40.0, 527.7}, {171.7, 17.0}}, label: '최근 검색한 서비스가 없습니다.'
+                  StaticText, 0x10adf8640, {{34.0, 591.0}, {73.7, 19.3}}, identifier: 'main-member-nickname', label: '테스트01님'
+                  Button, 0x10adf8500, {{294.3, 590.7}, {73.7, 20.3}}, label: '마이페이지'
+                  StaticText, 0x10adf8000, {{34.0, 628.7}, {57.3, 14.3}}, identifier: 'main-member-customer-number', label: '고객번호 13'
+                  StaticText, 0x10adf8280, {{34.0, 649.0}, {100.3, 14.3}}, identifier: 'main-member-email', label: 'test01@dev.invalid'
+                  Button, 0x10adf8140, {{20.0, 689.3}, {107.3, 20.3}}, label: '서비스 운영정책'
+                  Button, 0x10adfabc0, {{20.0, 733.3}, {122.0, 20.3}}, label: '개인정보 처리방침'
+                  StaticText, 0x10adfae40, {{20.0, 789.3}, {350.7, 14.3}}, label: '소셜 로그인·문자 인증은 준비 중이며, 공개 탐색은 계속 이용할 수 있습니다.'
+                Other, 0x10adfad00, {{0.0, -0.0}, {402.0, 771.0}}
+                  Other, 0x10adfa800, {{0.0, 0.0}, {402.0, 102.0}}
+                Other, 0x10adfaa80, {{0.0, -0.0}, {402.0, 771.0}}
+                  Other, 0x10adfa080, {{0.0, 0.0}, {402.0, 102.0}}
+                Other, 0x10adfa300, {{369.0, 62.0}, {30.0, 709.0}}, label: 'Vertical scroll bar, 2 pages', value: 91%
+                  Other, 0x10adf9400, {{396.0, 355.3}, {3.0, 412.7}}
+                Other, 0x10adf9180, {{369.0, 62.0}, {30.0, 709.0}}, label: 'Vertical scroll bar, 2 pages', value: 91%
+                  Other, 0x10adf92c0, {{396.0, 355.3}, {3.0, 412.7}}
+              Button, 0x10adf9900, {{0.0, 777.0}, {80.3, 58.0}}, identifier: 'nav-0', label: '홈', Selected
+                StaticText, 0x10adf9540, {{0.0, 777.0}, {80.3, 58.0}}, label: '홈'
+                Image, 0x10adf97c0, {{27.3, 785.0}, {26.0, 26.0}}
+              Button, 0x10adf9680, {{80.3, 777.0}, {80.3, 58.0}}, identifier: 'nav-1', label: '검색'
+                StaticText, 0x10adf9e00, {{80.3, 777.0}, {80.3, 58.0}}, label: '검색'
+                Image, 0x10adf9f40, {{107.7, 785.0}, {26.0, 26.0}}
+              Button, 0x10adf9cc0, {{160.7, 777.0}, {80.7, 58.0}}, identifier: 'nav-2', label: '등록'
+                StaticText, 0x10adfa1c0, {{160.7, 777.0}, {80.7, 58.0}}, label: '등록'
+                Image, 0x10adfa6c0, {{188.0, 785.0}, {26.0, 26.0}}
+              Button, 0x10adfa580, {{241.3, 777.0}, {80.3, 58.0}}, identifier: 'nav-3', label: '채팅'
+                StaticText, 0x10adfa440, {{241.3, 777.0}, {80.3, 58.0}}, label: '채팅'
+                Image, 0x10adfa940, {{268.3, 785.0}, {26.0, 26.0}}
+              Button, 0x10adfbc00, {{321.7, 777.0}, {80.3, 58.0}}, identifier: 'nav-4', label: '마이'
+                StaticText, 0x10adfbe80, {{321.7, 777.0}, {80.3, 58.0}}, label: '마이'
+                Image, 0x10adfbd40, {{348.7, 785.0}, {26.0, 26.0}}
+Path to element:
+ →Application, 0x10adf6a80, pid: 31166, label: '김고수 개발'
+Query chain:
+ →Find: Target Application 'ai.mintech.kimgosu.dev'
+  Output: {
+    Application, 0x10adfbac0, pid: 31166, label: '김고수 개발'
+  }

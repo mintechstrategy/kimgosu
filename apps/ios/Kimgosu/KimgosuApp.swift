@@ -140,8 +140,11 @@ final class OfflineProtocol: URLProtocol {
                 } else if let home = model.home {
                     KGAuthHost(model: auth) {
                         HomeView(home: home, apiStatus: model.verifyAPI ? model.apiStatus : nil,
+                            member: auth.state.member,
                             onProtected: { auth.enter(KGReturnTarget(targetId: $0)) },
-                            onPolicy: { auth.handle(KGAuthEvent(action: .OPEN_DOCUMENT, key: $0)) })
+                            onPolicy: { auth.handle(KGAuthEvent(action: .OPEN_DOCUMENT, key: $0)) },
+                            onLogin: { auth.enter(KGReturnTarget()) },
+                            onRetryMember: { auth.retryMember() })
                     }
                         .onAppear { model.record("main-appeared") }
                 }
@@ -162,8 +165,11 @@ private func asset(_ name: String, size: CGFloat) -> some View {
 struct HomeView: View {
     let home: HomeContent
     let apiStatus: String?
+    let member: KGMemberState
     let onProtected: (String) -> Void
     let onPolicy: (String) -> Void
+    let onLogin: () -> Void
+    let onRetryMember: () -> Void
     @State private var notice: String?
     @State private var popular = 0
     var body: some View {
@@ -228,7 +234,7 @@ struct HomeView: View {
                     }.padding(.top, 8)
                     empty(home.unavailable)
                     section(home.historyTitle, message: home.historyEmpty)
-                    Button("로그인/가입 · 회원관리") { onProtected("마이페이지") }.frame(minHeight: 44)
+                    sessionCard
                     Button("서비스 운영정책") { onPolicy("OPERATIONS") }.frame(minHeight: 44)
                     Button("개인정보 처리방침") { onPolicy("PRIVACY_POLICY") }.frame(minHeight: 44)
                     copy("소셜 로그인·문자 인증은 준비 중이며, 공개 탐색은 계속 이용할 수 있습니다.", size: 12, color: muted).padding(.vertical, 24)
@@ -251,6 +257,50 @@ struct HomeView: View {
             .alert(notice ?? "", isPresented: Binding(get: { notice != nil }, set: { if !$0 { notice = nil } })) {
                 Button("확인", role: .cancel) { notice = nil }
             } message: { Text("이 기능은 다음 개발 단계에서 연결됩니다. 공개 탐색과 회원·정책 화면을 이용할 수 있습니다.") }
+    }
+    /// A1 세션 상태 4종: 로딩 · 빈 상태(비로그인) · 오류(재시도) · 네트워크 실패.
+    /// 승인 디자인의 기존 "로그인/가입 · 회원관리" 자리를 그대로 대체하고 임의 재설계하지 않는다.
+    @ViewBuilder private var sessionCard: some View {
+        switch member {
+        case .loading:
+            HStack(spacing: 12) {
+                ProgressView().controlSize(.small)
+                copy("회원 정보를 불러오는 중입니다.", size: 14, color: muted)
+                Spacer(minLength: 0)
+            }.padding(14).frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
+                .overlay(RoundedRectangle(cornerRadius: 6).stroke(brandBorder))
+                .accessibilityElement(children: .combine).accessibilityIdentifier("main-session-loading")
+        case .signedOut:
+            VStack(alignment: .leading, spacing: 2) {
+                Button("로그인/가입 · 회원관리") { onLogin() }.frame(minHeight: 44)
+                    .accessibilityIdentifier("main-session-empty")
+                copy("로그인하면 내 정보와 원장을 확인할 수 있습니다.", size: 12, color: muted)
+            }
+        case .loaded(let member):
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 8) {
+                    copy(member.nickname + "님", size: 16, bold: true).accessibilityIdentifier("main-member-nickname")
+                    Spacer(minLength: 0)
+                    Button("마이페이지") { onProtected("마이페이지") }.frame(minHeight: 44)
+                }
+                copy("고객번호 " + member.customerNumber, size: 12, color: muted).accessibilityIdentifier("main-member-customer-number")
+                copy(member.email, size: 12, color: muted).accessibilityIdentifier("main-member-email")
+                if member.expertActive { copy("고수 활동 중", size: 12, color: muted).accessibilityIdentifier("main-member-expert") }
+            }.padding(14).frame(maxWidth: .infinity, alignment: .leading)
+                .overlay(RoundedRectangle(cornerRadius: 6).stroke(brandBorder))
+        case .failed(let failure):
+            VStack(alignment: .leading, spacing: 4) {
+                copy(failure == .network ? "네트워크에 연결할 수 없습니다. 연결을 확인해주세요." : "회원 정보를 불러오지 못했습니다.",
+                     size: 14, color: navy)
+                    .accessibilityIdentifier(failure == .network ? "main-session-network-failure" : "main-session-error")
+                HStack(spacing: 16) {
+                    Button("다시 시도") { onRetryMember() }.frame(minHeight: 44)
+                        .accessibilityIdentifier("main-session-retry")
+                    Button("로그인/가입") { onLogin() }.frame(minHeight: 44)
+                }
+            }.padding(14).frame(maxWidth: .infinity, alignment: .leading)
+                .overlay(RoundedRectangle(cornerRadius: 6).stroke(brandBorder))
+        }
     }
     private func open(_ title: String) {
         if ["알림", "마이페이지", "마이", "내정보", "견적요청", "서비스등록", "채팅", "원장"].contains(title) || title.contains("요청") || title.contains("등록") { onProtected(title) } else { notice = title }
