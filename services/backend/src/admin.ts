@@ -222,4 +222,74 @@ export function registerAdminRoutes(app: FastifyInstance, db: Sql, authenticate:
       return { released: true, restrictionId: released.id, revokedAt: released.revokedAt, memberId: request.params.id };
     });
   });
+
+  /**
+   * Review moderation (WS-26, migration 014).
+   *
+   * Hiding is operator-only and never deletes: `hidden_at`/`hidden_reason` are
+   * set, the row stays, and the public list already filters on `hidden_at IS
+   * NULL`. Both actions require an explicit reason because audit_log keeps why
+   * the row was taken off the public list — and for unhide, why it was put back.
+   */
+  app.post<{ Params: { id: string }; Body: { reason: string } }>('/v1/admin/reviews/:id/hide', {
+    schema: {
+      params: { type: 'object', required: ['id'], additionalProperties: false, properties: { id: idSchema } },
+      ...body({ reason: { type: 'string', minLength: 2, maxLength: 500 } }, ['reason']),
+    },
+  }, async (request, reply) => {
+    const auth = await requireAdmin(request, reply); if (!auth) return;
+    return db.transaction(async sql => {
+      const review = (await sql.query(
+        `SELECT id, hidden_at AS "hiddenAt" FROM kg_membership.reviews WHERE id=$1 FOR UPDATE`,
+        [request.params.id],
+      )).rows[0];
+      if (!review) throw new ApiError(404, 'REVIEW_NOT_FOUND');
+      if (review.hiddenAt) throw new ApiError(409, 'REVIEW_ALREADY_HIDDEN');
+      const reason = request.body.reason.trim();
+      if (reason.length < 2) throw new ApiError(400, 'INVALID_REQUEST');
+      const hidden = (await sql.query(
+        `UPDATE kg_membership.reviews SET hidden_at=now(), hidden_reason=$2 WHERE id=$1
+         RETURNING id, hidden_at AS "hiddenAt", hidden_reason AS "hiddenReason"`,
+        [request.params.id, reason],
+      )).rows[0];
+      await sql.query(
+        `INSERT INTO kg_membership.audit_log(actor_member_id,action,target_type,target_id,reason,detail)
+         VALUES($1,'REVIEW_HIDDEN','review',$2,$3,$4)`,
+        [auth.memberId, String(hidden!.id), reason, JSON.stringify({ hidden: true })],
+      );
+      return { ...hidden, hidden: true };
+    });
+  });
+
+  app.post<{ Params: { id: string }; Body: { reason: string } }>('/v1/admin/reviews/:id/unhide', {
+    schema: {
+      params: { type: 'object', required: ['id'], additionalProperties: false, properties: { id: idSchema } },
+      ...body({ reason: { type: 'string', minLength: 2, maxLength: 500 } }, ['reason']),
+    },
+  }, async (request, reply) => {
+    const auth = await requireAdmin(request, reply); if (!auth) return;
+    return db.transaction(async sql => {
+      const review = (await sql.query(
+        `SELECT id, hidden_at AS "hiddenAt", hidden_reason AS "hiddenReason"
+           FROM kg_membership.reviews WHERE id=$1 FOR UPDATE`,
+        [request.params.id],
+      )).rows[0];
+      if (!review) throw new ApiError(404, 'REVIEW_NOT_FOUND');
+      if (!review.hiddenAt) throw new ApiError(409, 'REVIEW_NOT_HIDDEN');
+      const reason = request.body.reason.trim();
+      if (reason.length < 2) throw new ApiError(400, 'INVALID_REQUEST');
+      const visible = (await sql.query(
+        `UPDATE kg_membership.reviews SET hidden_at=NULL, hidden_reason=NULL WHERE id=$1
+         RETURNING id, hidden_at AS "hiddenAt", hidden_reason AS "hiddenReason"`,
+        [request.params.id],
+      )).rows[0];
+      await sql.query(
+        `INSERT INTO kg_membership.audit_log(actor_member_id,action,target_type,target_id,reason,detail)
+         VALUES($1,'REVIEW_UNHIDDEN','review',$2,$3,$4)`,
+        [auth.memberId, String(review.id), reason,
+          JSON.stringify({ hidden: false, previousHiddenReason: review.hiddenReason ?? null })],
+      );
+      return { ...visible, hidden: false };
+    });
+  });
 }
