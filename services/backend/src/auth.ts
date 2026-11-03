@@ -220,4 +220,34 @@ export function registerAuthRoutes(app: FastifyInstance, db: Sql, authenticate: 
     const r = await db.query(`UPDATE kg_membership.members SET expert_active=true WHERE id=$1 AND withdrawn_at IS NULL AND status='ACTIVE' AND length(trim(name))>0 AND length(email)>2 AND phone_digest IS NOT NULL AND NOT EXISTS(SELECT 1 FROM kg_membership.restrictions r WHERE r.principal_id=kg_membership.members.principal_id AND r.revoked_at IS NULL AND r.starts_at<=now() AND (r.ends_at IS NULL OR r.ends_at>now())) RETURNING expert_active AS "expertActive"`, [auth.memberId]);
     if (!r.rows[0]) throw new ApiError(403, 'ACCOUNT_RESTRICTED_OR_PROFILE_INCOMPLETE'); return r.rows[0];
   });
+
+  // Temporary tester login. Only registered when options.devLogin is true, which
+  // server.ts sets exclusively on the dev deployment. The session is issued by the
+  // same issueSession() path as a real login, so the client never fabricates one.
+  if (options.devLogin) {
+    app.get('/v1/auth/dev/accounts', async () => {
+      const rows = await db.query(
+        `SELECT a.slot,a.role,a.label,m.nickname,m.expert_active AS "expertActive"
+           FROM kg_membership.dev_test_accounts a
+           JOIN kg_membership.members m ON m.id=a.member_id
+          WHERE m.withdrawn_at IS NULL
+          ORDER BY a.slot`,
+      );
+      return { temporary: true, environment: 'dev', accounts: rows.rows };
+    });
+    app.post<{ Body: { slot: number } }>('/v1/auth/dev/login', {
+      schema: body({ slot: { type: 'integer', minimum: 1, maximum: 20 } }),
+    }, async req => {
+      const row = (await db.query(
+        `SELECT a.member_id AS "memberId",a.role,a.label,m.nickname,m.expert_active AS "expertActive"
+           FROM kg_membership.dev_test_accounts a
+           JOIN kg_membership.members m ON m.id=a.member_id
+          WHERE a.slot=$1 AND m.withdrawn_at IS NULL AND m.status='ACTIVE'`,
+        [req.body.slot],
+      )).rows[0];
+      if (!row) throw new ApiError(404, 'DEV_ACCOUNT_NOT_FOUND');
+      const session = await issueSession(db, row.memberId);
+      return { temporary: true, session, member: { id: row.memberId, nickname: row.nickname, role: row.role, expertActive: row.expertActive } };
+    });
+  }
 }

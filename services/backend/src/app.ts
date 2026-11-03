@@ -3,6 +3,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import { createHash, randomBytes } from 'node:crypto';
 import { ApiError } from './security.ts';
 import { registerAuthRoutes } from './auth.ts';
+import { registerLedgerRoutes } from './ledger.ts';
 import type { AuthOptions } from './providers.ts';
 import { POLICY_METADATA, loadPolicySnapshot, requiredReadyKindsForGrant } from './policy.ts';
 
@@ -164,5 +165,6 @@ export function buildApp(db: Sql, release: string, options: AuthOptions = {}) {
     return { loggedOut: true };
   });
   registerAuthRoutes(app, db, authenticate, options);
+  registerLedgerRoutes(app, db, authenticate);
   return app;
 }

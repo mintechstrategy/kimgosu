@@ -11,6 +11,10 @@ export interface AuthOptions {
   sms?: SmsDelivery;
   identityKey?: string;
   corsOrigins?: string[];
+  // Temporary login for testers while no social provider is connected.
+  // Only ever enabled on the dev deployment; server.ts gates it on the
+  // Railway environment name so a production boot cannot expose it.
+  devLogin?: boolean;
 }
 const endpoints = {
   google: { authorize: 'https://accounts.google.com/o/oauth2/v2/auth', token: 'https://oauth2.googleapis.com/token', scope: 'openid email profile' },
