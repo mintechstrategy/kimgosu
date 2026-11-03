@@ -1,0 +1,527 @@
+{
+  "contractId": "KG-LEDGER-QUOTES-v0.1",
+  "owner": "develop / KG-PARALLEL-10-WS-27",
+  "status": "LOCAL_CANDIDATE_NOT_DEPLOYED",
+  "schemaDialect": "http://json-schema.org/draft-07/schema#",
+  "sourceModules": [
+    "services/backend/src/ledger.ts",
+    "services/backend/src/quotes.ts"
+  ],
+  "inventoryRule": "operations must equal the routes actually registered by sourceModules (tests/contract/ws27-contracts.test.ts compares against Fastify onRoute).",
+  "sharedBehaviors": [
+    "All routes respond with Cache-Control: no-store and X-Server-Time (app-level hooks).",
+    "authentication=session-active means Authorization: Bearer <access token> that resolves to a live session whose member is not withdrawn; a RESTRICTED member gets 403 ACCOUNT_RESTRICTED.",
+    "State transitions are decided by the server. Clients never send status/amount/confirmation flags; unknown properties are rejected with 400 INVALID_REQUEST (additionalProperties:false on every body).",
+    "Not a participant => 404 LEDGER_NOT_FOUND so the ledger's existence is not disclosed.",
+    "version is optimistic-concurrency state: a stale expectedVersion returns 409 VERSION_CONFLICT.",
+    "Route spelling: the pre-existing singular /v1/ledger for the expert's ledger list/detail, plural /v1/ledgers/:id for quotes. Unifying the spelling is explicitly out of scope for this wave."
+  ],
+  "operations": [
+    {
+      "id": "ledgerRoles",
+      "method": "GET",
+      "path": "/v1/me/roles",
+      "authentication": "session-active",
+      "source": "services/backend/src/ledger.ts",
+      "notes": "roles = USER + EXPERT (when expert_active) + live role_grants role ids, de-duplicated.",
+      "responses": {
+        "200": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["roles", "grants"],
+          "properties": {
+            "roles": { "type": "array", "items": { "type": "string", "enum": ["USER", "EXPERT", "CS", "ADMIN"] }, "uniqueItems": true },
+            "grants": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["role", "startsAt", "endsAt"],
+                "properties": {
+                  "role": { "type": "string" },
+                  "startsAt": { "$ref": "#/definitions/Timestamp" },
+                  "endsAt": { "$ref": "#/definitions/NullableTimestamp" }
+                }
+              }
+            }
+          }
+        }
+      },
+      "errors": [
+        { "status": 401, "code": "AUTH_REQUIRED", "when": "missing or malformed Authorization header" },
+        { "status": 401, "code": "SESSION_INVALID", "when": "no live session / member withdrawn / member row missing" },
+        { "status": 403, "code": "ACCOUNT_RESTRICTED", "when": "member has an active restriction" }
+      ]
+    },
+    {
+      "id": "ledgerList",
+      "method": "GET",
+      "path": "/v1/ledger",
+      "authentication": "session-active",
+      "source": "services/backend/src/ledger.ts",
+      "notes": "Only ledgers the caller owns as expert are listed; a customer never lists other people's ledgers.",
+      "responses": {
+        "200": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ledgers"],
+          "properties": {
+            "ledgers": { "type": "array", "items": { "$ref": "#/definitions/LedgerSummary" } }
+          }
+        }
+      },
+      "errors": [
+        { "status": 401, "code": "AUTH_REQUIRED", "when": "missing or malformed Authorization header" },
+        { "status": 401, "code": "SESSION_INVALID", "when": "no live session" },
+        { "status": 403, "code": "ACCOUNT_RESTRICTED", "when": "member has an active restriction" }
+      ]
+    },
+    {
+      "id": "ledgerGet",
+      "method": "GET",
+      "path": "/v1/ledger/:id",
+      "authentication": "session-active",
+      "source": "services/backend/src/ledger.ts",
+      "paramsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id"],
+        "properties": { "id": { "type": "string", "format": "uuid" } }
+      },
+      "responses": {
+        "200": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ledger", "notes", "agreements"],
+          "properties": {
+            "ledger": { "$ref": "#/definitions/LedgerDetail" },
+            "notes": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["id", "body", "createdAt"],
+                "properties": {
+                  "id": { "$ref": "#/definitions/Uuid" },
+                  "body": { "type": "string" },
+                  "createdAt": { "$ref": "#/definitions/Timestamp" }
+                }
+              }
+            },
+            "agreements": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["id", "summary", "status", "version", "requestedAt", "acceptedAt", "completedAt", "requesterMemberId"],
+                "properties": {
+                  "id": { "$ref": "#/definitions/Uuid" },
+                  "summary": { "type": "string" },
+                  "status": { "$ref": "#/definitions/AgreementStatus" },
+                  "version": { "type": "integer", "minimum": 1 },
+                  "requestedAt": { "$ref": "#/definitions/Timestamp" },
+                  "acceptedAt": { "$ref": "#/definitions/NullableTimestamp" },
+                  "completedAt": { "$ref": "#/definitions/NullableTimestamp" },
+                  "requesterMemberId": { "$ref": "#/definitions/Uuid" }
+                }
+              }
+            }
+          }
+        }
+      },
+      "errors": [
+        { "status": 400, "code": "INVALID_REQUEST", "when": ":id is not a uuid" },
+        { "status": 401, "code": "AUTH_REQUIRED", "when": "missing or malformed Authorization header" },
+        { "status": 401, "code": "SESSION_INVALID", "when": "no live session" },
+        { "status": 403, "code": "ACCOUNT_RESTRICTED", "when": "member has an active restriction" },
+        { "status": 404, "code": "LEDGER_NOT_FOUND", "when": "ledger does not exist or is not owned by the caller as expert" }
+      ]
+    },
+    {
+      "id": "ledgerNoteCreate",
+      "method": "POST",
+      "path": "/v1/ledger/:id/notes",
+      "authentication": "session-active",
+      "source": "services/backend/src/ledger.ts",
+      "paramsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id"],
+        "properties": { "id": { "type": "string", "format": "uuid" } }
+      },
+      "requestSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["body"],
+        "properties": { "body": { "type": "string", "minLength": 1, "maxLength": 2000 } }
+      },
+      "responses": {
+        "201": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "body", "createdAt"],
+          "properties": {
+            "id": { "$ref": "#/definitions/Uuid" },
+            "body": { "type": "string" },
+            "createdAt": { "$ref": "#/definitions/Timestamp" }
+          }
+        }
+      },
+      "errors": [
+        { "status": 400, "code": "INVALID_REQUEST", "when": "body missing/empty/too long or :id not a uuid" },
+        { "status": 401, "code": "AUTH_REQUIRED", "when": "missing or malformed Authorization header" },
+        { "status": 403, "code": "ACCOUNT_RESTRICTED", "when": "member has an active restriction" },
+        { "status": 404, "code": "LEDGER_NOT_FOUND", "when": "ledger does not exist or the caller is not its expert" }
+      ]
+    },
+    {
+      "id": "agreementCreate",
+      "method": "POST",
+      "path": "/v1/agreements",
+      "authentication": "session-active",
+      "source": "services/backend/src/ledger.ts",
+      "requestSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ledgerId", "summary"],
+        "properties": {
+          "ledgerId": { "type": "string", "format": "uuid" },
+          "summary": { "type": "string", "minLength": 1, "maxLength": 500 }
+        }
+      },
+      "responses": {
+        "201": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "status", "version", "requestedAt"],
+          "properties": {
+            "id": { "$ref": "#/definitions/Uuid" },
+            "status": { "type": "string", "enum": ["REQUESTED"] },
+            "version": { "type": "integer", "minimum": 1 },
+            "requestedAt": { "$ref": "#/definitions/Timestamp" }
+          }
+        }
+      },
+      "errors": [
+        { "status": 400, "code": "INVALID_REQUEST", "when": "schema violation (unknown property, missing field, bad uuid)" },
+        { "status": 401, "code": "AUTH_REQUIRED", "when": "missing or malformed Authorization header" },
+        { "status": 403, "code": "ACCOUNT_RESTRICTED", "when": "member has an active restriction" },
+        { "status": 403, "code": "NOT_A_PARTICIPANT", "when": "caller is neither the ledger's expert nor its customer" },
+        { "status": 404, "code": "LEDGER_NOT_FOUND", "when": "ledger does not exist" }
+      ]
+    },
+    {
+      "id": "agreementAccept",
+      "method": "POST",
+      "path": "/v1/agreements/:id/accept",
+      "authentication": "session-active",
+      "source": "services/backend/src/ledger.ts",
+      "paramsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id"],
+        "properties": { "id": { "type": "string", "format": "uuid" } }
+      },
+      "requestSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["expectedVersion"],
+        "properties": { "expectedVersion": { "type": "integer", "minimum": 1 } }
+      },
+      "responses": {
+        "200": { "$ref": "#/definitions/AgreementTransition" }
+      },
+      "errors": [
+        { "status": 400, "code": "INVALID_REQUEST", "when": "schema violation" },
+        { "status": 401, "code": "AUTH_REQUIRED", "when": "missing or malformed Authorization header" },
+        { "status": 403, "code": "ACCOUNT_RESTRICTED", "when": "member has an active restriction" },
+        { "status": 403, "code": "NOT_COUNTERPART", "when": "caller is not the agreement's counterpart member" },
+        { "status": 404, "code": "AGREEMENT_NOT_FOUND", "when": "agreement does not exist" },
+        { "status": 409, "code": "VERSION_CONFLICT", "when": "expectedVersion does not match the stored version" },
+        { "status": 409, "code": "INVALID_TRANSITION", "when": "agreement status is not REQUESTED" }
+      ]
+    },
+    {
+      "id": "agreementComplete",
+      "method": "POST",
+      "path": "/v1/agreements/:id/complete",
+      "authentication": "session-active",
+      "source": "services/backend/src/ledger.ts",
+      "paramsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id"],
+        "properties": { "id": { "type": "string", "format": "uuid" } }
+      },
+      "requestSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["expectedVersion"],
+        "properties": { "expectedVersion": { "type": "integer", "minimum": 1 } }
+      },
+      "responses": {
+        "200": { "$ref": "#/definitions/AgreementTransition" }
+      },
+      "errors": [
+        { "status": 400, "code": "INVALID_REQUEST", "when": "schema violation" },
+        { "status": 401, "code": "AUTH_REQUIRED", "when": "missing or malformed Authorization header" },
+        { "status": 403, "code": "ACCOUNT_RESTRICTED", "when": "member has an active restriction" },
+        { "status": 403, "code": "NOT_A_PARTICIPANT", "when": "caller is neither requester nor counterpart" },
+        { "status": 404, "code": "AGREEMENT_NOT_FOUND", "when": "agreement does not exist" },
+        { "status": 409, "code": "VERSION_CONFLICT", "when": "expectedVersion does not match the stored version" },
+        { "status": 409, "code": "INVALID_TRANSITION", "when": "agreement status is not ACCEPTED" }
+      ]
+    },
+    {
+      "id": "quotePropose",
+      "method": "POST",
+      "path": "/v1/ledgers/:id/quotes",
+      "authentication": "session-active",
+      "source": "services/backend/src/quotes.ts",
+      "paramsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id"],
+        "properties": { "id": { "type": "string", "format": "uuid" } }
+      },
+      "requestSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["amount", "message", "expiresAt"],
+        "properties": {
+          "amount": { "type": "integer", "minimum": 1, "maximum": 2147483647 },
+          "message": { "type": "string", "minLength": 1, "maxLength": 2000 },
+          "expiresAt": { "type": "string", "format": "date-time" },
+          "scheduleAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "responses": {
+        "201": { "$ref": "#/definitions/Quote" }
+      },
+      "errors": [
+        { "status": 400, "code": "INVALID_REQUEST", "when": "schema violation" },
+        { "status": 400, "code": "INVALID_EXPIRY", "when": "expiresAt is not at least 60 seconds in the future" },
+        { "status": 401, "code": "AUTH_REQUIRED", "when": "missing or malformed Authorization header" },
+        { "status": 403, "code": "ACCOUNT_RESTRICTED", "when": "member has an active restriction" },
+        { "status": 403, "code": "EXPERT_ONLY", "when": "caller is a participant but not the ledger's expert" },
+        { "status": 404, "code": "LEDGER_NOT_FOUND", "when": "ledger does not exist or caller is not a participant" }
+      ]
+    },
+    {
+      "id": "quoteList",
+      "method": "GET",
+      "path": "/v1/ledgers/:id/quotes",
+      "authentication": "session-active",
+      "source": "services/backend/src/quotes.ts",
+      "paramsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id"],
+        "properties": { "id": { "type": "string", "format": "uuid" } }
+      },
+      "querySchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": { "limit": { "type": "integer", "minimum": 1, "maximum": 100 } }
+      },
+      "responses": {
+        "200": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["quotes"],
+          "properties": {
+            "quotes": { "type": "array", "items": { "$ref": "#/definitions/QuoteWithEffectiveStatus" } }
+          }
+        }
+      },
+      "errors": [
+        { "status": 400, "code": "INVALID_REQUEST", "when": "limit outside 1..100 or :id not a uuid" },
+        { "status": 401, "code": "AUTH_REQUIRED", "when": "missing or malformed Authorization header" },
+        { "status": 403, "code": "ACCOUNT_RESTRICTED", "when": "member has an active restriction" },
+        { "status": 404, "code": "LEDGER_NOT_FOUND", "when": "ledger does not exist or caller is not a participant" }
+      ]
+    },
+    {
+      "id": "quoteRespond",
+      "method": "POST",
+      "path": "/v1/quotes/:id/respond",
+      "authentication": "session-active",
+      "source": "services/backend/src/quotes.ts",
+      "paramsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id"],
+        "properties": { "id": { "type": "string", "format": "uuid" } }
+      },
+      "requestSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["action", "expectedVersion"],
+        "properties": {
+          "action": { "type": "string", "enum": ["accept", "reject"] },
+          "expectedVersion": { "type": "integer", "minimum": 1 }
+        }
+      },
+      "responses": {
+        "200": { "$ref": "#/definitions/Quote" }
+      },
+      "errors": [
+        { "status": 400, "code": "INVALID_REQUEST", "when": "schema violation" },
+        { "status": 401, "code": "AUTH_REQUIRED", "when": "missing or malformed Authorization header" },
+        { "status": 403, "code": "ACCOUNT_RESTRICTED", "when": "member has an active restriction" },
+        { "status": 403, "code": "CUSTOMER_ONLY", "when": "caller is not the quote's customer" },
+        { "status": 404, "code": "QUOTE_NOT_FOUND", "when": "quote does not exist" },
+        { "status": 404, "code": "LEDGER_NOT_FOUND", "when": "the quote's ledger is gone or caller is not a participant" },
+        { "status": 409, "code": "QUOTE_EXPIRED", "when": "expiresAt passed; the EXPIRED transition is committed before this 409" },
+        { "status": 409, "code": "VERSION_CONFLICT", "when": "expectedVersion does not match the stored version" },
+        { "status": 409, "code": "INVALID_TRANSITION", "when": "quote status is not PROPOSED" }
+      ]
+    },
+    {
+      "id": "quoteComplete",
+      "method": "POST",
+      "path": "/v1/quotes/:id/complete",
+      "authentication": "session-active",
+      "source": "services/backend/src/quotes.ts",
+      "paramsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id"],
+        "properties": { "id": { "type": "string", "format": "uuid" } }
+      },
+      "requestSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["expectedVersion"],
+        "properties": { "expectedVersion": { "type": "integer", "minimum": 1 } }
+      },
+      "responses": {
+        "200": { "$ref": "#/definitions/Quote" }
+      },
+      "notes": "One side confirms; the quote stays ACCEPTED until BOTH sides have confirmed, then COMPLETED (and the linked agreement becomes COMPLETED).",
+      "errors": [
+        { "status": 400, "code": "INVALID_REQUEST", "when": "schema violation" },
+        { "status": 401, "code": "AUTH_REQUIRED", "when": "missing or malformed Authorization header" },
+        { "status": 403, "code": "ACCOUNT_RESTRICTED", "when": "member has an active restriction" },
+        { "status": 404, "code": "QUOTE_NOT_FOUND", "when": "quote does not exist" },
+        { "status": 404, "code": "LEDGER_NOT_FOUND", "when": "the quote's ledger is gone or caller is not a participant" },
+        { "status": 409, "code": "QUOTE_EXPIRED", "when": "expiresAt passed" },
+        { "status": 409, "code": "VERSION_CONFLICT", "when": "expectedVersion does not match the stored version" },
+        { "status": 409, "code": "INVALID_TRANSITION", "when": "quote status is not ACCEPTED" },
+        { "status": 409, "code": "ALREADY_CONFIRMED", "when": "the caller already confirmed completion" }
+      ]
+    }
+  ],
+  "openItems": [
+    "Currency/VAT/price_type and quote TTL policy are not decided at v0.1; the schema only carries the integer amount and the caller-supplied expiresAt. Wave-3 WS-24 is the card that adds price_type/vat_included/hourly_rate and the 7/30-day TTL rule.",
+    "GET /v1/ledger is expert-only by design; a customer-side ledger list does not exist.",
+    "Route spelling singular /v1/ledger vs plural /v1/ledgers/:id is intentionally unchanged; unification is a separate post-merge refactor."
+  ],
+  "schemaDefinitions": {
+    "Uuid": { "type": "string", "format": "uuid" },
+    "Timestamp": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?Z$" },
+    "NullableTimestamp": { "type": ["string", "null"], "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?Z$" },
+    "NullableUuid": { "type": ["string", "null"], "format": "uuid" },
+    "AgreementStatus": { "type": "string", "enum": ["REQUESTED", "ACCEPTED", "COMPLETED", "CANCELLED", "DISPUTED"] },
+    "QuoteStatus": { "type": "string", "enum": ["PROPOSED", "ACCEPTED", "REJECTED", "EXPIRED", "COMPLETED", "CANCELLED"] },
+    "LedgerSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "customerMemberId", "customerNumber", "displayName", "createdAt", "updatedAt", "noteCount", "completedAgreements"],
+      "properties": {
+        "id": { "$ref": "#/definitions/Uuid" },
+        "customerMemberId": { "$ref": "#/definitions/Uuid" },
+        "customerNumber": { "type": "string" },
+        "displayName": { "type": "string" },
+        "createdAt": { "$ref": "#/definitions/Timestamp" },
+        "updatedAt": { "$ref": "#/definitions/Timestamp" },
+        "noteCount": { "type": "integer", "minimum": 0 },
+        "completedAgreements": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "LedgerDetail": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "customerMemberId", "customerNumber", "displayName", "createdAt", "updatedAt"],
+      "properties": {
+        "id": { "$ref": "#/definitions/Uuid" },
+        "customerMemberId": { "$ref": "#/definitions/Uuid" },
+        "customerNumber": { "type": "string" },
+        "displayName": { "type": "string" },
+        "createdAt": { "$ref": "#/definitions/Timestamp" },
+        "updatedAt": { "$ref": "#/definitions/Timestamp" }
+      }
+    },
+    "AgreementTransition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "status", "version", "requestedAt", "acceptedAt", "completedAt"],
+      "properties": {
+        "id": { "$ref": "#/definitions/Uuid" },
+        "status": { "$ref": "#/definitions/AgreementStatus" },
+        "version": { "type": "integer", "minimum": 1 },
+        "requestedAt": { "$ref": "#/definitions/Timestamp" },
+        "acceptedAt": { "$ref": "#/definitions/NullableTimestamp" },
+        "completedAt": { "$ref": "#/definitions/NullableTimestamp" }
+      }
+    },
+    "Quote": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "ledgerId", "expertMemberId", "customerMemberId", "amount", "scheduleAt", "message",
+        "status", "version", "expiresAt", "agreementId", "createdAt", "acceptedAt", "rejectedAt",
+        "customerConfirmedAt", "expertConfirmedAt", "completedAt"
+      ],
+      "properties": {
+        "id": { "$ref": "#/definitions/Uuid" },
+        "ledgerId": { "$ref": "#/definitions/Uuid" },
+        "expertMemberId": { "$ref": "#/definitions/Uuid" },
+        "customerMemberId": { "$ref": "#/definitions/Uuid" },
+        "amount": { "type": "integer", "minimum": 1 },
+        "scheduleAt": { "$ref": "#/definitions/NullableTimestamp" },
+        "message": { "type": "string" },
+        "status": { "$ref": "#/definitions/QuoteStatus" },
+        "version": { "type": "integer", "minimum": 1 },
+        "expiresAt": { "$ref": "#/definitions/Timestamp" },
+        "agreementId": { "$ref": "#/definitions/NullableUuid" },
+        "createdAt": { "$ref": "#/definitions/Timestamp" },
+        "acceptedAt": { "$ref": "#/definitions/NullableTimestamp" },
+        "rejectedAt": { "$ref": "#/definitions/NullableTimestamp" },
+        "customerConfirmedAt": { "$ref": "#/definitions/NullableTimestamp" },
+        "expertConfirmedAt": { "$ref": "#/definitions/NullableTimestamp" },
+        "completedAt": { "$ref": "#/definitions/NullableTimestamp" }
+      }
+    },
+    "QuoteWithEffectiveStatus": {
+      "description": "List projection = the quote row plus effectiveStatus: a PROPOSED quote past expiresAt reads as EXPIRED before the row is transitioned.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "ledgerId", "expertMemberId", "customerMemberId", "amount", "scheduleAt", "message",
+        "status", "version", "expiresAt", "agreementId", "createdAt", "acceptedAt", "rejectedAt",
+        "customerConfirmedAt", "expertConfirmedAt", "completedAt", "effectiveStatus"
+      ],
+      "properties": {
+        "id": { "$ref": "#/definitions/Uuid" },
+        "ledgerId": { "$ref": "#/definitions/Uuid" },
+        "expertMemberId": { "$ref": "#/definitions/Uuid" },
+        "customerMemberId": { "$ref": "#/definitions/Uuid" },
+        "amount": { "type": "integer", "minimum": 1 },
+        "scheduleAt": { "$ref": "#/definitions/NullableTimestamp" },
+        "message": { "type": "string" },
+        "status": { "$ref": "#/definitions/QuoteStatus" },
+        "effectiveStatus": { "$ref": "#/definitions/QuoteStatus" },
+        "version": { "type": "integer", "minimum": 1 },
+        "expiresAt": { "$ref": "#/definitions/Timestamp" },
+        "agreementId": { "$ref": "#/definitions/NullableUuid" },
+        "createdAt": { "$ref": "#/definitions/Timestamp" },
+        "acceptedAt": { "$ref": "#/definitions/NullableTimestamp" },
+        "rejectedAt": { "$ref": "#/definitions/NullableTimestamp" },
+        "customerConfirmedAt": { "$ref": "#/definitions/NullableTimestamp" },
+        "expertConfirmedAt": { "$ref": "#/definitions/NullableTimestamp" },
+        "completedAt": { "$ref": "#/definitions/NullableTimestamp" }
+      }
+    }
+  }
+}
