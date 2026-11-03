@@ -1,0 +1,97 @@
+{
+  "ws": "WS-20",
+  "status": "DONE",
+  "summary": "다운로드 게시판 중복 결함을 수정했다: 파일명에서 sha prefix를 제거하고 누적 키를 platform+version+build로 처리하며 기존 게시 URL(해시 파일명 포함)을 불변으로 재사용·복원하고, 표시 버전을 게시 레코드가 아니라 APK 자체의 AndroidManifest.xml(versionName/versionCode)에서 읽도록(aapt2는 선택) 바꿨다. 자체 실행한 시험은 node 12/12, python 15/15, 실제 APK 2회 게시 e2e, 기존 원격 경로 HTTP 200·해시 일치이며, 독립 QA가 아닌 자체 검증이다.",
+  "changedFiles": [
+    "apps/download-board/publish_release.py",
+    "apps/download-board/publish_release.test.py",
+    "apps/download-board/board.test.mjs",
+    "apps/download-board/site/app.mjs",
+    "apps/download-board/README.md",
+    "apps/download-board/examples/release-record.aos-apk.example.json"
+  ],
+  "verification": [
+    {
+      "check": "게시판 렌더 단위시험(같은 platform+version+build 중복 1건 노출)",
+      "command": "cd apps/download-board && node --test board.test.mjs",
+      "result": "PASS",
+      "evidence": "tests 12 / pass 12 / fail 0. 신규 '같은 플랫폼·버전·빌드 중복 항목은 한 번만 노출된다' 통과(최신 publishedAt만 노출, 플랫폼이 다르면 별개 항목). 기존 11건 회귀 통과."
+    },
+    {
+      "check": "게시자 가드·누적·기존 URL 보존 시험",
+      "command": "cd apps/download-board && python3 publish_release.test.py",
+      "result": "PASS",
+      "evidence": "Ran 15 tests in 0.83s — OK. 신규: 파일명에 해시 없음, 기존 게시 URL 재사용(새 경로 파일 미생성), 사라진 파일은 원래 URL로 복원, 레코드 버전이 APK와 다르면 거부, aapt2 없이 실제 APK에서 버전 읽기+2회 게시 항목 1건 유지. 게시자 시험은 SITE/ROOT를 임시 디렉터리로 치환해 실제 site/·원격을 건드리지 않는다."
+    },
+    {
+      "check": "문법 검사",
+      "command": "python3 -m py_compile apps/download-board/publish_release.py",
+      "result": "PASS",
+      "evidence": "exit 0."
+    },
+    {
+      "check": "실제 APK에서 버전 읽기(aapt2 부재 환경)",
+      "command": "python3 -c publish.apk_badging(None, site/downloads/v0.1.0/kimgosu-aos-0.1.0-b1-b0cb812cf1ff.apk)",
+      "result": "PASS",
+      "evidence": "shutil.which('aapt2')=None. AXML 직접 파싱 결과 ('0.1.0','1') 반환 — 하드코딩 없이 APK 자체 값."
+    },
+    {
+      "check": "실제 APK 2회 게시 e2e(임시 site 복사본)",
+      "command": "작성 스크립트: publish.prepare()를 임시 site(committed releases.json+downloads 복사)에서 실제 APK로 2회 호출",
+      "result": "PASS",
+      "evidence": "1회차 file=/downloads/v0.1.0/kimgosu-aos-0.1.0-b1-b0cb812cf1ff.apk, releases 1건. 2회차 동일 file, releases 1건, downloads 파일 목록 동일(file count 1) → 중복 항목·중복 파일 미생성."
+    },
+    {
+      "check": "기존 게시 항목 경로 유효(원격 읽기 전용)",
+      "command": "curl -sS -o /tmp/ws20.apk -w 'http=%{http_code} bytes=%{size_download}' https://appdownload.mintech.ai/downloads/v0.1.0/kimgosu-aos-0.1.0-b1-b0cb812cf1ff.apk && shasum -a 256 /tmp/ws20.apk",
+      "result": "PASS",
+      "evidence": "http=200 bytes=14520437 sha256=b0cb812cf1ff754de0f5883caa1ed7ca7f492ae016c4ec0918aff1a9d1c4dbe9 — site/releases.json 및 원격 releases.json의 기존 항목 bytes/sha256과 일치. 쓰기 없음."
+    },
+    {
+      "check": "로컬 게시판 매니페스트·파일 무변경",
+      "command": "cd /Users/mintech-mac/hermes/dev-profile/shared/projects/wt-WS-20 && git status --short",
+      "result": "PASS",
+      "evidence": "변경 6개는 위 changedFiles와 동일. site/releases.json·site/downloads/*.apk는 변경 없음. RepositoryBoardTest가 커밋된 published 항목의 파일 존재·sha256 일치를 검사해 통과."
+    },
+    {
+      "check": "실제 Pages 배포(--deploy) 및 공개 재게시",
+      "command": "-",
+      "result": "NOT_RUN",
+      "evidence": "PLAN이 실제 공개 업로드를 범위 밖으로 두고 작업 지시가 원격 쓰기 금지를 명시했다. wrangler 실행·게시 없음."
+    },
+    {
+      "check": "브라우저/모바일 실제 화면 확인(중복 표시·필터·검색·상태)",
+      "command": "-",
+      "result": "NOT_RUN",
+      "evidence": "브라우저·기기 실행 검증은 하지 않았다. 렌더 로직은 단위시험으로만 확인했고 uiux 대응 QA는 별도 카드다."
+    },
+    {
+      "check": "iOS 게시 경로(ios-simulator/ios-device-ipa) 실측",
+      "command": "-",
+      "result": "NOT_RUN",
+      "evidence": "iOS 게시 금지 지시에 따라 실제 iOS 산출물로 실행하지 않았다. 코드 경로는 기존 유지 + version/build를 번들 Info.plist 값으로 정규화하는 변경만 있고 전용 시험은 없다."
+    }
+  ],
+  "contractChanges": [],
+  "migrations": [],
+  "open": [
+    "PLAN 문구의 증상('두 항목이 모두 v0.1.0 · Build 1')은 해시가 박힌 파일명 때문에 경로 기반 existing 매칭이 실패해 생긴 것으로 판단했다. 현재 원격 매니페스트에는 항목이 1건뿐이라 실제로 어떤 두 항목이 중복이었는지는 재현 확인하지 못했다 — 이 해석 확인이 필요하다.",
+    "실제 공개 재게시·--deploy 실행은 승인된 릴리스 절차에서 별도 수행해야 한다(이번 범위 밖).",
+    "이미 중복으로 누적된 매니페스트 항목이 발견될 경우의 정리(항목 삭제)는 파괴적 변경이므로 사용자 결정이 필요하다. 현재 코드는 게시 시 중복을 추가하지 않고 렌더에서 1건만 노출하지만 기존 중복 행을 삭제하지는 않는다.",
+    "버전/release 단조성(더 낮은 version의 신규 게시 금지) 정책은 미확정이며 웨이브 1에서 이월된 OPEN이다.",
+    "aapt2 없이 APK AXML을 직접 파싱하는 fallback을 유지할지(의존성 제거 vs 자체 파서 유지보수 비용) 사용자 결정이 필요하다."
+  ],
+  "risks": [
+    "AXML 파서는 커밋된 APK 1건에서만 실측됐다. 다른 형태(문자열 풀 인코딩·리소스맵 부재 등)에서는 실패할 수 있으나, 실패 시 잘못된 버전을 게시하지 않고 ValueError로 중단하는 fail-closed 구조다.",
+    "렌더 단계 중복 제거는 platform+version+build가 같고 sha가 다른 레거시 항목이 있으면 최신 1건만 노출한다(다른 바이트가 화면에서 숨겨짐). 신규 게시는 다른 바이트를 거부하므로 신규 발생은 없다.",
+    "prepare()가 파일 복사·releases.json 기록을 배포·원격 검증보다 먼저 수행한다(웨이브 1 구조 유지). deploy() 실패 시 로컬에 게시 항목이 남는다(재시도 멱등).",
+    "deploy()의 원격 재조회는 게시한 1개 파일만 확인하며 누적 버전 전체 접근성은 확인하지 않는다(웨이브 1 구조 유지).",
+    "모든 검증은 자체 실행이며 독립 QA가 아니다. 실제 배포 후 원격 재조회와 uiux QA는 별도 단계다."
+  ],
+  "next": [
+    "승인된 릴리스 절차에서 동일 소스 최종 빌드 후 publish_release.py --deploy로 게시하고 원격 바이트/SHA·releases.json을 재조회한다.",
+    "uiux 대응 QA: 게시판 실제 브라우저에서 중복 1건 표시, 필터·검색, 로딩/빈/오류 상태 확인.",
+    "버전 단조성 정책과 레거시 중복 매니페스트 정리 여부를 사용자와 확정한다.",
+    "aapt2 fallback 유지 여부를 결정하고, 유지 시 다양한 APK 샘플로 파서 회귀 시험을 보강한다."
+  ]
+}

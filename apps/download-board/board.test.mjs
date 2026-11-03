@@ -13,5 +13,19 @@ test('등록 전에는 빈 게시판',()=>assert.deepEqual(visibleReleases([]),[
 test('게시일시가 없거나 깨진 항목은 최신으로 올라오지 않는다',()=>{const newest={...base,build:'2',publishedAt:'2026-11-02T00:00:00Z'};for(const broken of [{...base,build:'3',publishedAt:'알수없음'},{...base,build:'4',publishedAt:null},{...base,build:'5'}]){
   for(const input of [[newest,broken],[broken,newest]])assert.deepEqual(visibleReleases(input).map(r=>r.build),['2',broken.build]);}});
 test('변경사항은 비어있지 않은 문자열 배열만 허용',()=>{for(const notes of [undefined,null,42,'문구',{},[],[''],[' '],[12]]){assert.equal(isDownloadReady({...base,notes}),false);assert.deepEqual(visibleReleases([{...base,notes}]),[]);}assert.equal(isDownloadReady({...base,notes:['한글 변경사항']}),true);});
+test('같은 플랫폼·버전·빌드 중복 항목은 한 번만 노출된다',()=>{
+  const older={...base,publishedAt:'2026-10-30T09:00:00Z',notes:['이전 게시']};
+  const newer={...base,publishedAt:'2026-10-30T12:00:00Z',notes:['최신 게시']};
+  const other={...base,build:'2',publishedAt:'2026-10-30T13:00:00Z'};
+  for(const input of [[older,newer,other],[newer,older,other],[other,older,newer]]){
+    const shown=visibleReleases(input);
+    assert.deepEqual(shown.map(r=>r.build),['2','1']);
+    assert.equal(shown.filter(r=>r.build==='1').length,1);
+    assert.deepEqual(shown.find(r=>r.build==='1').notes,['최신 게시']);
+  }
+  // 플랫폼이 다르면 같은 버전·빌드라도 별개 항목이다.
+  const ios={...base,platform:'ios',file:'/downloads/v1.0.0/kimgosu-ios-1.0.0-b1.zip'};
+  assert.equal(visibleReleases([base,ios]).length,2);
+});
 test('명칭은 김고수, 공개 문구는 최소화',async()=>{const {readFile}=await import('node:fs/promises');const html=await readFile(new URL('./site/index.html',import.meta.url),'utf8');assert.match(html,/<title>김고수 앱 다운로드<\/title>/);for(const text of ['뉴김고수','NEW KIMGOSU','APP DOWNLOADS','QA','등록 준비 중','만나보세요','다운로드 전 확인하세요'])assert.equal(html.includes(text),false);assert.match(html,/id="search"/);assert.match(html,/data-platform="ios"/);});
 
