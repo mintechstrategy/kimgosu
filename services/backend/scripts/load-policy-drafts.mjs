@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Load the reviewed policy drafts into a database as DRAFT.
+// Load reviewed policy documents into a database as DRAFT.
 //
 // DRAFT documents are never consentable: the API's canConsent predicate requires
 // status='READY' AND approved_at IS NOT NULL AND effective_at<=now() AND a non-empty
@@ -8,7 +8,14 @@
 //
 //   DATABASE_URL=postgres://... node scripts/load-policy-drafts.mjs --dry-run
 //   DATABASE_URL=postgres://... node scripts/load-policy-drafts.mjs
+//   DATABASE_URL=postgres://... node scripts/load-policy-drafts.mjs --version v0.2
 //
+// Sets (each with its own readiness marker so unreviewed text cannot be loaded):
+//   v0.1-draft (default) — the v0.1 review drafts; must carry DRAFT_NOT_EFFECTIVE.
+//   v0.2                 — the approved v0.2 texts; must declare the effective
+//                          date and must not contain unresolved "[미확정" markers.
+//
+// Every set is inserted as status='DRAFT': promotion is never implied by loading.
 // Refuses to overwrite an existing (kind, version) row.
 
 import { createHash } from 'node:crypto';
@@ -19,25 +26,63 @@ import pg from 'pg';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const POLICY_DIR = join(HERE, '../../../records/product/policies');
-const VERSION = 'v0.1-draft';
 
-const DOCUMENTS = [
-  { kind: 'TERMS', file: 'TERMS-v0.1-draft.md', title: '김고수 서비스 이용약관 (검토 초안 v0.1)' },
-  { kind: 'PRIVACY_CONSENT', file: 'PRIVACY-CONSENT-v0.1-draft.md', title: '개인정보 수집·이용 동의 (검토 초안 v0.1)' },
-  { kind: 'PRIVACY_POLICY', file: 'PRIVACY-POLICY-v0.1-draft.md', title: '김고수 개인정보 처리방침 (검토 초안 v0.1)' },
-  { kind: 'MARKETING', file: 'MARKETING-v0.1-draft.md', title: '마케팅 정보 수신 동의 (검토 초안 v0.1)' },
-];
+const SETS = {
+  'v0.1-draft': {
+    version: 'v0.1-draft',
+    documents: [
+      { kind: 'TERMS', file: 'TERMS-v0.1-draft.md', title: '김고수 서비스 이용약관 (검토 초안 v0.1)' },
+      { kind: 'PRIVACY_CONSENT', file: 'PRIVACY-CONSENT-v0.1-draft.md', title: '개인정보 수집·이용 동의 (검토 초안 v0.1)' },
+      { kind: 'PRIVACY_POLICY', file: 'PRIVACY-POLICY-v0.1-draft.md', title: '김고수 개인정보 처리방침 (검토 초안 v0.1)' },
+      { kind: 'MARKETING', file: 'MARKETING-v0.1-draft.md', title: '마케팅 정보 수신 동의 (검토 초안 v0.1)' },
+    ],
+    // Unreviewed drafts are only loadable while they are explicitly marked as
+    // non-effective. Removing the marker is a deliberate editorial act.
+    assert: (file, body) => {
+      if (!body.includes('DRAFT_NOT_EFFECTIVE')) {
+        throw new Error(`${file} is missing the DRAFT_NOT_EFFECTIVE marker; refusing to load`);
+      }
+    },
+  },
+  'v0.2': {
+    version: 'v0.2',
+    documents: [
+      { kind: 'TERMS', file: 'TERMS-v0.2.md', title: '김고수 서비스 이용약관 (v0.2)' },
+      { kind: 'PRIVACY_CONSENT', file: 'PRIVACY-CONSENT-v0.2.md', title: '개인정보 수집·이용 동의 (v0.2)' },
+      { kind: 'PRIVACY_POLICY', file: 'PRIVACY-POLICY-v0.2.md', title: '김고수 개인정보 처리방침 (v0.2)' },
+      { kind: 'MARKETING', file: 'MARKETING-v0.2.md', title: '마케팅 정보 수신 동의 (v0.2)' },
+    ],
+    // The v0.2 texts are the user-approved bodies, so the marker is the absence
+    // of unresolved blanks plus the declared effective date. The row still lands
+    // as DRAFT; only the operator promotion makes it consentable.
+    assert: (file, body) => {
+      const leftovers = body.split('\n').filter(line => line.includes('[미확정'));
+      if (leftovers.length) {
+        throw new Error(`${file} still has ${leftovers.length} unresolved placeholder(s); refusing to load`);
+      }
+      if (!body.includes('2026-11-03 시행')) {
+        throw new Error(`${file} does not declare the 2026-11-03 effective date; refusing to load`);
+      }
+    },
+  },
+};
 
-const dryRun = process.argv.includes('--dry-run');
+const argv = process.argv.slice(2);
+const versionIndex = argv.indexOf('--version');
+const versionKey = versionIndex >= 0 ? argv[versionIndex + 1] : 'v0.1-draft';
+if (!versionKey || !SETS[versionKey]) {
+  throw new Error(`unknown --version ${versionKey ?? '(missing)'}; expected one of ${Object.keys(SETS).join(', ')}`);
+}
+const set = SETS[versionKey];
+const VERSION = set.version;
+const dryRun = argv.includes('--dry-run');
 const sha = (text) => createHash('sha256').update(text, 'utf8').digest('hex');
 
 const loaded = [];
-for (const doc of DOCUMENTS) {
+for (const doc of set.documents) {
   const body = await readFile(join(POLICY_DIR, doc.file), 'utf8');
   if (!body.trim()) throw new Error(`${doc.file} is empty`);
-  if (!body.includes('DRAFT_NOT_EFFECTIVE')) {
-    throw new Error(`${doc.file} is missing the DRAFT_NOT_EFFECTIVE marker; refusing to load`);
-  }
+  set.assert(doc.file, body);
   loaded.push({ ...doc, body, bodySha256: sha(body) });
 }
 
@@ -76,7 +121,7 @@ try {
     `SELECT kind,version,status,
             (status='READY' AND approved_at IS NOT NULL AND effective_at<=now()
              AND operator_name IS NOT NULL AND length(trim(operator_name))>0) AS "canConsent"
-       FROM kg_membership.policy_documents ORDER BY kind`,
+       FROM kg_membership.policy_documents ORDER BY kind,version`,
   );
   console.log('\ncurrent documents:');
   for (const row of check.rows) {
@@ -84,6 +129,9 @@ try {
   }
   const consentable = check.rows.filter((r) => r.canConsent).length;
   console.log(`\nconsentable documents: ${consentable} (signup stays blocked until TERMS, PRIVACY_CONSENT and PRIVACY_POLICY are READY)`);
+  if (VERSION === 'v0.2') {
+    console.log('note: v0.2 rows are DRAFT. Promotion (POST /v1/admin/policies/promote) is a separate, explicit act.');
+  }
 } finally {
   await pool.end();
 }
