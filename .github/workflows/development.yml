@@ -55,3 +55,8 @@ jobs:
           KG_SCHEMA_TEST_HOST: 127.0.0.1
           KG_SCHEMA_TEST_PORT: 5432
           KG_SCHEMA_TEST_USER: postgres
+      - name: Membership real PostgreSQL membership integration (11 cases)
+        run: npm run test:integration
+        working-directory: services/backend
+        env:
+          KG_TEST_DATABASE_URL: postgres://postgres@127.0.0.1:5432/kg_release_ci
