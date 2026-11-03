@@ -87,6 +87,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: Sql, authenticate:
     const total = Number((await db.query(`SELECT count(*)::int AS count FROM kg_membership.members m ${where}`, [search, status])).rows[0]?.count ?? 0);
     const rows = await db.query(
       `SELECT m.id, m.customer_no::text AS "customerNumber", m.name, m.nickname, m.email,
+              m.phone_masked AS "phoneMasked",
               ${effectiveStatus('m')} AS status, m.expert_active AS "expertActive",
               m.created_at AS "createdAt", m.withdrawn_at AS "withdrawnAt"
          FROM kg_membership.members m ${where}
@@ -98,7 +99,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: Sql, authenticate:
       page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)),
       members: rows.rows.map(row => ({
         id: row.id, customerNumber: row.customerNumber, name: row.name, nickname: row.nickname,
-        emailMasked: maskEmail(row.email), phoneMasked: null, status: row.status,
+        emailMasked: maskEmail(row.email), phoneMasked: row.phoneMasked ?? null, status: row.status,
         expertActive: row.expertActive, createdAt: row.createdAt, withdrawnAt: row.withdrawnAt,
       })),
     };
@@ -110,6 +111,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: Sql, authenticate:
     const auth = await requireAdmin(request, reply); if (!auth) return;
     const member = (await db.query(
       `SELECT m.id, m.customer_no::text AS "customerNumber", m.name, m.nickname, m.email,
+              m.phone_masked AS "phoneMasked",
               ${effectiveStatus('m')} AS status, m.expert_active AS "expertActive",
               m.created_at AS "createdAt", m.withdrawn_at AS "withdrawnAt",
               m.rejoin_after AS "rejoinAfter", m.retention_until AS "retentionUntil"
@@ -155,7 +157,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: Sql, authenticate:
          FROM kg_membership.role_grants g WHERE g.member_id=$1 ORDER BY g.created_at DESC`,
       [request.params.id],
     )).rows;
-    return { member: { ...member, emailMasked: maskEmail(member.email), phoneMasked: null }, restrictions, consents, ledgers, roles };
+    return { member: { ...member, emailMasked: maskEmail(member.email), phoneMasked: member.phoneMasked ?? null }, restrictions, consents, ledgers, roles };
   });
 
   app.post<{ Params: { id: string }; Body: { reason: string; endsAt?: string } }>('/v1/admin/members/:id/restrict', {
