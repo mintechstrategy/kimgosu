@@ -117,9 +117,13 @@ async function main() {
   done.push('양측 완료 확인');
 
   // 5. 리뷰.
-  await expect('리뷰 작성', 'POST', `/v1/ledgers/${ledgerId}/reviews`, {
+  // 재실행 시에는 이미 리뷰가 있다(원장당 1건). 그 경우도 흐름은 정상이므로 통과로 본다.
+  const review = await call('POST', `/v1/ledgers/${ledgerId}/reviews`, {
     token: customerToken, body: { rating: 5, body: 'E2E 검증 리뷰' },
-  }, 201);
+  });
+  assert.ok([201, 409].includes(review.status),
+    `리뷰 작성이 201도 409(REVIEW_EXISTS)도 아니다: ${review.status} ${JSON.stringify(review.body)}`);
+  done.push(`리뷰 작성 (${review.status}${review.status === 409 ? ' 이미 존재' : ''})`);
 
   const reviews = await expect('리뷰 조회', 'GET', `/v1/experts/${expertId}/reviews`, {}, 200);
   const items = reviews.items ?? reviews.reviews ?? [];

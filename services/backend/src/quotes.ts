@@ -160,7 +160,7 @@ export function registerQuoteRoutes(app: FastifyInstance, db: Sql, authenticate:
       if (Number.isNaN(expiresAt.getTime()) || expiresAt.getTime() <= now + MIN_TTL_MS) throw new ApiError(400, 'INVALID_EXPIRY');
       if (expiresAt.getTime() > now + QUOTE_MAX_TTL_DAYS * DAY_MS) throw new ApiError(400, 'EXPIRY_EXCEEDS_MAX_TTL');
 
-      return db.transaction(async sql => {
+      const quote = await db.transaction(async sql => {
         const ledger = await participantLedger(sql, request.params.id, auth.memberId);
         if (ledger.expertMemberId !== String(auth.memberId)) throw new ApiError(403, 'EXPERT_ONLY');
         const id = randomUUID();
@@ -176,8 +176,9 @@ export function registerQuoteRoutes(app: FastifyInstance, db: Sql, authenticate:
         await audit(sql, auth.memberId, 'QUOTE_PROPOSED', 'quote', id, null, {
           ledgerId: request.params.id, amount: request.body.amount, priceType, vatIncluded,
         });
-        return reply.code(201).send(present(created));
+        return present(created);
       });
+      return reply.code(201).send(quote);
     });
 
   // List a ledger's quotes. Participants only, newest first, bounded page.
