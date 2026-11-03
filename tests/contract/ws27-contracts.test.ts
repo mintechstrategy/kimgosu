@@ -20,6 +20,7 @@ import { registerQuoteRoutes } from '../../services/backend/src/quotes.ts';
 import { registerChatRoutes } from '../../services/backend/src/chat.ts';
 import { registerReviewRoutes } from '../../services/backend/src/reviews.ts';
 import { registerAdminRoutes } from '../../services/backend/src/admin.ts';
+import { registerAdminSessionRoutes } from '../../services/backend/src/admin-session.ts';
 import { registerAdminPolicyRoutes } from '../../services/backend/src/admin-policy.ts';
 import { registerRegisterRoutes } from '../../services/backend/src/register.ts';
 
@@ -44,6 +45,9 @@ const REGISTERERS: Record<string, Register> = {
   'services/backend/src/chat.ts': (app, sql, authenticate) => registerChatRoutes(app, sql, authenticate),
   'services/backend/src/reviews.ts': (app, sql, authenticate) => registerReviewRoutes(app, sql, authenticate),
   'services/backend/src/admin.ts': (app, sql, authenticate) => registerAdminRoutes(app, sql, authenticate),
+  // WS-23: operator session exchange lives in its own module; the admin contract
+  // declares it as a source module, so the harness must register it too.
+  'services/backend/src/admin-session.ts': (app, sql) => registerAdminSessionRoutes(app, sql, {}),
   'services/backend/src/admin-policy.ts': (app, sql, authenticate) => registerAdminPolicyRoutes(app, sql, authenticate),
   // register.ts 는 authenticate 대신 AuthOptions 를 받는다. 등록만 관찰하므로 빈 옵션.
   'services/backend/src/register.ts': (app, sql) => registerRegisterRoutes(app, sql, {}),
@@ -126,7 +130,7 @@ for (const name of NAMES) test(`${name}: operation 목록 = 실제 등록 라우
   }
 });
 
-test('전체 앱(buildApp)에 22개 operation이 실제로 등록되어 있다', async () => {
+test('전체 앱(buildApp)에 28개 operation이 실제로 등록되어 있다', async () => {
   const app = buildApp(dbDouble as never, 'ws27-contract');
   await app.ready();
   try {
@@ -143,7 +147,7 @@ test('5개 계약은 서로 겹치지 않고, 계약에 없는 라우트는 문�
   const claimed: string[] = [];
   for (const contract of CONTRACTS) claimed.push(...contract.operations.map(operationKey));
   assert.equal(new Set(claimed).size, claimed.length, 'two contracts claim the same route');
-  assert.equal(claimed.length, 22);
+  assert.equal(claimed.length, 28);
 
   const v02 = JSON.parse(readFileSync(new URL('../../contracts/auth-membership.v0.2.json', import.meta.url), 'utf8'));
   const v03 = JSON.parse(readFileSync(new URL('../../contracts/auth-membership.v0.3.json', import.meta.url), 'utf8'));
@@ -162,18 +166,22 @@ test('5개 계약은 서로 겹치지 않고, 계약에 없는 라우트는 문�
   const inventory = parseRoutes(tree);
   assert.ok(inventory.length >= 50, 'route inventory parsing looks broken: ' + inventory.length);
 
-  // 전문가(experts) 도메인은 이번 웨이브에서 계약을 작성하지 않았다.
-  // 여기 남는 목록이 그 사실을 매 실행마다 드러낸다.
-  const experts = [
+  // 계약이 없는 라우트의 문서화된 목록. 여기 남는 목록이 매 실행마다 드러난다.
+  //  - 전문가(experts) 도메인은 이번 웨이브에서 계약을 작성하지 않았다.
+  //  - Apple form_post 콜백(WS-21)은 auth 계약(auth-membership.v0.3.json, 동결)에
+  //    아직 등재되지 않았다. v0.3을 수정하지 않는 것이 이 카드의 제약이므로
+  //    후속 auth 계약 개정 카드에서 등재해야 한다.
+  const documentedGaps = [
     'POST /v1/expert/profile',
     'PATCH /v1/expert/profile',
     'POST /v1/expert/services',
     'PATCH /v1/expert/services/:id',
     'GET /v1/experts',
     'GET /v1/experts/:id',
+    'POST /v1/auth/oauth/apple/callback',
   ];
   const unclaimed = inventory.filter(route => !covered.has(route));
-  sameSet(unclaimed, experts, 'unclaimed routes changed: a live route is missing from every contract');
+  sameSet(unclaimed, documentedGaps, 'unclaimed routes changed: a live route is missing from every contract');
 });
 
 // printRoutes 트리를 (METHOD /path) 목록으로 평탄화한다. HEAD는 GET 중복이라 버린다.

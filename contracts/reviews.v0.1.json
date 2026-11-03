@@ -9,8 +9,9 @@
     "Eligibility is decided on the server: the author must be a ledger participant AND a COMPLETED agreement must exist for that same ledger. A client-sent eligibility flag does not exist.",
     "One review per (ledger, author): the unique constraint and a pre-check both answer 409 REVIEW_EXISTS.",
     "rating is 1..5, body is optional (1..2000 characters when present). The rating is required.",
-    "Public reads expose the author's nickname as authorName. The current projection also returns authorId (the author's member id) because reviewSelect projects it; hiding member ids in public responses is an open item (see openItems) and is not implemented at v0.1.",
-    "Moderation hides rows via reviews.hidden_at: hidden rows are excluded from the public list, the summary and the received list, while the author still sees their own row with hiddenAt set.",
+    "Public reads (WS-26) expose only the author's nickname as authorNickname. The public projection selects id, rating, body, createdAt and authorNickname; author/target member ids, e-mail and phone are not selected at all, so they cannot leak through a later edit of the response object.",
+    "Review window (WS-26): a review may be written until the latest COMPLETED agreement's completed_at + 30 days. A closed window is 403 REVIEW_WINDOW_CLOSED, distinct from 403 REVIEW_NOT_ELIGIBLE (never completed). The window is measured on the server clock against the stored completed_at.",
+    "Moderation hides rows via reviews.hidden_at: hidden rows are excluded from the public list, the summary and the received list, while the author still sees their own row with hiddenAt set. Hide/unhide are operator routes documented in contracts/admin.v0.1.json.",
     "All routes respond with Cache-Control: no-store and X-Server-Time."
   ],
   "operations": [
@@ -57,6 +58,7 @@
         { "status": 403, "code": "ACCOUNT_RESTRICTED", "when": "member has an active restriction" },
         { "status": 403, "code": "NOT_A_PARTICIPANT", "when": "caller is neither the ledger's expert nor its customer" },
         { "status": 403, "code": "REVIEW_NOT_ELIGIBLE", "when": "no COMPLETED agreement exists for this ledger and pair" },
+        { "status": 403, "code": "REVIEW_WINDOW_CLOSED", "when": "the latest COMPLETED agreement completed more than 30 days ago" },
         { "status": 404, "code": "LEDGER_NOT_FOUND", "when": "ledger does not exist" },
         { "status": 409, "code": "REVIEW_EXISTS", "when": "the caller already reviewed this ledger" }
       ]
@@ -142,9 +144,9 @@
     }
   ],
   "openItems": [
-    "The review window (completed_at + 30 days) is not enforced at v0.1: a review can be written at any time after completion. Wave-3 WS-26 is the card that adds reviews.hidden_reason, the 30-day window (403 REVIEW_WINDOW_CLOSED) and the admin hide/unhide routes; those changes will produce v0.2 of this contract.",
-    "No admin hide/unhide route exists at v0.1, so hidden_at can only be set by direct SQL and hidden_reason does not exist yet.",
-    "Public list exposes author nickname only; whether the public list should stay anonymous or content-moderated is not decided beyond that.",
+    "The 30-day review window (WS-26) is enforced on the server against the latest COMPLETED agreement's completed_at; a client-supplied date is never consulted.",
+    "Admin hide/unhide routes live in contracts/admin.v0.1.json (POST /v1/admin/reviews/:id/hide|unhide) and require an admin-scope session plus a reason.",
+    "Public list exposes the author nickname only; whether the public list should stay anonymous or content-moderated is not decided beyond that.",
     "Review edit/delete is not offered: one review per (ledger, author) is final."
   ],
   "schemaDefinitions": {
@@ -167,20 +169,16 @@
       }
     },
     "PublicReview": {
-      "description": "Public projection = review row + authorName (nickname). No e-mail or phone is projected. authorId is currently still projected by the shared reviewSelect (open item for v0.2).",
+      "description": "Public projection (publicReviewSelect) = id, rating, body, createdAt and authorNickname. No member id, e-mail or phone is selected.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "ledgerId", "authorId", "targetId", "rating", "body", "createdAt", "hiddenAt", "authorName"],
+      "required": ["id", "rating", "body", "createdAt", "authorNickname"],
       "properties": {
         "id": { "$ref": "#/definitions/Uuid" },
-        "ledgerId": { "$ref": "#/definitions/Uuid" },
-        "authorId": { "$ref": "#/definitions/Uuid" },
-        "targetId": { "$ref": "#/definitions/Uuid" },
         "rating": { "type": "integer", "minimum": 1, "maximum": 5 },
         "body": { "type": ["string", "null"] },
         "createdAt": { "$ref": "#/definitions/Timestamp" },
-        "hiddenAt": { "type": ["null"], "description": "always null in the public list: hidden rows are filtered out" },
-        "authorName": { "type": "string" }
+        "authorNickname": { "type": "string" }
       }
     },
     "ReviewSummary": {

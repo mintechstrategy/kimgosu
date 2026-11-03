@@ -3,17 +3,102 @@
   "owner": "develop / KG-PARALLEL-10-WS-27",
   "status": "LOCAL_CANDIDATE_NOT_DEPLOYED",
   "schemaDialect": "http://json-schema.org/draft-07/schema#",
-  "sourceModules": ["services/backend/src/admin.ts"],
+  "sourceModules": ["services/backend/src/admin.ts", "services/backend/src/admin-session.ts"],
   "inventoryRule": "operations must equal the routes actually registered by sourceModules (tests/contract/ws27-contracts.test.ts compares against Fastify onRoute). Policy promotion (POST /v1/admin/policies/promote) lives in contracts/registration.v0.1.json per the wave-3 split.",
   "sharedBehaviors": [
     "Authority is decided on the server from a live kg_membership.role_grants row (role_id='ADMIN', revoked_at IS NULL, starts_at<=now(), ends_at IS NULL OR ends_at>now()). A client-sent admin flag does not exist. A session without a live ADMIN grant gets 403 ADMIN_REQUIRED before any member data is read.",
     "Status is the effective status: a member with a live restriction row reads as RESTRICTED even when members.status is ACTIVE.",
     "E-mail is masked in list/detail responses as emailMasked (first two characters of the local part + at least three '*'). The raw email is still present in the member detail response because the handler spreads the member row — see openItems.",
-    "phoneMasked is always null at v0.1: no masked phone column exists yet.",
+    "phoneMasked is the stored members.phone_masked value (WS-28, format 010-****-1234) or null when the member has no masked phone. The raw phone number is never stored or returned.",
     "Every restrict/release writes kg_membership.audit_log (action MEMBER_RESTRICTED / MEMBER_RELEASED, reason, restrictionId).",
+    "Operator sessions (WS-23): POST /v1/admin/session exchanges a real member session token for a dedicated admin-scope token (adm_ prefix, 2-hour TTL, never refreshed). The exchange re-reads a live ADMIN role grant; a non-admin gets 403 ADMIN_REQUIRED. A member token on an admin route gets 403 ADMIN_SESSION_REQUIRED and an admin token on a member route gets 401 SESSION_INVALID (scope separation in both directions).",
+    "Admin login brute force: 5 failed exchanges per client within 15 minutes lock the client for 5 minutes (429 ADMIN_LOGIN_LOCKED with Retry-After). The counter is per-process memory; every failure/lock/issue/logout is appended to audit_log.",
+    "Review moderation (WS-26): hide/unhide are operator-only and never delete. hidden_at/hidden_reason are set, the row stays, and the public review list already filters on hidden_at IS NULL. Both actions require an explicit reason (2..500 characters) and write REVIEW_HIDDEN / REVIEW_UNHIDDEN to audit_log.",
     "All routes respond with Cache-Control: no-store and X-Server-Time."
   ],
   "operations": [
+    {
+      "id": "adminSessionCreate",
+      "method": "POST",
+      "path": "/v1/admin/session",
+      "authentication": "none",
+      "source": "services/backend/src/admin-session.ts",
+      "requestSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sessionToken"],
+        "properties": {
+          "sessionToken": { "type": "string", "pattern": "^[A-Za-z0-9_-]{32,256}$" }
+        }
+      },
+      "responses": {
+        "201": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["adminToken", "tokenType", "expiresInSeconds", "expiresAt", "operator"],
+          "properties": {
+            "adminToken": { "type": "string", "pattern": "^adm_[A-Za-z0-9_-]+$" },
+            "tokenType": { "type": "string", "const": "Bearer" },
+            "expiresInSeconds": { "type": "integer", "const": 7200 },
+            "expiresAt": { "$ref": "#/definitions/Timestamp" },
+            "operator": { "$ref": "#/definitions/Operator" }
+          }
+        }
+      },
+      "notes": "Exchanges a real member session token for a dedicated admin-scope token. An admin token is never exchangeable again (400 INVALID_REQUEST). The raw client address is never stored; only a salted digest is used as the limiter key.",
+      "errors": [
+        { "status": 400, "code": "INVALID_REQUEST", "when": "schema violation or the supplied token is already an admin token" },
+        { "status": 401, "code": "SESSION_INVALID", "when": "the member session token is unknown, revoked or expired" },
+        { "status": 403, "code": "ADMIN_REQUIRED", "when": "the member has no live ADMIN role grant" },
+        { "status": 429, "code": "ADMIN_LOGIN_LOCKED", "when": "5 failed exchanges within 15 minutes; Retry-After carries the remaining lock seconds" }
+      ]
+    },
+    {
+      "id": "adminSessionGet",
+      "method": "GET",
+      "path": "/v1/admin/session",
+      "authentication": "admin",
+      "source": "services/backend/src/admin-session.ts",
+      "responses": {
+        "200": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["operator", "expiresAt"],
+          "properties": {
+            "operator": { "$ref": "#/definitions/Operator" },
+            "expiresAt": { "$ref": "#/definitions/Timestamp" }
+          }
+        }
+      },
+      "errors": [
+        { "status": 401, "code": "AUTH_REQUIRED", "when": "missing or malformed Authorization header" },
+        { "status": 401, "code": "SESSION_INVALID", "when": "the admin session is unknown, revoked or expired" },
+        { "status": 403, "code": "ADMIN_SESSION_REQUIRED", "when": "the bearer token is a member session, not an admin session" },
+        { "status": 403, "code": "ADMIN_REQUIRED", "when": "the session owner has no live ADMIN role grant" }
+      ]
+    },
+    {
+      "id": "adminSessionLogout",
+      "method": "POST",
+      "path": "/v1/admin/session/logout",
+      "authentication": "admin",
+      "source": "services/backend/src/admin-session.ts",
+      "responses": {
+        "200": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["loggedOut"],
+          "properties": { "loggedOut": { "type": "boolean", "const": true } }
+        }
+      },
+      "notes": "Revokes the admin session row and writes ADMIN_SESSION_LOGGED_OUT to audit_log.",
+      "errors": [
+        { "status": 401, "code": "AUTH_REQUIRED", "when": "missing or malformed Authorization header" },
+        { "status": 401, "code": "SESSION_INVALID", "when": "the admin session is unknown, revoked or expired" },
+        { "status": 403, "code": "ADMIN_SESSION_REQUIRED", "when": "the bearer token is a member session, not an admin session" },
+        { "status": 403, "code": "ADMIN_REQUIRED", "when": "the session owner has no live ADMIN role grant" }
+      ]
+    },
     {
       "id": "adminMembers",
       "method": "GET",
@@ -172,18 +257,112 @@
         { "status": 404, "code": "MEMBER_NOT_FOUND", "when": "member does not exist" },
         { "status": 409, "code": "NOT_RESTRICTED", "when": "the principal has no live restriction" }
       ]
+    },
+    {
+      "id": "adminReviewHide",
+      "method": "POST",
+      "path": "/v1/admin/reviews/:id/hide",
+      "authentication": "admin",
+      "source": "services/backend/src/admin.ts",
+      "paramsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id"],
+        "properties": { "id": { "type": "string", "format": "uuid" } }
+      },
+      "requestSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["reason"],
+        "properties": { "reason": { "type": "string", "minLength": 2, "maxLength": 500 } }
+      },
+      "responses": {
+        "200": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "hiddenAt", "hiddenReason", "hidden"],
+          "properties": {
+            "id": { "$ref": "#/definitions/Uuid" },
+            "hiddenAt": { "$ref": "#/definitions/Timestamp" },
+            "hiddenReason": { "type": "string" },
+            "hidden": { "type": "boolean", "const": true }
+          }
+        }
+      },
+      "notes": "Soft moderation: sets hidden_at/hidden_reason and writes REVIEW_HIDDEN to audit_log. The row is never deleted.",
+      "errors": [
+        { "status": 400, "code": "INVALID_REQUEST", "when": "reason shorter than 2 characters or schema violation" },
+        { "status": 401, "code": "AUTH_REQUIRED", "when": "missing or malformed Authorization header" },
+        { "status": 403, "code": "ADMIN_SESSION_REQUIRED", "when": "the bearer token is a member session, not an admin session" },
+        { "status": 403, "code": "ADMIN_REQUIRED", "when": "the session owner has no live ADMIN role grant" },
+        { "status": 404, "code": "REVIEW_NOT_FOUND", "when": "review does not exist" },
+        { "status": 409, "code": "REVIEW_ALREADY_HIDDEN", "when": "the review is already hidden" }
+      ]
+    },
+    {
+      "id": "adminReviewUnhide",
+      "method": "POST",
+      "path": "/v1/admin/reviews/:id/unhide",
+      "authentication": "admin",
+      "source": "services/backend/src/admin.ts",
+      "paramsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id"],
+        "properties": { "id": { "type": "string", "format": "uuid" } }
+      },
+      "requestSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["reason"],
+        "properties": { "reason": { "type": "string", "minLength": 2, "maxLength": 500 } }
+      },
+      "responses": {
+        "200": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "hiddenAt", "hiddenReason", "hidden"],
+          "properties": {
+            "id": { "$ref": "#/definitions/Uuid" },
+            "hiddenAt": { "type": "null" },
+            "hiddenReason": { "type": "null" },
+            "hidden": { "type": "boolean", "const": false }
+          }
+        }
+      },
+      "notes": "Clears hidden_at/hidden_reason and writes REVIEW_UNHIDDEN to audit_log with the previous hidden reason.",
+      "errors": [
+        { "status": 400, "code": "INVALID_REQUEST", "when": "reason shorter than 2 characters or schema violation" },
+        { "status": 401, "code": "AUTH_REQUIRED", "when": "missing or malformed Authorization header" },
+        { "status": 403, "code": "ADMIN_SESSION_REQUIRED", "when": "the bearer token is a member session, not an admin session" },
+        { "status": 403, "code": "ADMIN_REQUIRED", "when": "the session owner has no live ADMIN role grant" },
+        { "status": 404, "code": "REVIEW_NOT_FOUND", "when": "review does not exist" },
+        { "status": 409, "code": "REVIEW_NOT_HIDDEN", "when": "the review is not currently hidden" }
+      ]
     }
   ],
   "openItems": [
     "GET /v1/admin/members/:id returns the raw member row spread into `member`, so `email` (unmasked) is present next to emailMasked. The list response masks the e-mail. Whether the detail may return the raw address is a product/privacy decision and is NOT changed by this contract.",
-    "phoneMasked is hard-coded null: no masked phone column exists. Wave-3 WS-28 adds members.phone_masked and will make this field carry a real masked value (contract v0.2).",
-    "There is no admin login/session separation at v0.1: admin routes authenticate with the ordinary social session plus a live ADMIN grant. The dedicated /admin/login + separate admin session scope is wave-3 WS-23.",
-    "No admin route to hide reviews or read the audit log; the audit log is written but not exposed through the API."
+    "phoneMasked carries the stored members.phone_masked value (WS-28) or null. Existing members keep null because a masked value is not derivable from the phone digest; back-filling would be guessing.",
+    "Admin routes require an admin-scope session (adm_ prefix) obtained from POST /v1/admin/session (WS-23). A member session token is refused with 403 ADMIN_SESSION_REQUIRED; the admin token is refused on member routes with 401 SESSION_INVALID.",
+    "The audit log is written but not exposed through the API; there is no admin route to read it.",
+    "Review moderation (WS-26) is exposed as POST /v1/admin/reviews/:id/hide and /unhide. The public review list filters hidden rows; the author still sees their own row with hiddenAt set."
   ],
   "schemaDefinitions": {
     "Uuid": { "type": "string", "format": "uuid" },
     "Timestamp": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?Z$" },
     "NullableTimestamp": { "type": ["string", "null"], "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?Z$" },
+    "PhoneMasked": { "type": ["string", "null"], "pattern": "^010-\\*{4}-[0-9]{4}$" },
+    "Operator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["memberId", "nickname", "customerNumber"],
+      "properties": {
+        "memberId": { "$ref": "#/definitions/Uuid" },
+        "nickname": { "type": "string" },
+        "customerNumber": { "type": "string" }
+      }
+    },
     "MemberStatus": { "type": "string", "enum": ["ACTIVE", "RESTRICTED", "WITHDRAWN"] },
     "MemberListItem": {
       "type": "object",
@@ -195,7 +374,7 @@
         "name": { "type": "string" },
         "nickname": { "type": "string" },
         "emailMasked": { "type": ["string", "null"] },
-        "phoneMasked": { "type": "null" },
+        "phoneMasked": { "$ref": "#/definitions/PhoneMasked" },
         "status": { "$ref": "#/definitions/MemberStatus" },
         "expertActive": { "type": "boolean" },
         "createdAt": { "$ref": "#/definitions/Timestamp" },
@@ -219,7 +398,7 @@
         "rejoinAfter": { "$ref": "#/definitions/NullableTimestamp" },
         "retentionUntil": { "$ref": "#/definitions/NullableTimestamp" },
         "emailMasked": { "type": ["string", "null"] },
-        "phoneMasked": { "type": "null" }
+        "phoneMasked": { "$ref": "#/definitions/PhoneMasked" }
       }
     },
     "Restriction": {
