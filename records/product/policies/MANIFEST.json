@@ -37,7 +37,7 @@
   ],
   "scopeNote": "최상위 status·version·documents는 v0.1-draft 세트를 설명한다. v0.2 세트는 아래 \"v0.2\" 키를 따른다.",
   "v0.2": {
-    "status": "DRAFT_LOADED_NOT_PROMOTED",
+    "status": "READY",
     "effectiveFrom": "2026-11-03",
     "operatorPlanned": "mintech",
     "basis": [
@@ -98,11 +98,34 @@
       "safety": "항상 status='DRAFT'로만 삽입. canConsent=false이므로 승격 전에는 동의 대상이 되지 않는다. 기존 (kind,version) 행은 덮어쓰지 않는다. 로더는 [미확정 잔존·시행일 미기재 문서를 거부한다."
     },
     "promotion": {
-      "status": "NOT_RUN",
-      "reason": "PLAN: 승격은 오케스트레이터가 검토 후 실행한다. 이 작업은 DRAFT 적재까지만 수행했다.",
-      "api": "POST /v1/admin/policies/promote",
+      "status": "COMPLETED",
+      "at": "2026-11-03T17:30:00+09:00",
+      "from": "DRAFT",
+      "to": "READY",
+      "values": {
+        "operator_name": "mintech",
+        "effective_at": "2026-11-03T00:00:00+09:00",
+        "approved_at": "2026-11-03T17:30:00+09:00"
+      },
+      "authorizedBy": "사용자 지시: A-2 v0.2 새로 만들어서 오늘 시행",
       "script": "services/backend/scripts/promote-policy-drafts.mjs",
-      "requiredInput": "--version v0.2 --operator mintech --effective 2026-11-03T00:00:00+09:00 --approved <승인시각> --confirm"
+      "runner": "services/backend/scripts/dev-db.sh",
+      "targets": [
+        "local kgtest (127.0.0.1:55432)",
+        "Railway dev Postgres"
+      ],
+      "irreversible": true,
+      "liveVerification": {
+        "url": "https://api-dev-kimgosu.mintech.ai/v1/policies?metadata=policy-v0.3",
+        "checkedAt": "2026-11-03T17:40+09:00",
+        "result": "4종 모두 v0.2가 isCurrent=true, isDisplay=true, canConsent=true",
+        "signupReady": false,
+        "remainingBlockers": [
+          "OAuth provider 자격증명 미설정",
+          "SMS 미연결",
+          "identity key 미설정"
+        ]
+      }
     },
     "verification": {
       "environment": "PostgreSQL 18.6 loopback 127.0.0.1:55432/kgtest_ws22 (migrations 001-011) + Fastify app.inject. Railway 개발 DB에는 적재하지 않았다.",
@@ -185,10 +208,22 @@
       "at": "2026-11-03",
       "method": "railway connect Postgres --tunnel-only (SSH key kimgosu-develop 등록 후)",
       "inserted": [
-        { "kind": "TERMS", "id": 2 },
-        { "kind": "PRIVACY_CONSENT", "id": 3 },
-        { "kind": "PRIVACY_POLICY", "id": 4 },
-        { "kind": "MARKETING", "id": 5 }
+        {
+          "kind": "TERMS",
+          "id": 2
+        },
+        {
+          "kind": "PRIVACY_CONSENT",
+          "id": 3
+        },
+        {
+          "kind": "PRIVACY_POLICY",
+          "id": 4
+        },
+        {
+          "kind": "MARKETING",
+          "id": 5
+        }
       ],
       "liveVerification": {
         "endpoint": "https://api-dev-kimgosu.mintech.ai/v1/policies",
@@ -223,10 +258,22 @@
     "script": "services/backend/scripts/promote-policy-drafts.mjs",
     "runner": "services/backend/scripts/dev-db.sh",
     "documents": [
-      { "kind": "TERMS", "id": 2 },
-      { "kind": "PRIVACY_CONSENT", "id": 3 },
-      { "kind": "PRIVACY_POLICY", "id": 4 },
-      { "kind": "MARKETING", "id": 5 }
+      {
+        "kind": "TERMS",
+        "id": 2
+      },
+      {
+        "kind": "PRIVACY_CONSENT",
+        "id": 3
+      },
+      {
+        "kind": "PRIVACY_POLICY",
+        "id": 4
+      },
+      {
+        "kind": "MARKETING",
+        "id": 5
+      }
     ],
     "irreversible": true,
     "irreversibilityNote": "READY 전환 시 content_sealed=true가 되어 본문·제목·버전·operator·시행일·승인일이 DB 트리거로 잠긴다. 내용 수정은 새 버전(v0.2 등) 발행으로만 가능하다.",
@@ -241,7 +288,11 @@
       "configEndpoint": {
         "url": "https://api-dev-kimgosu.mintech.ai/v1/auth/config",
         "signupReady": false,
-        "remainingBlockers": ["providers 3종 미연결", "sms 미연결", "identity key 미설정"]
+        "remainingBlockers": [
+          "providers 3종 미연결",
+          "sms 미연결",
+          "identity key 미설정"
+        ]
       },
       "sealProof": {
         "script": "services/backend/scripts/verify-policy-seal.mjs",
