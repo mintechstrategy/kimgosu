@@ -2,6 +2,7 @@ package ai.mintech.kimgosu
 
 import ai.mintech.kimgosu.auth.AuthRepository
 import ai.mintech.kimgosu.auth.SecureSession
+import ai.mintech.kimgosu.ui.DesignTokens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -31,7 +32,6 @@ import org.json.JSONObject
  * Development builds only. The list is served by the API, which registers these
  * routes only when the deployment environment is exactly 'dev'.
  */
-private val DevNavy = Color(0xFF0B1E35)
 
 private data class DevAccount(val slot: Int, val role: String, val label: String, val nickname: String)
 
@@ -91,7 +91,7 @@ fun DevTestLoginGate(onReady: () -> Unit) {
     Box(Modifier.fillMaxSize().background(Color.White).safeDrawingPadding()) {
         Column(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
             Spacer(Modifier.height(24.dp))
-            Text("임시 로그인", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = DevNavy)
+            Text("임시 로그인", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = DesignTokens.navy)
             Spacer(Modifier.height(6.dp))
             Text(
                 "소셜 로그인 연결 전 테스트용입니다. 계정을 선택하면 서버가 실제 세션을 발급합니다.",
@@ -101,11 +101,11 @@ fun DevTestLoginGate(onReady: () -> Unit) {
             Spacer(Modifier.height(16.dp))
 
             signedInAs?.let { who ->
-                Surface(color = Color(0xFFEFF8D8), shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+                Surface(color = DesignTokens.soft, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(16.dp)) {
-                        Text("로그인됨", fontSize = 13.sp, color = DevNavy)
+                        Text("로그인됨", fontSize = 13.sp, color = DesignTokens.navy)
                         Spacer(Modifier.height(4.dp))
-                        Text(who, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = DevNavy)
+                        Text(who, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = DesignTokens.navy)
                     }
                 }
                 Spacer(Modifier.height(12.dp))
@@ -113,7 +113,7 @@ fun DevTestLoginGate(onReady: () -> Unit) {
                     onClick = onReady,
                     modifier = Modifier.fillMaxWidth().height(48.dp),
                     shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = DevNavy, contentColor = Color.White),
+                    colors = ButtonDefaults.buttonColors(containerColor = DesignTokens.navy, contentColor = Color.White),
                 ) { Text("앱으로 계속") }
                 Spacer(Modifier.height(12.dp))
             }
@@ -126,7 +126,7 @@ fun DevTestLoginGate(onReady: () -> Unit) {
             val list = accounts
             if (list == null) {
                 Box(Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(color = DevNavy)
+                    CircularProgressIndicator(color = DesignTokens.navy)
                 }
             } else {
                 LazyColumn(Modifier.weight(1f)) {
@@ -136,7 +136,7 @@ fun DevTestLoginGate(onReady: () -> Unit) {
                                 title,
                                 fontSize = 14.sp,
                                 fontWeight = FontWeight.SemiBold,
-                                color = DevNavy,
+                                color = DesignTokens.navy,
                                 modifier = Modifier.padding(top = 12.dp, bottom = 8.dp),
                             )
                         }

@@ -1,0 +1,89 @@
+{
+  "ws": "WS-34",
+  "status": "DONE",
+  "summary": "scripts/generate-client.mjs로 operations+schemaDefinitions 형식 계약 5종(operation 29개)에서 apps/web/src/api/generated.ts(경로·메서드 표, operation별 요청/응답 타입, {error:{code,message?}} envelope, 얇은 호출 함수)를 생성하고 관리자 클라이언트의 손작성 호출 7곳을 생성물로 교체했다. 생성 2회 md5 동일(diff 0), 웹 typecheck exit 0 · unit 230/230 · build 성공, 계약 테스트 33/33(15+5+13) 유지, 웹 src 하드코딩 API 경로 27→20.",
+  "changedFiles": [
+    "scripts/generate-client.mjs",
+    "apps/web/src/api/generated.ts",
+    "apps/web/src/admin/api.ts",
+    "records/parallel-10/WS-34/RESULT.json"
+  ],
+  "verification": [
+    {
+      "check": "생성 멱등성 (두 번 실행 결과 동일)",
+      "command": "cd <wt-WS-34> && node scripts/generate-client.mjs && md5 -q apps/web/src/api/generated.ts && node scripts/generate-client.mjs && md5 -q apps/web/src/api/generated.ts",
+      "result": "PASS",
+      "evidence": "1·2회차 모두 'generated 29 operations from 5 contracts'. md5 a9826d86ee34e2715521a810ca2726b5 양회 동일. 생성물에 타임스탬프·랜덤 없음, 계약 파일·operation·definition 이름 정렬 고정."
+    },
+    {
+      "check": "웹 typecheck",
+      "command": "cd apps/web && npm run typecheck",
+      "result": "PASS",
+      "evidence": "vue-tsc --noEmit 출력 없음, 종료 코드 0. 생성물은 tsconfig include(src/**/*.ts)에 포함되어 함께 검사된다."
+    },
+    {
+      "check": "웹 unit 테스트",
+      "command": "cd apps/web && npm run test:unit",
+      "result": "PASS",
+      "evidence": "tests 230 / pass 230 / fail 0 (duration 355ms). tests/unit은 수정하지 않았고 admin-api.test.ts가 요청 URL·Bearer 헤더·credentials/cache/redirect 옵션·restrict/release body를 기존과 동일하게 단언한 채 통과했다."
+    },
+    {
+      "check": "웹 build",
+      "command": "cd apps/web && npm run build",
+      "result": "PASS",
+      "evidence": "vue-tsc + vite build, '✓ built in 510ms'. dist/assets/admin-BULzMkLb.js 30.78 kB, main-BU3FCpBp.js 55.38 kB."
+    },
+    {
+      "check": "계약 테스트 33/33",
+      "command": "cd <wt-WS-34> && node --test tests/contract/contract.test.ts && node --test tests/contract/oauth.test.ts && node --test tests/contract/ws27-contracts.test.ts",
+      "result": "PASS",
+      "evidence": "contract.test.ts pass 15 / fail 0, oauth.test.ts pass 5 / fail 0, ws27-contracts.test.ts pass 13 / fail 0 → 33/33. 계약 JSON 무수정(git status에 contracts/ 변경 없음)."
+    },
+    {
+      "check": "손작성 중복 전후 개수",
+      "command": "git show HEAD:<file> | grep -c \"'/v1/\"  vs  grep -c \"'/v1/\" <file>",
+      "result": "PASS (27 → 20)",
+      "evidence": "변경 전: api.ts 17 + admin/login.ts 3 + admin/api.ts 7 = 27. 변경 후: api.ts 17 + login.ts 3 + admin/api.ts 0 = 20. admin operation 7개(adminSessionCreate/Get/Logout, adminMembers, adminMember, adminMemberRestrict, adminMemberRelease) 전부 생성물 경유."
+    },
+    {
+      "check": "생성물 품질 확인",
+      "command": "grep -c '^export type ' apps/web/src/api/generated.ts && grep '^export type ' ... | sort | uniq -d",
+      "result": "PASS",
+      "evidence": "타입 별칭 98개, 중복 선언 0건(계약 간 본문이 같은 Uuid/Timestamp/NullableTimestamp만 공유 이름으로 1회 생성, 본문이 다르면 계약 slug 접두사 부여)."
+    },
+    {
+      "check": "의존성 추가 여부",
+      "command": "git status --short && git diff --stat -- apps/web/package.json services/backend/package.json",
+      "result": "PASS",
+      "evidence": "package.json·lockfile 변경 없음. Node 표준 라이브러리(node:fs, node:path, node:url)만 사용. 변경/추가는 위 changedFiles 3개 소스 파일뿐(그 외 untracked는 records/)."
+    },
+    {
+      "check": "실제 API/DB 거래 검증",
+      "command": "-",
+      "result": "NOT_RUN",
+      "evidence": "클라이언트 코드 생성·배선 작업이며 지시상 원격 쓰기·배포 금지. dev API/Railway/Cloudflare 실거래는 실행하지 않았다. 관리자 호출 검증은 fetch 더블 기반 단위 테스트까지다."
+    }
+  ],
+  "contractChanges": [],
+  "migrations": [],
+  "open": [
+    "PLAN은 입력을 'contracts/*.v0.1.json 6종'으로 적었으나 실제 파일은 7종이고, operations+schemaDefinitions 형식을 가진 것은 admin·chat·ledger-quotes·registration·reviews 5종이다. auth-membership.v0.1.json·development-transactions.v0.1.json은 operations 배열이 없는 문서형 계약이라 생성 대상에서 제외했다(추측으로 인벤토리를 만들지 않음). auth-membership은 v0.2/v0.3 파일이 별도로 있다.",
+    "남은 하드코딩 경로 20건: apps/web/src/api.ts 17건(auth-membership·policies, 생성 입력 범위 밖) + apps/web/src/admin/login.ts 3건(/v1/auth/config, /v1/auth/dev/accounts, /v1/auth/dev/login, 어떤 contracts/*.v0.1.json에도 없는 개발용 엔드포인트). 옮기려면 v0.3를 생성 입력에 넣거나 dev 엔드포인트를 계약에 등재해야 한다.",
+    "생성된 29개 operation 중 웹이 실제 호출하는 것은 7개다. 나머지 22개(adminReviewHide/Unhide, ledger·quote·agreement·chat·review 계열)는 아직 호출부가 없다. 계약 정본에서 기계 생성된 결과이므로 손으로 지우면 멱등성이 깨진다.",
+    "생성물을 계약 변경 시 강제하는 게이트(생성 후 git diff --exit-code)는 이 WS 범위 밖이라 CI에 넣지 않았다. 워크플로 변경은 WS-36 소유다.",
+    "query 타입이 계약 정의를 그대로 따라 page/limit가 string이다(계약이 pattern 문자열로 정의). 기존 코드도 String()으로 변환해 보냈으므로 동작 동일."
+  ],
+  "risks": [
+    "생성 호출 함수는 응답을 타입 단언으로 반환하고 런타임 검증을 하지 않는다. admin/api.ts의 readRow/readRestriction 등 기존 런타임 검증은 그대로 남겨 신뢰 경계는 변하지 않았지만, 새 호출부가 단언을 검증으로 착각하면 계약 밖 응답을 그대로 쓰게 된다.",
+    "operationPath는 params 키가 없으면 encodeURIComponent(undefined)로 'undefined'를 만든다. 타입상 필수지만 런타임 방어는 없다(생성물이므로 손으로 덧대지 않음).",
+    "generated.ts는 791줄. 계약이 늘면 커지지만 손으로 다듬지 않는 원칙상 그대로 둔다."
+  ],
+  "notes": [
+    "동시성: 이 작업트리에서 같은 WS-34 지시를 받은 별도 Hermes 프로세스(pid 35391)가 22:46~22:51 사이에 먼저 파일을 만들고 종료했다. 본 실행은 그 결과를 덮어쓰지 않고 전 항목을 처음부터 재실행·재검증해 수용했다(위 evidence는 본 실행의 출력). 오케스트레이터는 동일 WS 슬롯 중복 기동을 확인해야 한다."
+  ],
+  "next": [
+    "오케스트레이터: 병합 전 wt-WS-34에서 node scripts/generate-client.mjs 2회 + git diff --exit-code로 멱등성 재확인, apps/web에서 typecheck·test:unit·build 재실행.",
+    "판단 필요: auth-membership.v0.3.json을 생성 입력에 포함할지(*.v0.1.json 제한을 풀지) 결정하면 api.ts 17건을 생성물로 교체할 수 있다.",
+    "선택: CI에 '생성 스크립트 실행 후 diff 없음' 검사를 추가하면 계약 변경 시 웹 타입 드리프트를 자동으로 잡는다(WS-36 워크플로 범위)."
+  ]
+}

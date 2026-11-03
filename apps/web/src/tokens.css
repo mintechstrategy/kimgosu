@@ -1,0 +1,14 @@
+/* Generated from design/tokens.json by scripts/generate-tokens.mjs — do not edit. */
+
+:root {
+  --navy: #0B1E35;
+  --lime: #C5FB1F;
+  --soft: #EFF8D8;
+  --border: #d5dce3;
+  --muted: #526173;
+  --track: #d4dbe2;
+  --kakao: #FEE500;
+  --naver: #03A94D;
+  --google-border: #c6cdd5;
+  --font-sans: 'Pretendard Variable',Pretendard,-apple-system,BlinkMacSystemFont,sans-serif;
+}

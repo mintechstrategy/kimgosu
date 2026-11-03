@@ -10,6 +10,12 @@
  * and only keeps the operator-scope token the server mints for an ADMIN.
  */
 
+import {
+  adminMember, adminMemberRelease, adminMemberRestrict, adminMembers,
+  adminSessionCreate, adminSessionGet, adminSessionLogout,
+  type AdminMemberRestrictRequest, type ApiCall, type HttpMethod,
+} from '../api/generated.ts';
+
 export type MemberStatus = 'ACTIVE' | 'RESTRICTED' | 'WITHDRAWN';
 
 export interface AdminMemberRow {
@@ -82,7 +88,7 @@ export function createAdminApi(baseUrl: string, transport: typeof fetch = fetch,
     adminToken = value;
   };
 
-  async function send(path: string, method: 'GET' | 'POST', body?: unknown, token?: string): Promise<unknown> {
+  async function send(path: string, method: HttpMethod, body?: unknown, token?: string): Promise<unknown> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
@@ -111,10 +117,15 @@ export function createAdminApi(baseUrl: string, transport: typeof fetch = fetch,
     } finally { clearTimeout(timer); }
   }
 
-  async function request(path: string, method: 'GET' | 'POST' = 'GET', body?: unknown): Promise<unknown> {
+  async function request(path: string, method: HttpMethod = 'GET', body?: unknown): Promise<unknown> {
     if (!adminToken) throw new AdminApiError(401, 'AUTH_REQUIRED');
     return send(path, method, body, adminToken);
   }
+
+  // Contract-generated callers issue the path/method; this layer keeps auth,
+  // error mapping and runtime validation.
+  const callAuthed: ApiCall = (path, method, body) => request(path, method, body);
+  const callPublic: ApiCall = (path, method, body) => send(path, method, body);
 
   const readOperator = (value: unknown): AdminOperator => {
     const d = obj(value);
@@ -151,7 +162,7 @@ export function createAdminApi(baseUrl: string, transport: typeof fetch = fetch,
     /** Exchanges an already-authenticated member session for the operator scope. */
     async login(sessionToken: string): Promise<AdminSessionInfo> {
       if (!/^[A-Za-z0-9_-]{32,256}$/.test(sessionToken)) throw new AdminApiError(400, 'INVALID_TOKEN');
-      const d = obj(await send('/v1/admin/session', 'POST', { sessionToken }));
+      const d = obj(await adminSessionCreate(callPublic, { sessionToken }));
       const token = str(d.adminToken);
       if (!ADMIN_TOKEN_PATTERN.test(token)) return invalid();
       // The token is kept only after the whole envelope validated.
@@ -159,23 +170,23 @@ export function createAdminApi(baseUrl: string, transport: typeof fetch = fetch,
       return { operator: readOperator(d.operator), expiresAt: str(d.expiresAt) };
     },
     async session(): Promise<AdminSessionInfo> {
-      return readSessionInfo(await request('/v1/admin/session'));
+      return readSessionInfo(await adminSessionGet(callAuthed));
     },
     async logout(): Promise<void> {
-      try { if (adminToken) await request('/v1/admin/session/logout', 'POST'); }
+      try { if (adminToken) await adminSessionLogout(callAuthed); }
       finally { clearSession(); }
     },
     async members(params: { query?: string; status?: MemberStatus | ''; page?: number; limit?: number }): Promise<MemberPage> {
-      const search = new URLSearchParams();
-      if (params.query?.trim()) search.set('query', params.query.trim());
-      if (params.status) search.set('status', params.status);
-      search.set('page', String(params.page ?? 1));
-      search.set('limit', String(params.limit ?? 20));
-      const d = obj(await request('/v1/admin/members?' + search.toString()));
+      const d = obj(await adminMembers(callAuthed, {
+        query: params.query?.trim() || undefined,
+        status: params.status || undefined,
+        page: String(params.page ?? 1),
+        limit: String(params.limit ?? 20),
+      }));
       return { page: count(d.page), limit: count(d.limit), total: count(d.total), totalPages: count(d.totalPages), members: list(d.members).map(v => readRow(v)) };
     },
     async member(id: string): Promise<MemberDetail> {
-      const d = obj(await request('/v1/admin/members/' + encodeURIComponent(id)));
+      const d = obj(await adminMember(callAuthed, { id }));
       return {
         member: readDetailRow(d.member),
         restrictions: list(d.restrictions).map(readRestriction),
@@ -185,13 +196,13 @@ export function createAdminApi(baseUrl: string, transport: typeof fetch = fetch,
       };
     },
     async restrict(id: string, input: { reason: string; endsAt?: string }): Promise<RestrictionRow> {
-      const payload: Record<string, string> = { reason: input.reason };
+      const payload: AdminMemberRestrictRequest = { reason: input.reason };
       if (input.endsAt) payload.endsAt = input.endsAt;
-      const d = obj(await request('/v1/admin/members/' + encodeURIComponent(id) + '/restrict', 'POST', payload));
+      const d = obj(await adminMemberRestrict(callAuthed, { id }, payload));
       return readRestriction(d);
     },
     async release(id: string, reason: string): Promise<{ released: boolean; restrictionId: string; revokedAt: string }> {
-      const d = obj(await request('/v1/admin/members/' + encodeURIComponent(id) + '/release', 'POST', { reason }));
+      const d = obj(await adminMemberRelease(callAuthed, { id }, { reason }));
       if (d.released !== true) return invalid();
       return { released: true, restrictionId: str(d.restrictionId), revokedAt: str(d.revokedAt) };
     },
