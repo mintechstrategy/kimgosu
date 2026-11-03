@@ -74,32 +74,32 @@ test('roles endpoint derives EXPERT from expert_active', async () => {
 });
 
 test('ledger list shows only the owning expert', async () => {
-  const owner = await app.inject({ method: 'GET', url: '/v1/ledger', headers: auth(EXPERT.token) });
+  const owner = await app.inject({ method: 'GET', url: '/v1/ledgers', headers: auth(EXPERT.token) });
   assert.equal(owner.statusCode, 200);
   assert.equal(owner.json().ledgers.length, 1);
   assert.equal(owner.json().ledgers[0].id, LEDGER);
 
-  const other = await app.inject({ method: 'GET', url: '/v1/ledger', headers: auth(CUSTOMER.token) });
+  const other = await app.inject({ method: 'GET', url: '/v1/ledgers', headers: auth(CUSTOMER.token) });
   assert.equal(other.json().ledgers.length, 0, 'a customer must not list ledgers owned by the expert');
 });
 
 test('ledger detail and notes are owner-scoped', async () => {
   const created = await app.inject({
-    method: 'POST', url: `/v1/ledger/${LEDGER}/notes`, headers: auth(EXPERT.token),
+    method: 'POST', url: `/v1/ledgers/${LEDGER}/notes`, headers: auth(EXPERT.token),
     payload: { body: '첫 상담 메모' },
   });
   assert.equal(created.statusCode, 201);
   assert.equal(created.json().body, '첫 상담 메모');
 
-  const detail = await app.inject({ method: 'GET', url: `/v1/ledger/${LEDGER}`, headers: auth(EXPERT.token) });
+  const detail = await app.inject({ method: 'GET', url: `/v1/ledgers/${LEDGER}`, headers: auth(EXPERT.token) });
   assert.equal(detail.statusCode, 200);
   assert.equal(detail.json().notes.length, 1);
 
-  const foreign = await app.inject({ method: 'GET', url: `/v1/ledger/${LEDGER}`, headers: auth(OUTSIDER.token) });
+  const foreign = await app.inject({ method: 'GET', url: `/v1/ledgers/${LEDGER}`, headers: auth(OUTSIDER.token) });
   assert.equal(foreign.statusCode, 404, 'a non-owner must not learn the ledger exists');
 
   const foreignNote = await app.inject({
-    method: 'POST', url: `/v1/ledger/${LEDGER}/notes`, headers: auth(OUTSIDER.token),
+    method: 'POST', url: `/v1/ledgers/${LEDGER}/notes`, headers: auth(OUTSIDER.token),
     payload: { body: '침입 시도' },
   });
   assert.equal(foreignNote.statusCode, 404);
