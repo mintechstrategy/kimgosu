@@ -83,8 +83,8 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - uses: android-actions/setup-android@9fc6c3e1a3bdd6d4b1e5c9e3fca1b0b1f4e1f5f0
-        continue-on-error: true
+      # ubuntu runners ship the Android SDK; no extra setup action is needed and
+      # pinning an unnecessary third-party one only adds a failure mode.
       - name: Assemble the dev flavour
         run: ./gradlew :app:assembleDevDebug --no-daemon
         working-directory: apps/android
