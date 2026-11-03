@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue';
 import { ApiError, createApiClient, privateFailure, safeMessage, unavailableAuth, uncertainWrite, type BrowserAuthPort, type MembershipApi } from './api';
 import { digits, notice, parseScreen, policyKinds, validInfo, validPhone } from './domain';
 import { canSnapshotConsent, consentPayload, samePolicy, snapshotCurrent, snapshotDisplay, type PolicySnapshot, type SnapshotDocument } from './policy';
+import { policyHint, screenNeeds, screenView, type ScreenDataState } from './screen-state';
 import type { AuthConfig, ConsentRecord, Member, NotificationKey, PolicyDocument, PolicyKind, Preferences, Provider, Screen } from './types';
 const props = defineProps<{ api?: MembershipApi; auth?: BrowserAuthPort }>();
 const api = props.api ?? createApiClient(import.meta.env.VITE_API_BASE_URL || 'https://api-dev-kimgosu.mintech.ai');
@@ -10,6 +11,8 @@ const auth = props.auth ?? unavailableAuth;
 const screen = ref<Screen>('browse'); const socialIssue = ref(''); const loading = ref(false); const saving = ref(false); const message = ref(''); const error = ref('');
 const config = ref<AuthConfig>(); const configError = ref(''); const docs = ref<PolicyDocument[]>([]); const docsLoaded = ref(false); const doc = ref<SnapshotDocument>(); const documentKind = ref<PolicyKind>('TERMS'); const documentVersion = ref<string>(); const documentParent = ref<Screen>('policies');
 const member = ref<Member>(); const records = ref<ConsentRecord[]>([]); const preferences = ref<Preferences>(); const conflict = ref<{ key: NotificationKey; value: boolean }>(); const conflictReloaded = ref(false);
+// A failed load must never leave a screen looking like a loaded-but-empty list.
+const recordsLoaded = ref(false); const preferencesLoaded = ref(false);
 const region = ref('전체 지역'); const manualRegion = ref(''); const category = ref('전체 서비스'); const browseScroll = ref(0); const returnTarget = ref<Screen>('browse'); const returnLabel = ref('둘러보던 화면');
 const form = reactive({ age14: false, TERMS: false, PRIVACY_CONSENT: false, MARKETING: false, name: '', email: '', phone: '', code: '', withdrawAcknowledged: false, withdrawReason: '', withdrawDetail: '' });
 const dialog = ref<HTMLDialogElement>(); const dialogType = ref<'logout'|'withdraw'|'marketing'>('logout'); const dialogTrigger = ref<HTMLElement>(); const titleRef = ref<HTMLElement>();
@@ -38,7 +41,29 @@ const canContinue = computed(() => {
 });
 const marketingGranted = computed(() => records.value.filter(r => r.kind === 'MARKETING').sort((a,b) => b.recordedAt.localeCompare(a.recordedAt))[0]?.status === 'GRANTED');
 const protectedScreens: Screen[] = ['member','consents','notifications','withdraw'];
-function clearPrivate() { for (const to of protectedScreens) documentContexts.delete(to); member.value = undefined; records.value = []; preferences.value = undefined; conflict.value = undefined; form.withdrawAcknowledged = false; form.withdrawReason = ''; form.withdrawDetail = ''; }
+// Single place that decides loading/empty/error-permission surfaces per screen.
+const dataState = computed<ScreenDataState>(() => {
+  const need = screenNeeds[screen.value];
+  if (need === 'documents') return { loading: loading.value, failed: !!error.value, ready: docsLoaded.value, empty: docs.value.length === 0 };
+  if (need === 'records') return { loading: loading.value, failed: !!error.value, ready: recordsLoaded.value, empty: records.value.length === 0 };
+  if (need === 'preferences') return { loading: loading.value, failed: !!error.value, ready: preferencesLoaded.value, empty: false };
+  if (need === 'member') return { loading: loading.value, failed: !!error.value, ready: member.value !== undefined, empty: false };
+  return { loading: false, failed: false, ready: true, empty: false };
+});
+const view = computed(() => screenView(screen.value, dataState.value));
+// A failed policy load is never described as "준비 중"/empty.
+function consentLabel(kind: PolicyKind) {
+  if (view.value.loading) return '정책 문서를 불러오는 중입니다';
+  const hint = policyHint(canAgree(kind), view.value.content);
+  if (hint === 'unavailable') return '정책 문서를 불러오지 못해 동의할 수 없습니다';
+  return hint === 'available' ? '버전 ' + (policyFor(kind)?.version ?? '') : 'DRAFT 또는 문서 준비 중 · 동의 불가';
+}
+function policyRowLabel(kind: PolicyKind) {
+  if (view.value.loading) return '불러오는 중…';
+  if (!view.value.content) return '목록을 불러오지 못했습니다';
+  return (policyFor(kind)?.version || '버전 준비 중') + ' · ' + (policyFor(kind)?.status || '준비 중');
+}
+function clearPrivate() { for (const to of protectedScreens) documentContexts.delete(to); member.value = undefined; records.value = []; recordsLoaded.value = false; preferences.value = undefined; preferencesLoaded.value = false; conflict.value = undefined; form.withdrawAcknowledged = false; form.withdrawReason = ''; form.withdrawDetail = ''; }
 function clearSignup() { registrationTicket.value = undefined; smsChallenge.value = undefined; smsVerified.value = false; writeUnknown.value = false; for (const to of ['signup','info','sms'] as Screen[]) documentContexts.delete(to); form.name = ''; form.email = ''; form.phone = ''; form.code = ''; form.age14 = false; form.TERMS = false; form.PRIVACY_CONSENT = false; form.MARKETING = false; snapshot.value = undefined; docsLoaded.value = false; }
 function navigate(to: Screen, replace = false) {
   if (saving.value) return;
@@ -100,11 +125,16 @@ async function enter(to: Screen) {
   const current = ++epoch; screen.value = to; error.value = to === 'social-error' ? socialIssue.value : ''; message.value = ''; loading.value = true; conflict.value = undefined; conflictReloaded.value = false;
   try {
     if (protectedScreens.includes(to)) {
+      // Clear this visit's load flags first so a failed reload cannot render as a
+      // successful, empty list or as stale success from an earlier visit.
+      recordsLoaded.value = false; preferencesLoaded.value = false;
+      if (to === 'consents' || to === 'notifications') records.value = [];
+      if (to === 'notifications') preferences.value = undefined;
       const next = await api.me(); if (current !== epoch) return;
       member.value = next;
       if (next.status === 'RESTRICTED') { clearPrivate(); navigate('restricted', true); return; }
-      if (to === 'consents' || to === 'notifications') { const r = await api.consents(); if (current !== epoch) return; records.value = r; }
-      if (to === 'notifications') { const p = await api.notifications(); if (current !== epoch) return; preferences.value = p; }
+      if (to === 'consents' || to === 'notifications') { const r = await api.consents(); if (current !== epoch) return; records.value = r; recordsLoaded.value = true; }
+      if (to === 'notifications') { const p = await api.notifications(); if (current !== epoch) return; preferences.value = p; preferencesLoaded.value = true; }
     }
     if (['policies','signup','info','sms'].includes(to)) { await loadPolicies(current); if (current !== epoch) return; }
     if (to === 'document') { doc.value = undefined; docsLoaded.value = false; const d = await api.policyDocument(documentKind.value, documentVersion.value); if (current !== epoch) return; applySnapshot(d.snapshot); doc.value = d.document; }
@@ -132,14 +162,25 @@ async function startSocial(provider: Provider) {
   saving.value = true; error.value = ''; message.value = '';
   let destination: Screen | undefined;
   try {
-    if (!config.value?.providers.some(p => p.id === provider && p.enabled)) throw new ApiError(503,'BROWSER_AUTH_NOT_CONFIGURED');
+    // A config load failure is not the same state as "provider not ready"; never
+    // report a fetch failure as if the service were merely being prepared.
+    if (!config.value) await refreshConfig();
+    if (!config.value) throw new ApiError(0, configError.value ? 'CONFIG_UNAVAILABLE' : 'CONFIG_PENDING');
+    if (!config.value.providers.some(p => p.id === provider && p.enabled)) throw new ApiError(503,'BROWSER_AUTH_NOT_CONFIGURED');
     const result = await auth.start(provider);
     if (current !== epoch) return;
     if (result.kind === 'cancelled') message.value = '소셜 로그인이 취소됐습니다. 다시 선택하거나 둘러보기로 돌아가세요.';
     else if (result.kind === 'session') { const m = await api.adoptSession(result.opaqueToken,()=>current === epoch); if (current !== epoch) return; member.value = m; clearSignup(); destination = m.status === 'RESTRICTED' ? 'restricted' : returnTarget.value; if (m.status === 'RESTRICTED') clearPrivate(); }
     else if (result.kind === 'signup-required') { clearSignup(); if (result.registrationTicket !== undefined && !/^[A-Za-z0-9_-]{43}$/.test(result.registrationTicket)) throw new ApiError(502,'INVALID_RESPONSE'); registrationTicket.value = result.registrationTicket; destination = 'signup'; }
     else { error.value = '계정 연결에는 별도 소유 확인과 명시적 동의가 필요합니다. 이메일이나 전화번호 일치만으로 자동 연결하지 않습니다. 현재 웹 계정 연결 API는 준비 중입니다.'; destination = 'social-error'; }
-  } catch (e) { if (current === epoch) { api.clearSession(); clearPrivate(); error.value = safeMessage(e); destination = 'social-error'; } }
+  } catch (e) {
+    if (current === epoch) {
+      // Prerequisite checks never touched authentication, so a local config failure
+      // must not discard a still-valid session.
+      if (!(e instanceof ApiError && ['CONFIG_UNAVAILABLE','CONFIG_PENDING'].includes(e.code))) { api.clearSession(); clearPrivate(); }
+      error.value = safeMessage(e); destination = 'social-error';
+    }
+  }
   finally { if (current === epoch) saving.value = false; }
   if (destination) { socialIssue.value = error.value; navigate(destination); }
 }
@@ -186,7 +227,7 @@ async function saveConsents() {
     const next = await api.consents(); if (current !== epoch) return;
     const expected = consentPayload(selected,form).consents;
     if (!expected.every(d=>next.some(r=>r.kind === d.kind && r.version === d.version && r.status === 'GRANTED'))) throw new ApiError(502,'INVALID_RESPONSE');
-    records.value = next; saving.value = false; navigate('consents');
+    records.value = next; recordsLoaded.value = true; saving.value = false; navigate('consents');
   } catch (e) { if (committed && current === epoch) writeUnknown.value = true; await mutationFailure(e,current); }
   finally { if (current === epoch) saving.value = false; }
 }
@@ -197,7 +238,7 @@ async function saveNotification(key: NotificationKey, value: boolean) {
   try {
     const saved = await api.saveNotification(key, value, version);
     const fetched = await api.notifications();
-    preferences.value = fetched;
+    preferences.value = fetched; preferencesLoaded.value = true;
     if (fetched.version < saved.version || fetched[key] !== value) { conflict.value = {key,value}; conflictReloaded.value = true; error.value = '저장 후 최신 설정이 다시 변경됐습니다. 현재 값을 확인한 후 다시 저장해주세요.'; }
     else { conflict.value = undefined; message.value = '알림 설정을 저장하고 서버에서 다시 확인했습니다.'; }
   } catch (e) {
@@ -238,7 +279,7 @@ onUnmounted(() => { forgetOnPageHide(); window.removeEventListener('hashchange',
   <main id="content" class="shell" :class="{ 'wide': screen === 'browse' }" :aria-busy="loading || saving">
     <header class="page-header"><button v-if="screen !== 'browse'" class="icon" aria-label="이전 화면" :disabled="saving" @click="back">‹</button><h1 ref="titleRef" tabindex="-1">{{ title }}</h1><span v-if="screen !== 'browse'" class="header-spacer"></span></header>
     <div v-if="configError" class="notice service-warning"><p>회원 서비스 준비 상태를 확인하지 못했습니다. {{ configError }}</p><button class="text-button" @click="refreshConfig">서비스 상태 다시 확인</button></div>
-    <p v-if="loading" role="status" class="notice">불러오는 중입니다…</p>
+    <p v-if="view.loading" role="status" class="notice">불러오는 중입니다…</p>
     <p v-if="message" role="status" class="notice success">{{ message }}</p>
     <div v-if="error" role="alert" class="notice error"><p>{{ error }}</p><button v-if="!conflict && !['social-error'].includes(screen)" class="text-button" :disabled="saving" @click="enter(screen)">현재 화면 다시 확인</button></div>
 
@@ -265,7 +306,7 @@ onUnmounted(() => { forgetOnPageHide(); window.removeEventListener('hashchange',
       <p class="notice">현재는 가입 전 안내입니다. 승인된 필수 문서·실제 소셜 인증·SMS가 준비돼야 가입할 수 있습니다.</p>
       <label class="check-row check-all"><input type="checkbox" :checked="allAgreed" :disabled="!consentOptions.some(o => canAgree(o.kind))" @change="toggleAll(($event.target as HTMLInputElement).checked)"><span>약관 전체 동의 <small>동의 가능한 항목만 선택</small></span></label>
       <label class="check-row"><input v-model="form.age14" type="checkbox"><span>[필수] 만 14세 이상입니다.</span></label>
-      <div v-for="option in consentOptions" :key="option.kind" class="consent-row"><label class="check-row"><input v-model="form[option.kind]" type="checkbox" :disabled="!canAgree(option.kind)"><span>{{ option.label }}<small>{{ canAgree(option.kind) ? '버전 ' + policyFor(option.kind)?.version : 'DRAFT 또는 문서 준비 중 · 동의 불가' }}</small></span></label><button class="text-button" :data-document-trigger="option.kind" :aria-label="labels[option.kind] + ' 전문 보기'" @click="openDocument(option.kind)">전문 보기</button></div>
+      <div v-for="option in consentOptions" :key="option.kind" class="consent-row"><label class="check-row"><input v-model="form[option.kind]" type="checkbox" :disabled="!canAgree(option.kind)"><span>{{ option.label }}<small>{{ consentLabel(option.kind) }}</small></span></label><button class="text-button" :data-document-trigger="option.kind" :aria-label="labels[option.kind] + ' 전문 보기'" @click="openDocument(option.kind)">전문 보기</button></div>
       <div class="sticky-actions"><button class="primary" :disabled="!canContinue || saving || writeUnknown" @click="continueSignup">다음 단계</button><button class="text-button" @click="navigate('info')">필수 가입정보 안내 확인</button><button class="text-button" @click="cancelAuth">가입 취소 · 둘러보기</button></div>
     </template>
 
@@ -280,7 +321,7 @@ onUnmounted(() => { forgetOnPageHide(); window.removeEventListener('hashchange',
     </template>
 
     <template v-else-if="screen === 'policies'">
-      <p>문서 종류·버전·시행일을 확인하세요. 초안은 실제 동의를 받을 수 없습니다.</p><div class="policy-list"><button v-for="kind in policyKinds" :key="kind" class="list-row" :data-document-trigger="kind" @click="openDocument(kind)"><span>{{ labels[kind] }}<small>{{ policyFor(kind)?.version || '버전 준비 중' }} · {{ policyFor(kind)?.status || '준비 중' }}</small></span><span aria-hidden="true">›</span></button></div><p v-if="docsLoaded && !docs.length" class="notice">등록된 정책 문서가 없습니다.</p><button class="secondary" @click="enter('policies')">목록 다시 불러오기</button>
+      <p>문서 종류·버전·시행일을 확인하세요. 초안은 실제 동의를 받을 수 없습니다.</p><div class="policy-list"><button v-for="kind in policyKinds" :key="kind" class="list-row" :data-document-trigger="kind" @click="openDocument(kind)"><span>{{ labels[kind] }}<small>{{ policyRowLabel(kind) }}</small></span><span aria-hidden="true">›</span></button></div><p v-if="view.empty" class="notice">등록된 정책 문서가 없습니다.</p><button class="secondary" @click="enter('policies')">목록 다시 불러오기</button>
     </template>
 
     <template v-else-if="screen === 'document'">
@@ -293,11 +334,11 @@ onUnmounted(() => { forgetOnPageHide(); window.removeEventListener('hashchange',
     </template>
 
     <template v-else-if="screen === 'consents' && member">
-      <p>서버에 기록된 문서 버전별 동의·철회 이력입니다. 열람이나 알림 OFF는 동의 철회가 아닙니다.</p><p v-if="!loading && !records.length" class="notice">기록된 동의 이력이 없습니다.</p><ol class="consent-history"><li v-for="(record,index) in records" :key="index"><h2>{{ record.title }}</h2><p><strong>{{ record.status === 'GRANTED' ? '동의' : '철회' }}</strong> · {{ record.version }}</p><p class="muted">{{ date(record.recordedAt) }}</p><button class="text-button" :data-document-trigger="record.kind + ':' + record.version" @click="openDocument(record.kind,record.version)">이 버전 문서 보기</button></li></ol><button class="secondary" @click="enter('consents')">동의 이력 다시 확인</button><button class="text-button" @click="confirmDialog('marketing',$event)">마케팅 동의 철회 안내</button>
+      <p>서버에 기록된 문서 버전별 동의·철회 이력입니다. 열람이나 알림 OFF는 동의 철회가 아닙니다.</p><p v-if="view.empty" class="notice">기록된 동의 이력이 없습니다.</p><ol class="consent-history"><li v-for="(record,index) in records" :key="index"><h2>{{ record.title }}</h2><p><strong>{{ record.status === 'GRANTED' ? '동의' : '철회' }}</strong> · {{ record.version }}</p><p class="muted">{{ date(record.recordedAt) }}</p><button class="text-button" :data-document-trigger="record.kind + ':' + record.version" @click="openDocument(record.kind,record.version)">이 버전 문서 보기</button></li></ol><button class="secondary" @click="enter('consents')">동의 이력 다시 확인</button><button class="text-button" @click="confirmDialog('marketing',$event)">마케팅 동의 철회 안내</button>
     </template>
 
     <template v-else-if="screen === 'notifications' && member">
-      <p>항목별 변경 즉시 서버에 저장하고 다시 조회합니다.</p><p class="notice">웹의 알림 선호와 OS/브라우저 알림 권한은 별개입니다. 이 화면은 알림 권한을 요청하거나 실제 광고를 발송하지 않습니다.</p>
+      <p>항목별 변경 즉시 서버에 저장하고 다시 조회합니다.</p><p v-if="view.unavailable" class="notice service-warning">알림 설정을 불러오지 못했습니다. 위 오류를 확인한 뒤 다시 시도해주세요.</p><p class="notice">웹의 알림 선호와 OS/브라우저 알림 권한은 별개입니다. 이 화면은 알림 권한을 요청하거나 실제 광고를 발송하지 않습니다.</p>
       <template v-if="preferences"><section v-for="row in notificationRows" :key="row.key" class="notification-row"><div><h2 :id="row.key + '-label'">{{ row.title }}</h2><p :id="row.key + '-detail'" class="muted">{{ row.detail }}</p></div><button type="button" role="switch" class="switch" :aria-checked="preferences[row.key]" :aria-labelledby="row.key + '-label'" :aria-describedby="row.key + '-detail'" :disabled="saving || !!conflict" @click="saveNotification(row.key,!preferences[row.key])"><span class="knob" aria-hidden="true"></span></button></section></template>
       <p class="muted">마케팅 동의: {{ marketingGranted ? '동의 기록 있음' : '동의 기록 없음' }}. 광고 알림 OFF로 바꿔도 동의는 철회되지 않습니다.</p><button class="text-button" @click="navigate('consents')">동의 이력·철회 안내 보기</button>
       <section v-if="conflict" class="notice" aria-label="저장 복구"><h2>최신 설정 확인이 필요해요</h2><p>요청한 변경은 자동 재시도하지 않습니다. 최신 상태와 내 변경 의도를 비교해주세요.</p><button class="secondary" :disabled="saving" @click="reloadPreferences">최신 설정 불러오기</button><button class="primary" :disabled="saving || !conflictReloaded" @click="saveNotification(conflict.key,conflict.value)">확인한 변경 다시 저장</button><button class="text-button" :disabled="saving" @click="conflict = undefined; error = ''">변경 취소 · 현재 설정 유지</button></section>
@@ -305,6 +346,9 @@ onUnmounted(() => { forgetOnPageHide(); window.removeEventListener('hashchange',
 
     <template v-else-if="screen === 'withdraw' && member">
       <h2>김고수 서비스를 정말 해지하시나요?</h2><p>탈퇴 확정 시 기존 고객번호의 이용 접근과 세션이 종료됩니다. 실제 보관 중인 자료를 모두 삭제했다고 안내하지 않습니다.</p><p class="notice">{{ notice }}</p><label class="check-row"><input v-model="form.withdrawAcknowledged" type="checkbox"><span>위 안내 사항과 탈퇴 영향을 확인했습니다.</span></label><label for="reason">탈퇴 사유 <span class="muted">선택</span><select id="reason" v-model="form.withdrawReason"><option value="">선택하지 않음</option><option>알림이 너무 많이 와요</option><option>사용하기 어려워요</option><option>오류가 많아서 불편해요</option><option>기타</option></select></label><label for="withdraw-detail">상세 사유 <span class="muted">선택 · 최대 500자</span><textarea id="withdraw-detail" :value="form.withdrawDetail" rows="4" @input="form.withdrawDetail = [...($event.target as HTMLTextAreaElement).value].slice(0,500).join('')"></textarea></label><p class="counter">{{ [...form.withdrawDetail].length }}/500</p><p class="muted">탈퇴 API와 자료별 보존 검토가 준비되기 전에는 실제 탈퇴 처리를 진행하지 않습니다.</p><button class="primary" :disabled="!form.withdrawAcknowledged" @click="confirmDialog('withdraw',$event)">탈퇴 영향 최종 확인</button><button class="secondary" @click="navigate('member')">탈퇴 취소 · 회원 유지</button>
+    </template>
+    <template v-else-if="protectedScreens.includes(screen)">
+      <section class="state-card"><div class="state-icon" aria-hidden="true">!</div><h2>회원 정보를 불러오지 못했습니다</h2><p>세션 만료나 이용 제한이 아닌 연결·응답 오류일 수 있습니다. 위 안내를 확인한 뒤 다시 시도해주세요. 이전 작업은 자동 재실행하지 않습니다.</p><div class="stack"><button class="primary" :disabled="saving || loading" @click="enter(screen)">현재 화면 다시 확인</button><button class="secondary" :disabled="saving" @click="navigate('browse')">둘러보기로 이동</button></div></section>
     </template>
   </main>
   <footer class="site-footer"><span>김고수</span><button :disabled="saving" @click="navigate('policies')">약관·개인정보·운영정책</button><p>회원 서비스 개발 연결 중 · 실제 소셜 인증·SMS 미준비</p></footer>

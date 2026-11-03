@@ -1,6 +1,7 @@
 export function validNotes(notes){return Array.isArray(notes)&&notes.length>0&&notes.every(n=>typeof n==='string'&&n.trim().length>0);}
 export function isDownloadReady(r){return r&&r.qaStatus==='PASS'&&r.status==='published'&&['aos','ios'].includes(r.platform)&&typeof r.file==='string'&&/^\/downloads\/[a-zA-Z0-9._/-]+\.(apk|ipa|zip)$/.test(r.file)&&!r.file.includes('..')&&typeof r.version==='string'&&r.version.length>0&&typeof r.sha256==='string'&&/^[a-f0-9]{64}$/.test(r.sha256)&&Number.isSafeInteger(r.bytes)&&r.bytes>0&&validNotes(r.notes);}
-export function visibleReleases(releases,platform='all',query=''){const q=query.trim().toLocaleLowerCase();return releases.filter(isDownloadReady).filter(r=>platform==='all'||r.platform===platform).filter(r=>[r.version,r.build,...r.notes].join(' ').toLocaleLowerCase().includes(q)).sort((a,b)=>Date.parse(b.publishedAt)-Date.parse(a.publishedAt));}
+const publishedTime=r=>{const t=Date.parse(r.publishedAt);return Number.isNaN(t)?null:t;};
+export function visibleReleases(releases,platform='all',query=''){const q=query.trim().toLocaleLowerCase();return releases.filter(isDownloadReady).filter(r=>platform==='all'||r.platform===platform).filter(r=>[r.version,r.build,...r.notes].join(' ').toLocaleLowerCase().includes(q)).sort((a,b)=>{const x=publishedTime(a),y=publishedTime(b);if(x===y)return 0;if(x===null)return 1;if(y===null)return -1;return y-x;});}
 export function formatBytes(bytes){return bytes<1000000?`${(bytes/1000).toFixed(1)} KB`:`${(bytes/1000000).toFixed(1)} MB`;}
 export function formatDate(value){const d=new Date(value);return Number.isNaN(d.getTime())?'일시 확인 중':new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',dateStyle:'medium',timeStyle:'short'}).format(d);}
 if(typeof document!=='undefined'){

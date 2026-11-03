@@ -8,7 +8,7 @@ export function makeFixture(options = {}) {
   const config = {release:'isolated-browser-test-double',signupReady:false,providers:['kakao','naver','google'].map(id=>({id,enabled:false,reason:'NOT_CONFIGURED'})),sms:{available:false,codeDigits:5,expiresInSeconds:60,phonePattern:'^010[0-9]{8}$'},requiredFields:['name','email'],minimumAgeAcknowledgement:14,collectsGender:false,collectsAgeGroup:false,rejoinWaitDays:30,retention:{purpose:'거래상대방 보호',startsAt:'WITHDRAWAL_CONFIRMED',calendarYears:1,rejoinResetsClock:false},documents:documents.map(({kind,version,status,canConsent})=>({kind,version,status,canConsent}))};
   const member = {id:'browser-test-member',customerNumber:'BROWSER-TEST-ONLY',name:'합성시험',email:'browser-test@example.invalid',nickname:'브라우저시험',status:options.restricted?'RESTRICTED':'ACTIVE',expertActive:false,createdAt:'2026-01-01T00:00:00Z'};
   const records = [{kind:'TERMS',title:'서비스 이용약관',version:'browser-test-v1',status:'GRANTED',recordedAt:'2026-01-02T00:00:00Z'},{kind:'MARKETING',title:'마케팅 정보 수신 동의',version:'browser-test-v1',status:'GRANTED',recordedAt:'2026-01-02T00:00:00Z'}];
-  const state = { prefs:{advertising:false,chat:true,comment:false,quote:true,inquiry:false,version:1}, loggedOut:false, patches:[], requests:[], failDocument:!!options.failDocument, failConfig:!!options.failConfig, failPatch:options.failPatch, conflictOnce:!!options.conflictOnce, failLogout:!!options.failLogout, documentVersion:null };
+  const state = { prefs:{advertising:false,chat:true,comment:false,quote:true,inquiry:false,version:1}, loggedOut:false, patches:[], requests:[], failDocument:!!options.failDocument, failConfig:!!options.failConfig, failPolicies:!!options.failPolicies, failConsents:!!options.failConsents, failNotifications:!!options.failNotifications, failMe:!!options.failMe, failPatch:options.failPatch, conflictOnce:!!options.conflictOnce, failLogout:!!options.failLogout, documentVersion:null };
   async function install(page) {
     await page.route('https://api-dev-kimgosu.mintech.ai/**',async route=>{
       const request=route.request(), url=new URL(request.url()), method=request.method(), path=url.pathname;
@@ -17,11 +17,11 @@ export function makeFixture(options = {}) {
       const error=(code,status)=>send({error:{code}},status);
       if(method==='OPTIONS')return route.fulfill({status:204,headers:{'Access-Control-Allow-Origin':'http://127.0.0.1:4178','Access-Control-Allow-Methods':'GET,POST,PATCH,OPTIONS','Access-Control-Allow-Headers':'Authorization,Content-Type,Cache-Control'}});
       if(path==='/v1/auth/config')return state.failConfig?send({diagnostic:true}):send({...config,documents:state.currentDocuments??documents.map(({kind,version,status,canConsent})=>({kind,version,status,canConsent}))});
-      if(path==='/v1/policies')return send({documents,policySnapshot:snapshotFixture(documents,state)});
+      if(path==='/v1/policies'){if(state.failPolicies)return error('POLICY_METADATA_UNAVAILABLE',503);return send({documents,policySnapshot:snapshotFixture(documents,state)});}
       if(path.startsWith('/v1/policies/')){state.documentVersion=url.searchParams.get('version');if(state.failDocument)return error('DOCUMENT_PREPARING',404);const s=snapshotFixture(documents,state),kind=path.split('/').at(-1),id=s?.currentDocuments?.find(x=>x.kind===kind)?.currentDocument?.id;const d=state.documentVersion?s?.documents?.find(d=>d.kind===kind&&d.version===state.documentVersion):s?.documents?.find(d=>d.id===id)??s?.documents?.find(d=>d.kind===kind&&d.isDisplay);return d?send({...d,policySnapshot:s}):error('DOCUMENT_PREPARING',404);}
-      if(path==='/v1/me')return options.unauthorized||state.loggedOut?error('UNAUTHORIZED',401):options.forbidden?error('ACCOUNT_RESTRICTED',403):send(member);
-      if(path==='/v1/me/consents')return send({records});
-      if(path==='/v1/me/notifications'&&method==='GET')return send(state.prefs);
+      if(path==='/v1/me'){if(state.failMe)return error('POLICY_METADATA_UNAVAILABLE',503);return options.unauthorized||state.loggedOut?error('UNAUTHORIZED',401):options.forbidden?error('ACCOUNT_RESTRICTED',403):send(member);}
+      if(path==='/v1/me/consents'){if(state.failConsents)return error('POLICY_METADATA_UNAVAILABLE',503);return send({records});}
+      if(path==='/v1/me/notifications'&&method==='GET'){if(state.failNotifications)return error('NOT_FOUND',404);return send(state.prefs);}
       if(path==='/v1/me/notifications'&&method==='PATCH'){
         const payload=request.postDataJSON();state.patches.push(payload);
         if(options.denyPatchStatus)return error(options.denyPatchStatus===401?'UNAUTHORIZED':'ACCOUNT_RESTRICTED',options.denyPatchStatus);

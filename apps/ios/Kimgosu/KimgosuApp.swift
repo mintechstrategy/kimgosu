@@ -66,7 +66,15 @@ struct HomeContent: Decodable, Sendable {
     func retry() async { started = false; failed = false; await prepare() }
     private func probe() async {
         #if DEBUG
-        let endpoint = "https://api-dev-kimgosu.mintech.ai/health"
+        guard KGEnvironment.isConfigured, let url = URL(string: KGEnvironment.apiBaseURL + "/health") else {
+            apiStatus = "연결 주소가 설정되지 않았습니다 · 메인은 계속 이용할 수 있습니다"
+            let file = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("api-receipt.json")
+            let receipt: [String: Any] = ["platform": "iOS", "url": NSNull(), "observedAt": ISO8601DateFormatter().string(from: Date()),
+                                          "status": "UNAVAILABLE", "failureInjection": "NONE", "errorType": "KGEnvironment", "errorCode": "API_BASE_URL_UNAVAILABLE"]
+            if let data = try? JSONSerialization.data(withJSONObject: receipt, options: [.prettyPrinted, .sortedKeys]) { try? data.write(to: file, options: .atomic) }
+            return
+        }
+        let endpoint = url.absoluteString
         let config = URLSessionConfiguration.ephemeral
         config.timeoutIntervalForRequest = 8
         config.timeoutIntervalForResource = 10
