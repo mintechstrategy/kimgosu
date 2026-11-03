@@ -4,6 +4,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { ApiError } from './security.ts';
 import { registerAuthRoutes } from './auth.ts';
 import { registerOAuthRoutes, OAUTH_PROVIDERS, OAUTH_STATE_TTL_SECONDS } from './oauth.ts';
+import { registerAppleRoutes } from './apple.ts';
 import { registerRegisterRoutes, readinessDocuments, registrationReadiness } from './register.ts';
 import { registerAdminPolicyRoutes } from './admin-policy.ts';
 import { registerLedgerRoutes } from './ledger.ts';
@@ -31,6 +32,23 @@ const policySelect = `SELECT kind,version,status,title,body,body_sha256 AS "body
 
 export function buildApp(db: Sql, release: string, options: AuthOptions = {}) {
   const app = Fastify({ logger: false, bodyLimit: 16384, ajv: { customOptions: { removeAdditional: false, coerceTypes: false } } });
+  // Apple 은 콜백을 form_post(application/x-www-form-urlencoded)로 보낸다. 파서가
+  // 없으면 Fastify 가 415 로 거부한다. 중복 키는 400 이다(어느 값이 진짜인지
+  // 모호한 요청을 받아들이지 않는다).
+  app.addContentTypeParser('application/x-www-form-urlencoded', { parseAs: 'string', bodyLimit: 16384 }, (_request, body, done) => {
+    const fields = new Map<string, string>();
+    try {
+      for (const [key, value] of new URLSearchParams(typeof body === 'string' ? body : '')) {
+        if (fields.has(key)) throw new Error('duplicate field');
+        fields.set(key, value);
+      }
+    } catch {
+      const error: Error & { statusCode?: number } = new Error('INVALID_REQUEST');
+      error.statusCode = 400;
+      return done(error);
+    }
+    done(null, Object.fromEntries(fields));
+  });
   const throttleSalt = randomBytes(32).toString('hex');
   const throttle = new Map<string, { start: number; count: number }>();
   const corsOrigins = new Set(['https://dev-kimgosu.mintech.ai', ...(options.corsOrigins ?? []).filter(o => /^http:\/\/(localhost|127\.0\.0\.1):[0-9]{2,5}$/.test(o))]);
@@ -184,6 +202,7 @@ export function buildApp(db: Sql, release: string, options: AuthOptions = {}) {
   });
   registerAuthRoutes(app, db, authenticate, options);
   registerOAuthRoutes(app, db, options);
+  registerAppleRoutes(app, db, options);
   registerRegisterRoutes(app, db, options);
   registerAdminPolicyRoutes(app, db, authenticate);
   registerLedgerRoutes(app, db, authenticate);

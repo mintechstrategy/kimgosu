@@ -14,7 +14,7 @@
 import type { FastifyInstance } from 'fastify';
 import { randomUUID } from 'node:crypto';
 import type { Sql } from './app.ts';
-import type { AuthOptions, ProviderId } from './providers.ts';
+import type { AuthOptions, ProviderId, ProviderIdentity } from './providers.ts';
 import { ApiError, challenge, digest, mac, opaque, tokenSchema } from './security.ts';
 import { issueSession } from './auth.ts';
 
@@ -84,72 +84,84 @@ export function registerOAuthRoutes(app: FastifyInstance, db: Sql, options: Auth
 
       // 1회용 소비: 같은 state로 두 번 들어와도 두 번째는 아무 행도 받지 못한다.
       // provider 조건을 함께 걸어 다른 provider의 state는 소비되지 않는다.
-      const consumed = await db.query(`UPDATE kg_membership.oauth_flows SET consumed_at=now()
-        WHERE state_digest=$1 AND provider=$2 AND expires_at>now() AND consumed_at IS NULL
-        RETURNING state_digest,link_member_id`, [digest(state), provider]);
-      if (!consumed.rows[0]) throw new ApiError(401, 'OAUTH_STATE_INVALID');
+      if (!await consumeOAuthState(db, provider, state)) throw new ApiError(401, 'OAUTH_STATE_INVALID');
       if (providerError) throw new ApiError(401, 'SOCIAL_AUTH_CANCELLED');
 
       const identity = await configured[provider]!.exchange(code!, state, '');
-      const subjectDigest = mac(key, 'social:' + provider, identity.subject);
-
-      return db.transaction(async sql => {
-        await sql.query(`SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, [provider + ':' + subjectDigest]);
-
-        const existing = (await sql.query(`SELECT m.id,m.customer_no::text AS "customerNumber",m.status,
-            CASE WHEN EXISTS(SELECT 1 FROM kg_membership.restrictions r WHERE r.principal_id=m.principal_id
-              AND r.revoked_at IS NULL AND r.starts_at<=now() AND (r.ends_at IS NULL OR r.ends_at>now()))
-              THEN 'RESTRICTED' ELSE m.status END AS "effectiveStatus"
-          FROM kg_membership.social_links l JOIN kg_membership.members m ON m.principal_id=l.principal_id
-          WHERE l.provider=$1 AND l.subject_digest=$2 AND m.withdrawn_at IS NULL FOR UPDATE OF m`,
-          [provider, subjectDigest])).rows[0];
-        if (existing) {
-          // 재로그인: 새 회원을 만들지 않고 기존 회원에 세션만 발급한다.
-          return oauthResult('AUTHENTICATED', provider, existing.id, existing.customerNumber, existing.effectiveStatus,
-            await issueSession(sql, existing.id));
-        }
-
-        let principalId = (await sql.query(`SELECT principal_id FROM kg_membership.social_links WHERE provider=$1 AND subject_digest=$2`,
-          [provider, subjectDigest])).rows[0]?.principal_id as string | undefined;
-        if (!principalId) {
-          principalId = randomUUID();
-          await sql.query(`INSERT INTO kg_membership.principals(id) VALUES($1)`, [principalId]);
-          try {
-            await sql.query(`INSERT INTO kg_membership.social_links(provider,subject_digest,principal_id) VALUES($1,$2,$3)`,
-              [provider, subjectDigest, principalId]);
-          } catch (linkError) {
-            if (isProviderCheckViolation(linkError)) throw new ApiError(503, 'PROVIDER_SCHEMA_PENDING');
-            throw linkError;
-          }
-        } else {
-          await sql.query(`SELECT id FROM kg_membership.principals WHERE id=$1 FOR UPDATE`, [principalId]);
-          const withdrawn = (await sql.query(`SELECT rejoin_after>now() AS waiting,rejoin_after AS "rejoinAfter",now() AS "serverTime"
-            FROM kg_membership.members WHERE principal_id=$1 AND withdrawn_at IS NOT NULL ORDER BY withdrawn_at DESC LIMIT 1`,
-            [principalId])).rows[0];
-          if (withdrawn?.waiting) {
-            throw new ApiError(409, 'REJOIN_WAIT_REQUIRED', {
-              rejoinAfter: new Date(String(withdrawn.rejoinAfter)).toISOString(),
-              serverTime: new Date(String(withdrawn.serverTime)).toISOString(),
-            });
-          }
-        }
-
-        // 프로필이 없으면 회원 행을 만들 수 없다. 추측으로 채우지 않고 필요한
-        // 항목만 알려 거부한다.
-        const name = identity.name?.trim(); const email = identity.email?.trim();
-        if (!name || !email || name.length > 100 || email.length < 3 || email.length > 254) {
-          throw new ApiError(409, 'PROFILE_INCOMPLETE');
-        }
-        const memberId = randomUUID();
-        await sql.query(`INSERT INTO kg_membership.members(id,principal_id,name,email,nickname,status,expert_active)
-          VALUES($1,$2,$3,$4,$5,'ACTIVE',false)`, [memberId, principalId, name, email, defaultNickname()]);
-        await sql.query(`INSERT INTO kg_membership.notification_preferences(member_id) VALUES($1)`, [memberId]);
-        const created = (await sql.query(`SELECT customer_no::text AS "customerNumber" FROM kg_membership.members WHERE id=$1`,
-          [memberId])).rows[0];
-        return oauthResult('REGISTERED', provider, memberId, created.customerNumber, 'ACTIVE',
-          await issueSession(sql, memberId));
-      });
+      return resolveOAuthMember(db, provider, identity, key);
     });
+}
+
+/** state를 1회용으로 소비한다. 소비에 성공하면 true, 재사용/만료/타 provider면 false. */
+export async function consumeOAuthState(db: Sql, provider: ProviderId, state: string): Promise<boolean> {
+  const consumed = await db.query(`UPDATE kg_membership.oauth_flows SET consumed_at=now()
+    WHERE state_digest=$1 AND provider=$2 AND expires_at>now() AND consumed_at IS NULL
+    RETURNING state_digest,link_member_id`, [digest(state), provider]);
+  return Boolean(consumed.rows[0]);
+}
+
+/**
+ * 검증된 소셜 신원으로 회원을 조회하거나 새로 만든 뒤 세션을 발급한다.
+ * GET 콜백(kakao/naver)과 Apple POST 콜백이 같은 규칙을 공유한다.
+ */
+export async function resolveOAuthMember(db: Sql, provider: ProviderId, identity: ProviderIdentity, key: string) {
+  const subjectDigest = mac(key, 'social:' + provider, identity.subject);
+  return db.transaction(async sql => {
+    await sql.query(`SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, [provider + ':' + subjectDigest]);
+
+    const existing = (await sql.query(`SELECT m.id,m.customer_no::text AS "customerNumber",m.status,
+        CASE WHEN EXISTS(SELECT 1 FROM kg_membership.restrictions r WHERE r.principal_id=m.principal_id
+          AND r.revoked_at IS NULL AND r.starts_at<=now() AND (r.ends_at IS NULL OR r.ends_at>now()))
+          THEN 'RESTRICTED' ELSE m.status END AS "effectiveStatus"
+      FROM kg_membership.social_links l JOIN kg_membership.members m ON m.principal_id=l.principal_id
+      WHERE l.provider=$1 AND l.subject_digest=$2 AND m.withdrawn_at IS NULL FOR UPDATE OF m`,
+      [provider, subjectDigest])).rows[0];
+    if (existing) {
+      // 재로그인: 새 회원을 만들지 않고 기존 회원에 세션만 발급한다.
+      return oauthResult('AUTHENTICATED', provider, existing.id, existing.customerNumber, existing.effectiveStatus,
+        await issueSession(sql, existing.id));
+    }
+
+    let principalId = (await sql.query(`SELECT principal_id FROM kg_membership.social_links WHERE provider=$1 AND subject_digest=$2`,
+      [provider, subjectDigest])).rows[0]?.principal_id as string | undefined;
+    if (!principalId) {
+      principalId = randomUUID();
+      await sql.query(`INSERT INTO kg_membership.principals(id) VALUES($1)`, [principalId]);
+      try {
+        await sql.query(`INSERT INTO kg_membership.social_links(provider,subject_digest,principal_id) VALUES($1,$2,$3)`,
+          [provider, subjectDigest, principalId]);
+      } catch (linkError) {
+        if (isProviderCheckViolation(linkError)) throw new ApiError(503, 'PROVIDER_SCHEMA_PENDING');
+        throw linkError;
+      }
+    } else {
+      await sql.query(`SELECT id FROM kg_membership.principals WHERE id=$1 FOR UPDATE`, [principalId]);
+      const withdrawn = (await sql.query(`SELECT rejoin_after>now() AS waiting,rejoin_after AS "rejoinAfter",now() AS "serverTime"
+        FROM kg_membership.members WHERE principal_id=$1 AND withdrawn_at IS NOT NULL ORDER BY withdrawn_at DESC LIMIT 1`,
+        [principalId])).rows[0];
+      if (withdrawn?.waiting) {
+        throw new ApiError(409, 'REJOIN_WAIT_REQUIRED', {
+          rejoinAfter: new Date(String(withdrawn.rejoinAfter)).toISOString(),
+          serverTime: new Date(String(withdrawn.serverTime)).toISOString(),
+        });
+      }
+    }
+
+    // 프로필이 없으면 회원 행을 만들 수 없다. 추측으로 채우지 않고 필요한
+    // 항목만 알려 거부한다.
+    const name = identity.name?.trim(); const email = identity.email?.trim();
+    if (!name || !email || name.length > 100 || email.length < 3 || email.length > 254) {
+      throw new ApiError(409, 'PROFILE_INCOMPLETE');
+    }
+    const memberId = randomUUID();
+    await sql.query(`INSERT INTO kg_membership.members(id,principal_id,name,email,nickname,status,expert_active)
+      VALUES($1,$2,$3,$4,$5,'ACTIVE',false)`, [memberId, principalId, name, email, defaultNickname()]);
+    await sql.query(`INSERT INTO kg_membership.notification_preferences(member_id) VALUES($1)`, [memberId]);
+    const created = (await sql.query(`SELECT customer_no::text AS "customerNumber" FROM kg_membership.members WHERE id=$1`,
+      [memberId])).rows[0];
+    return oauthResult('REGISTERED', provider, memberId, created.customerNumber, 'ACTIVE',
+      await issueSession(sql, memberId));
+  });
 }
 
 function oauthResult(outcome: 'AUTHENTICATED' | 'REGISTERED', provider: ProviderId, memberId: unknown, customerNumber: unknown, status: unknown, session: unknown) {
