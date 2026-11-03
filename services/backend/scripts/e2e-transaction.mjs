@@ -88,7 +88,7 @@ async function main() {
     // 이 지점에서 멈추는 것이 맞다. 라우트가 생기면 그때 이 블록을 채운다.
     step = '원장 생성';
     const created = await call('POST', '/v1/ledgers', {
-      token: customerToken, body: { expertId, message: 'E2E 검증 요청' },
+      token: customerToken, body: { expertId },
     });
     assert.equal(created.status, 201,
       `원장 생성 라우트가 없다 (${created.status}). 고객이 거래를 시작할 경로가 제품에 없으므로 ` +
@@ -108,8 +108,12 @@ async function main() {
     token: customerToken, body: { action: 'accept', expectedVersion: 1 },
   }, 200);
 
-  await expect('고수 완료 확인', 'POST', `/v1/quotes/${quote.id}/complete`, { token: expertToken }, 200);
-  await expect('고객 완료 확인', 'POST', `/v1/quotes/${quote.id}/complete`, { token: customerToken }, 200);
+  const expertDone = await expect('고수 완료 확인', 'POST', `/v1/quotes/${quote.id}/complete`,
+    { token: expertToken, body: { expectedVersion: 2 } }, 200);
+  assert.notEqual(expertDone.status, 'COMPLETED', '한쪽만 확인한 상태는 완료가 아니어야 한다');
+  const customerDone = await expect('고객 완료 확인', 'POST', `/v1/quotes/${quote.id}/complete`,
+    { token: customerToken, body: { expectedVersion: expertDone.version } }, 200);
+  assert.equal(customerDone.status, 'COMPLETED', '양측 확인 후 완료되어야 한다');
   done.push('양측 완료 확인');
 
   // 5. 리뷰.
