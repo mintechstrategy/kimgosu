@@ -1,8 +1,9 @@
-import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import type { FastifyInstance } from 'fastify';
 import { randomUUID } from 'node:crypto';
 import type { Sql } from './app.ts';
 import type { Authenticate } from './auth.ts';
 import { ApiError } from './security.ts';
+import { audit, requireActiveMember } from './kernel.ts';
 
 /**
  * Ledger chat: participants of a ledger exchange messages stored on the server.
@@ -54,23 +55,8 @@ const messageParams = {
   properties: { id: { type: 'string', format: 'uuid' }, messageId: { type: 'string', format: 'uuid' } },
 };
 
-async function audit(sql: Sql, actor: unknown, action: string, targetId: string, detail: Record<string, unknown>) {
-  // Ids and classification only. The message body is never written to the audit
-  // log, in line with the WS-25 requirement.
-  await sql.query(
-    `INSERT INTO kg_membership.audit_log(actor_member_id,action,target_type,target_id,detail)
-     VALUES($1,$2,'chat_message',$3,$4)`,
-    [actor, action, targetId, JSON.stringify(detail)],
-  );
-}
-
 export function registerChatRoutes(app: FastifyInstance, db: Sql, authenticate: Authenticate) {
-  const requireMember = async (request: FastifyRequest, reply: FastifyReply) => {
-    const auth = await authenticate(request, reply);
-    if (!auth) return null;
-    if (auth.status !== 'ACTIVE') { reply.code(403).send({ error: { code: 'ACCOUNT_RESTRICTED' } }); return null; }
-    return auth;
-  };
+  const requireMember = requireActiveMember(authenticate);
 
   const requireParticipant = async (sql: Sql, ledgerId: string, memberId: unknown) => {
     const ledger = (await sql.query(
@@ -201,7 +187,7 @@ export function registerChatRoutes(app: FastifyInstance, db: Sql, authenticate: 
         [request.params.messageId],
       )).rows[0];
       // Ids only: the body is intentionally absent from the audit trail.
-      await audit(sql, auth.memberId, 'MESSAGE_DELETED', request.params.messageId, {
+      await audit(sql, auth.memberId, 'MESSAGE_DELETED', 'chat_message', request.params.messageId, null, {
         ledgerId: request.params.id,
       });
       return row;

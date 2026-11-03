@@ -1,8 +1,9 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { randomUUID } from 'node:crypto';
-import type { Sql, Row } from './app.ts';
+import type { Sql } from './app.ts';
 import { requireAdminScope } from './admin-session.ts';
 import { ApiError } from './security.ts';
+import { audit, fail } from './kernel.ts';
 
 /**
  * Operator (admin) routes: member/ledger lookup and account restriction.
@@ -28,14 +29,6 @@ const activeRestriction = (alias: string) =>
      AND r.revoked_at IS NULL AND r.starts_at<=now() AND (r.ends_at IS NULL OR r.ends_at>now()))`;
 const effectiveStatus = (alias: string) =>
   `CASE WHEN ${activeRestriction(alias)} THEN 'RESTRICTED' ELSE ${alias}.status END`;
-
-async function audit(sql: Sql, actor: unknown, action: string, targetId: string, reason: string, detail: Row) {
-  await sql.query(
-    `INSERT INTO kg_membership.audit_log(actor_member_id,action,target_type,target_id,reason,detail)
-     VALUES($1,$2,'member',$3,$4,$5)`,
-    [actor, action, targetId, reason, JSON.stringify(detail)],
-  );
-}
 
 /** PII is masked before it reaches the list response; the raw value never leaves the query result. */
 function maskEmail(value: unknown): string | null {
@@ -110,7 +103,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: Sql) {
          FROM kg_membership.members m WHERE m.id=$1`,
       [request.params.id],
     )).rows[0];
-    if (!member) return reply.code(404).send({ error: { code: 'MEMBER_NOT_FOUND' } });
+    if (!member) return fail(reply, 404, 'MEMBER_NOT_FOUND');
     const restrictions = (await db.query(
       `SELECT r.id, r.reason, r.starts_at AS "startsAt", r.ends_at AS "endsAt", r.revoked_at AS "revokedAt",
               (r.revoked_at IS NULL AND r.starts_at<=now() AND (r.ends_at IS NULL OR r.ends_at>now())) AS active,
@@ -180,7 +173,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: Sql) {
          RETURNING id, reason, starts_at AS "startsAt", ends_at AS "endsAt", revoked_at AS "revokedAt"`,
         [randomUUID(), member.principalId, request.body.reason.trim(), endsAt],
       )).rows[0];
-      await audit(sql, auth.memberId, 'MEMBER_RESTRICTED', request.params.id, request.body.reason.trim(),
+      await audit(sql, auth.memberId, 'MEMBER_RESTRICTED', 'member', request.params.id, request.body.reason.trim(),
         { restrictionId: created.id, endsAt });
       return reply.code(201).send({ ...created, memberId: request.params.id, status: 'RESTRICTED' });
     });
@@ -211,7 +204,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: Sql) {
          RETURNING id, revoked_at AS "revokedAt"`,
         [live.id],
       )).rows[0];
-      await audit(sql, auth.memberId, 'MEMBER_RELEASED', request.params.id, request.body.reason.trim(),
+      await audit(sql, auth.memberId, 'MEMBER_RELEASED', 'member', request.params.id, request.body.reason.trim(),
         { restrictionId: live.id });
       return { released: true, restrictionId: released.id, revokedAt: released.revokedAt, memberId: request.params.id };
     });
@@ -246,11 +239,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: Sql) {
          RETURNING id, hidden_at AS "hiddenAt", hidden_reason AS "hiddenReason"`,
         [request.params.id, reason],
       )).rows[0];
-      await sql.query(
-        `INSERT INTO kg_membership.audit_log(actor_member_id,action,target_type,target_id,reason,detail)
-         VALUES($1,'REVIEW_HIDDEN','review',$2,$3,$4)`,
-        [auth.memberId, String(hidden!.id), reason, JSON.stringify({ hidden: true })],
-      );
+      await audit(sql, auth.memberId, 'REVIEW_HIDDEN', 'review', String(hidden!.id), reason, { hidden: true });
       return { ...hidden, hidden: true };
     });
   });
@@ -277,12 +266,8 @@ export function registerAdminRoutes(app: FastifyInstance, db: Sql) {
          RETURNING id, hidden_at AS "hiddenAt", hidden_reason AS "hiddenReason"`,
         [request.params.id],
       )).rows[0];
-      await sql.query(
-        `INSERT INTO kg_membership.audit_log(actor_member_id,action,target_type,target_id,reason,detail)
-         VALUES($1,'REVIEW_UNHIDDEN','review',$2,$3,$4)`,
-        [auth.memberId, String(review.id), reason,
-          JSON.stringify({ hidden: false, previousHiddenReason: review.hiddenReason ?? null })],
-      );
+      await audit(sql, auth.memberId, 'REVIEW_UNHIDDEN', 'review', String(review.id), reason,
+        { hidden: false, previousHiddenReason: review.hiddenReason ?? null });
       return { ...visible, hidden: false };
     });
   });

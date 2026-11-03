@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import type { Sql } from './app.ts';
 import type { Authenticate } from './auth.ts';
 import { ApiError } from './security.ts';
+import { audit } from './kernel.ts';
 
 const body = (properties: Record<string, unknown>, required = Object.keys(properties)) =>
   ({ body: { type: 'object', additionalProperties: false, properties, required } });
@@ -67,13 +68,9 @@ export function registerAdminPolicyRoutes(app: FastifyInstance, db: Sql, authent
             [document.id, operator, effectiveAt, approvedAt],
           )).rows[0];
           if (!row) throw new ApiError(409, 'POLICY_NOT_DRAFT');
-          await sql.query(
-            `INSERT INTO kg_membership.audit_log(actor_member_id,action,target_type,target_id,reason,detail)
-             VALUES($1,'POLICY_PROMOTED','policy_document',$2,$3,$4)`,
-            [auth.memberId, String(row.id), request.body.reason, JSON.stringify({
-              kind: row.kind, version: row.version, operator, effectiveAt: effectiveAt.toISOString(), approvedAt: approvedAt.toISOString(),
-            })],
-          );
+          await audit(sql, auth.memberId, 'POLICY_PROMOTED', 'policy_document', String(row.id), request.body.reason, {
+            kind: row.kind, version: row.version, operator, effectiveAt: effectiveAt.toISOString(), approvedAt: approvedAt.toISOString(),
+          });
           promoted.push(row);
         }
         return { promoted };
