@@ -18,7 +18,7 @@ import type { AuthOptions, ProviderId, ProviderIdentity } from './providers.ts';
 import { ApiError, challenge, digest, mac, opaque, tokenSchema } from './security.ts';
 import { issueSession } from './auth.ts';
 
-export const OAUTH_PROVIDERS = ['kakao', 'naver', 'apple'] as const;
+export const OAUTH_PROVIDERS = ['google', 'kakao', 'naver', 'apple'] as const;
 type OAuthProviderId = (typeof OAUTH_PROVIDERS)[number];
 /** PLAN 확정값: state TTL 10분. */
 export const OAUTH_STATE_TTL_SECONDS = 600;

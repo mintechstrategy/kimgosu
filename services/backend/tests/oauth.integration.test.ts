@@ -153,7 +153,7 @@ test('[수용3] 자격증명 미설정 provider는 503 PROVIDER_NOT_CONFIGURED, 
   const config = await app.inject({ url: '/v1/auth/config' });
   assert.equal(config.statusCode, 200);
   const providers = config.json().oauth.providers as { id: string; connected: boolean }[];
-  assert.deepEqual(providers.map(p => p.id).sort(), ['apple', 'kakao', 'naver']);
+  assert.deepEqual(providers.map(p => p.id).sort(), ['apple', 'google', 'kakao', 'naver']);
   assert.ok(providers.every(p => p.connected === false), 'no credential is configured in this test');
   assert.equal(config.json().oauth.stateTtlSeconds, 600);
 
@@ -171,7 +171,8 @@ test('[수용3] 자격증명이 있으면 auth/config가 connected:true를 노�
   const app = makeApp(); t.after(() => app.close());
   const config = await app.inject({ url: '/v1/auth/config' });
   const providers = config.json().oauth.providers as { id: string; connected: boolean }[];
-  assert.deepEqual(providers.map(p => [p.id, p.connected]), [['kakao', true], ['naver', true], ['apple', true]]);
+  assert.deepEqual(providers.map(p => [p.id, p.connected]),
+    [['google', false], ['kakao', true], ['naver', true], ['apple', true]]);
 });
 
 // --- 수용 기준 4: 같은 (provider, providerUserId) 재로그인은 새 회원을 만들지 않는다
@@ -263,7 +264,7 @@ test('탈퇴 대기 중인 소셜 신원은 409 REJOIN_WAIT_REQUIRED로 거부�
 test('잘못된 provider 경로 값은 flow를 만들기 전에 400으로 거부된다', async t => {
   const app = makeApp(); t.after(() => app.close());
   const before = (await pool.query(`SELECT count(*)::int AS n FROM kg_membership.oauth_flows`)).rows[0].n;
-  const res = await startOauth(app, 'google');
+  const res = await startOauth(app, 'facebook');
   assert.equal(res.statusCode, 400);
   assert.equal(res.json().error.code, 'INVALID_REQUEST');
   const afterCount = (await pool.query(`SELECT count(*)::int AS n FROM kg_membership.oauth_flows`)).rows[0].n;

@@ -694,6 +694,7 @@
                       "id": {
                         "type": "string",
                         "enum": [
+                          "google",
                           "kakao",
                           "naver",
                           "apple"

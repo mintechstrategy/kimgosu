@@ -102,3 +102,13 @@ test('startup rejects wrong project/environment and non-private DB before connec
   assert.throws(() => requireDevelopment({ RAILWAY_PROJECT_ID: '95b52b2c-e1c0-45da-909b-d7989ce08a90', RAILWAY_ENVIRONMENT_ID: 'a1b5a11e-88a1-417e-84bc-2bbb2ba0fc18', DATABASE_URL: 'postgresql://private.railway.internal/db?host=evil.invalid' }), /private development DB required/);
   assert.throws(() => requireDevelopment({ RAILWAY_PROJECT_ID: '95b52b2c-e1c0-45da-909b-d7989ce08a90', RAILWAY_ENVIRONMENT_ID: 'a1b5a11e-88a1-417e-84bc-2bbb2ba0fc18', DATABASE_URL: 'MALFORMED_PRIVATE_SENTINEL' }), error => error instanceof Error && error.message === 'private development DB required' && !('input' in error));
 });
+
+test('every provider the server can configure is also accepted by the start route', async () => {
+  // 구글 자격증명을 넣어도 경로 enum에 없으면 400으로 거절된다. 실제로 그랬다.
+  const { OAUTH_PROVIDERS } = await import('./oauth.ts');
+  const configured = Object.keys(configuredProviders(cfg));
+  for (const id of configured) {
+    assert.ok((OAUTH_PROVIDERS as readonly string[]).includes(id),
+      `${id} is configured but the route enum would reject it`);
+  }
+});
