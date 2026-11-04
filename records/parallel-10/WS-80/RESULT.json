@@ -1,0 +1,93 @@
+{
+  "ws": "WS-80",
+  "task": "회귀 자동화 — 로컬 한 명령 회귀 게이트 (backend verify + AOS 빌드 + iOS 빌드)",
+  "status": "DONE",
+  "worktree": "/Users/mintech-mac/hermes/dev-profile/shared/projects/wt-WS-80",
+  "baseCommit": "5bd1dc9",
+  "finishedAt": "2026-11-04 22:50 KST",
+  "summary": "scripts/regress.sh를 신규 추가해 backend verify → AOS assembleDevDebug → iOS 시뮬레이터 빌드를 순서대로 실행하고 단계별·전체 소요 시간을 출력하며, 실패한 단계 이름과 원래 exit 코드로 즉시 중단하게 했다. 실제 1회 실행에서 3단계 모두 통과(총 89초, APK 15MB·Kimgosu.app 생성)했고 실패 경로는 스크래치 사본으로 exit 7 전파를 확인했다. 시뮬레이터·에뮬레이터는 실행하지 않았고 커밋·푸시도 하지 않았다.",
+  "changedFiles": [
+    "scripts/regress.sh",
+    "records/parallel-10/WS-80/regress-run.log",
+    "records/parallel-10/WS-80/RESULT.json"
+  ],
+  "implementation": {
+    "file": "scripts/regress.sh (신규, 52줄, 실행 권한 755)",
+    "stages": [
+      "1) backend verify — 루트에서 `npm run verify` (verify:api + verify:contract + verify:web, CI와 동일 게이트)",
+      "2) android assembleDevDebug — apps/android에서 `./gradlew :app:assembleDevDebug --no-daemon`",
+      "3) ios build — apps/ios에서 `xcodebuild ... -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build` (package.json build:ios와 동일 인자)"
+    ],
+    "behavior": "stage()가 단계명을 찍고 명령을 실행, 성공 시 `==> <단계>: OK (<n>s)`, 실패 시 `==> <단계>: FAILED (exit <code>, <n>s)` / `==> regression stopped at: <단계>`를 stderr로 출력하고 그 exit 코드로 종료한다. 마지막에 `==> regression OK (total <n>s)`.",
+    "toolchain": "이 머신의 JDK17·Android SDK·Gradle 캐시가 PATH 밖에 있어 .local-toolchains 하위 경로를 JAVA_HOME/ANDROID_HOME/GRADLE_USER_HOME 기본값으로만 채운다(이미 설정된 값은 그대로 사용, CI 영향 없음).",
+    "reuse": "빌드·검증 명령은 package.json의 기존 스크립트와 동일한 명령을 그대로 호출했다. 새 의존성·새 npm 스크립트·새 파일 구조 없음."
+  },
+  "verification": [
+    {
+      "check": "bash 문법 검사",
+      "command": "bash -n scripts/regress.sh",
+      "result": "PASS",
+      "evidence": "출력 없음, exit 0 (SYNTAX OK)"
+    },
+    {
+      "check": "실제 1회 전체 실행",
+      "command": "./scripts/regress.sh (로그: records/parallel-10/WS-80/regress-run.log, 1505줄)",
+      "result": "PASS",
+      "evidence": "3단계 순서대로 실행, 전체 exit 0. 아래 'runOutput' 참조."
+    },
+    {
+      "check": "1단계 backend verify 내용",
+      "command": "npm run verify",
+      "result": "PASS",
+      "evidence": "verify:api tests 28/pass 28/fail 0 (tsc --noEmit 통과), verify:contract tests 68/pass 68/fail 0 (contract·oauth·ws27-contracts·policy metadata), verify:web typecheck + unit 232/pass 232/fail 0 + vite build 'built in 1.50s'"
+    },
+    {
+      "check": "2단계 AOS 빌드 산출물",
+      "command": "./gradlew :app:assembleDevDebug --no-daemon",
+      "result": "PASS",
+      "evidence": "BUILD SUCCESSFUL in 47s (단계 48s). apps/android/app/build/outputs/apk/dev/debug/app-dev-debug.apk 15,346,464 bytes 생성 확인"
+    },
+    {
+      "check": "3단계 iOS 빌드 산출물",
+      "command": "xcodebuild -project Kimgosu.xcodeproj -scheme Kimgosu -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build",
+      "result": "PASS",
+      "evidence": "** BUILD SUCCEEDED ** (단계 26s). DerivedData/Kimgosu-*/Build/Products/Debug-iphonesimulator/Kimgosu.app 생성 확인"
+    },
+    {
+      "check": "실패 경로 — 단계명 출력과 exit 코드 전파",
+      "command": "스크래치 사본(scripts/regress.sh, verify_backend만 return 7) 실행",
+      "result": "PASS",
+      "evidence": "'==> backend verify: FAILED (exit 7, 0s)' / '==> regression stopped at: backend verify' 출력 후 EXIT=7. 2·3단계는 실행되지 않음"
+    },
+    {
+      "check": "시뮬레이터·에뮬레이터 실행",
+      "command": "—",
+      "result": "NOT_RUN",
+      "evidence": "웨이브 11 공통 규칙(07-24)에 따라 빌드까지만 수행"
+    }
+  ],
+  "runOutput": {
+    "logPath": "records/parallel-10/WS-80/regress-run.log",
+    "stageMarkers": [
+      "==> backend verify",
+      "==> backend verify: OK (15s)",
+      "==> android assembleDevDebug",
+      "BUILD SUCCESSFUL in 47s",
+      "==> android assembleDevDebug: OK (48s)",
+      "==> ios build",
+      "** BUILD SUCCEEDED **",
+      "==> ios build: OK (26s)",
+      "==> regression OK (total 89s)"
+    ]
+  },
+  "acceptance": [
+    { "item": "스크립트 실행으로 3단계가 순서대로 돌고 결과가 출력된다", "result": "PASS" },
+    { "item": "bash -n 문법 통과", "result": "PASS" },
+    { "item": "실제 1회 실행 결과를 RESULT에 붙인다", "result": "PASS" }
+  ],
+  "notes": [
+    "커밋·푸시하지 않았다(지시 준수). 새 의존성 없음.",
+    "시뮬레이터/에뮬레이터 부팅·설치·실행은 하지 않았다.",
+    "1단계는 '백엔드 verify'를 프로젝트 게이트인 npm run verify(api+contract+web)로 실행했다. 순수 백엔드만 필요하면 npm run verify:api로 좁힐 수 있다."
+  ]
+}
