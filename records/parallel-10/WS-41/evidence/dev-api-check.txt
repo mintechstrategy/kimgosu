@@ -1,0 +1,9 @@
+# 2026-11-04 13:30:27 KST dev API 확인 (Bearer 토큰은 redacted)
+# dev login slot 11 -> HTTP 200, session.accessToken=<redacted, 43 chars>
+GET /v1/me -> 200
+GET /v1/experts -> 200
+GET /v1/me/expert -> 404
+GET /v1/me/quotes?limit=100 -> 404
+GET /v1/expert/services -> 404
+GET /v1/me/expert body -> {"error":{"code":"ROUTE_NOT_FOUND"}}
+GET /health -> {"status":"ok","scope":"membership-development","release":"UNVERSIONED-DEVELOPMENT"}
