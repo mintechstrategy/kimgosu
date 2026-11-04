@@ -59,7 +59,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.time.Instant
 
-private val LocalBrandFont = staticCompositionLocalOf<FontFamily> { FontFamily.Default }
+internal val LocalBrandFont = staticCompositionLocalOf<FontFamily> { FontFamily.Default }
 
 data class Item(val label: String, val icon: String)
 class Home(val json: JSONObject) {
@@ -139,6 +139,7 @@ class MainActivity : ComponentActivity() {
         val model = ViewModelProvider(this)[LaunchModel::class.java]
         val auth = ViewModelProvider(this)[AuthModel::class.java]
         val profile = ViewModelProvider(this)[ProfileModel::class.java]
+        val expert = ViewModelProvider(this)[ExpertHomeModel::class.java]
         val hold = BuildConfig.DEBUG && intent.getBooleanExtra("hold_splash", false)
         val verify = BuildConfig.DEBUG && intent.getBooleanExtra("verify_api", false)
         val offlineTransport = BuildConfig.DEBUG && intent.getBooleanExtra("offline_transport", false)
@@ -147,6 +148,8 @@ class MainActivity : ComponentActivity() {
             // A1 states can be observed on a device. Release builds never assign these.
             profile.qaLoadingHoldMillis = intent.getLongExtra("profile_loading_hold_ms", 0L)
             profile.qaServerError = intent.getBooleanExtra("profile_server_error", false)
+            expert.qaLoadingHoldMillis = intent.getLongExtra("expert_loading_hold_ms", 0L)
+            expert.qaServerError = intent.getBooleanExtra("expert_server_error", false)
         }
         setContent {
             // Social providers are not connected yet, so development builds start on
@@ -154,6 +157,8 @@ class MainActivity : ComponentActivity() {
             val devLoginRequired = remember { BuildConfig.API_BASE_URL.contains("dev-") }
             val storedSession = remember { runCatching { SecureSession(this@MainActivity).read() }.getOrNull() != null }
             var devReady by remember { mutableStateOf(!devLoginRequired || storedSession) }
+            var expertHomeOpen by rememberSaveable { mutableStateOf(false) }
+            var quotesPendingNotice by rememberSaveable { mutableStateOf(false) }
             val fonts = remember { FontFamily(Font("regular.otf", assets), Font("semibold.otf", assets, FontWeight.SemiBold), Font("bold.otf", assets, FontWeight.Bold)) }
             MaterialTheme(colorScheme = lightColorScheme(primary = DesignTokens.navy, onPrimary = Color.White, surface = Color.White, onSurface = DesignTokens.navy)) {
                 CompositionLocalProvider(LocalBrandFont provides fonts) {
@@ -176,12 +181,18 @@ class MainActivity : ComponentActivity() {
                         DevTestLoginGate { devReady = true }
                     } else model.home?.let { home ->
                         // The root screen has no splash entry in its back stack.
-                        BackHandler { moveTaskToBack(true) }
-                        AuthHost(auth) {
+                        BackHandler { if (expertHomeOpen) expertHomeOpen = false else moveTaskToBack(true) }
+                        if (expertHomeOpen) {
+                            ExpertHomeScreen(
+                                nickname = (profile.state as? ProfileState.Ready)?.nickname.orEmpty(),
+                                onBack = { expertHomeOpen = false },
+                                onOpenQuotes = { quotesPendingNotice = true })
+                        } else AuthHost(auth) {
                             MainScreen(home, if (verify) model.apiStatus else null,
                                 profile = profile.state,
                                 onRetryProfile = { profile.refresh() },
                                 onProfileLogin = { devReady = false },
+                                onExpertHome = { expertHomeOpen = true },
                                 onProtected = { auth.enter(ReturnTarget(screenId = "A1", targetId = it)) },
                                 onPolicy = { auth.handle(AuthEvent(AuthAction.OPEN_DOCUMENT, it)) })
                         }
@@ -196,13 +207,20 @@ class MainActivity : ComponentActivity() {
                     LaunchedEffect(profile.sessionExpired) {
                         if (profile.sessionExpired) { profile.acknowledgeExpiry(); devReady = false }
                     }
+                    // 받은 견적 화면은 WS-43 몫이라 이 후보에는 없다. 탭이 죽은 채로 남지 않게 안내만 한다.
+                    if (quotesPendingNotice) {
+                        AlertDialog(onDismissRequest = { quotesPendingNotice = false },
+                            title = { Copy("받은 견적", size = 19, bold = true) },
+                            text = { Copy("받은 견적 화면은 다음 통합에서 연결됩니다.") },
+                            confirmButton = { TextButton(onClick = { quotesPendingNotice = false }) { Copy("확인") } })
+                    }
                 }
             }
         }
     }
 }
 
-@Composable private fun Copy(text: String, modifier: Modifier = Modifier, size: Int = 14, bold: Boolean = false,
+@Composable internal fun Copy(text: String, modifier: Modifier = Modifier, size: Int = 14, bold: Boolean = false,
                              color: Color = DesignTokens.navy, align: TextAlign = TextAlign.Start, weight: FontWeight? = null) {
     Text(text, modifier, color, fontSize = size.sp, fontFamily = LocalBrandFont.current,
         fontWeight = weight ?: if (bold) FontWeight.Bold else FontWeight.Normal, textAlign = align)
@@ -214,6 +232,7 @@ class MainActivity : ComponentActivity() {
 }
 @Composable private fun MainScreen(home: Home, apiStatus: String?, profile: ProfileState,
                                    onRetryProfile: () -> Unit, onProfileLogin: () -> Unit,
+                                   onExpertHome: () -> Unit,
                                    onProtected: (String) -> Unit, onPolicy: (String) -> Unit) {
     var notice by rememberSaveable { mutableStateOf<String?>(null) }
     var popular by rememberSaveable { mutableIntStateOf(0) }
@@ -227,7 +246,7 @@ class MainActivity : ComponentActivity() {
                 }
                 IconButton(onClick = { open("알림") }, modifier = Modifier.size(48.dp)) { AssetImage("notification.png", "알림", Modifier.size(23.dp)) }
             }
-            ProfileCard(profile, onRetryProfile, onProfileLogin)
+            ProfileCard(profile, onRetryProfile, onProfileLogin, onExpertHome)
             Copy(home.text("introduction"), Modifier.fillMaxWidth().padding(top = 20.dp).testTag("main-introduction"), 20, true, align = TextAlign.Center)
             Row(Modifier.padding(top = 16.dp).fillMaxWidth().heightIn(min = 48.dp).border(1.dp, DesignTokens.border, RoundedCornerShape(6.dp))
                 .clickable { open("검색") }.padding(14.dp).testTag("search"), verticalAlignment = Alignment.CenterVertically) {
@@ -295,7 +314,7 @@ class MainActivity : ComponentActivity() {
             confirmButton = { TextButton(onClick = { notice = null }) { Copy("확인") } })
     }
 }
-@Composable private fun ProfileCard(state: ProfileState, onRetry: () -> Unit, onLogin: () -> Unit) {
+@Composable private fun ProfileCard(state: ProfileState, onRetry: () -> Unit, onLogin: () -> Unit, onExpertHome: () -> Unit) {
     val tag = when (state) {
         ProfileState.Loading -> "profile-loading"
         ProfileState.Empty -> "profile-empty"
@@ -322,6 +341,10 @@ class MainActivity : ComponentActivity() {
                 }
                 Copy(if (state.customerNumber.isBlank()) "고객번호 없음" else "고객번호 ${state.customerNumber}",
                     Modifier.padding(top = 4.dp), size = 13, color = DesignTokens.muted)
+                if (state.expert) TextButton(onClick = onExpertHome,
+                    modifier = Modifier.heightIn(min = 48.dp).testTag("open-expert-home")) {
+                    Copy("고수 홈", weight = FontWeight.SemiBold)
+                }
             }
             ProfileState.Empty -> {
                 Copy("로그인하면 회원 정보가 표시됩니다.", size = 13, color = DesignTokens.muted)
