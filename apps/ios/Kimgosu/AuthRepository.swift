@@ -216,7 +216,6 @@ struct KGAuthRepository {
         let encoded = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id
         return try await request(.private, "PATCH", "/v1/expert/services/" + encoded, token: token, body: body)
     }
-<<<<<<< HEAD
     // 고객 거래 흐름. 상태·금액·완료 여부는 모두 서버가 판정하며 클라이언트는 표시만 한다.
     func searchExperts(category: String?, cursor: String? = nil) async throws -> [String: Any] {
         var path = "/v1/experts?limit=20"
@@ -264,11 +263,9 @@ struct KGAuthRepository {
     }
     private func ledgerPath(_ id: String) -> String {
         "/v1/ledgers/" + (id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id)
-=======
     /// 업로드 슬롯만 서버에 요청하고 바이트는 앱이 R2로 직접 PUT한다.
     func createUpload(_ token: String, contentType: String) async throws -> [String: Any] {
         try await request(.private, "POST", "/v1/uploads", token: token, body: ["contentType": contentType, "kind": "service"])
->>>>>>> ws/WS-59
     }
     /// 개발 환경 전용 임시 로그인. 운영 빌드에서는 호출하지 않는다(KGEnvironment.isProduction 가드).
     /// 응답은 실제 서버가 발급한 세션이며 클라이언트가 토큰을 만들지 않는다.
