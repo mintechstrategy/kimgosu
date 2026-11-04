@@ -1,3 +1,4 @@
+/auth/callback /auth/callback/index.html 200
 /admin/login /admin.html 200
 /admin/* /admin.html 200
 /* /index.html 200

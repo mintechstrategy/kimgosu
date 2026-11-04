@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>김고수 · 로그인 확인 중</title>
+<style>
+  :root { color-scheme: light; }
+  body { margin:0; min-height:100vh; display:grid; place-items:center; background:#fff;
+         font-family: Pretendard, -apple-system, system-ui, sans-serif; color:#1C242F; }
+  main { width:min(360px, 88vw); text-align:center; padding:24px; }
+  h1 { font-size:17px; font-weight:600; margin:0 0 8px; }
+  p { font-size:14px; color:#5F6B7A; margin:0; line-height:1.6; }
+  a.button { display:inline-block; margin-top:20px; padding:13px 22px; border-radius:10px;
+             background:#283341; color:#fff; text-decoration:none; font-size:15px; font-weight:600; }
+</style>
+</head>
+<body>
+<main>
+  <h1 id="title">로그인 확인 중…</h1>
+  <p id="detail">잠시만 기다려 주세요.</p>
+  <a id="back" class="button" href="#" hidden>앱으로 돌아가기</a>
+</main>
+<script>
+// 구글은 아래 주소로 되돌려보낸다. 이 페이지는 code/state를 API에 넘기고
+// 받은 세션을 앱 딥링크로 전달한다. 토큰은 이 페이지에 남기지 않는다.
+(function () {
+  var API = 'https://api-dev-kimgosu.mintech.ai';
+  var params = new URLSearchParams(location.search);
+  var title = document.getElementById('title');
+  var detail = document.getElementById('detail');
+  var back = document.getElementById('back');
+
+  function done(message) {
+    title.textContent = '로그인하지 못했습니다';
+    detail.textContent = message;
+    back.hidden = false;
+    back.href = 'kimgosu://auth/callback?error=FAILED';
+  }
+
+  var provider = params.get('provider') || 'google';
+  var state = params.get('state');
+  var code = params.get('code');
+  var providerError = params.get('error');
+
+  if (!state || (!code && !providerError)) {
+    done('요청이 올바르지 않습니다. 앱에서 다시 시도해 주세요.');
+    return;
+  }
+
+  var url = API + '/v1/auth/oauth/' + encodeURIComponent(provider) + '/callback'
+    + '?state=' + encodeURIComponent(state)
+    + (code ? '&code=' + encodeURIComponent(code) : '')
+    + (providerError ? '&error=' + encodeURIComponent(providerError) : '');
+
+  fetch(url, { headers: { Accept: 'application/json' }, credentials: 'omit', cache: 'no-store' })
+    .then(function (response) {
+      return response.json().then(function (body) { return { ok: response.ok, status: response.status, body: body }; });
+    })
+    .then(function (result) {
+      if (!result.ok || !result.body || !result.body.session) {
+        var codeName = result.body && result.body.error && result.body.error.code;
+        done(codeName === 'SOCIAL_AUTH_CANCELLED'
+          ? '로그인을 취소하셨습니다.'
+          : '로그인 정보를 확인하지 못했습니다. (' + (codeName || result.status) + ')');
+        return;
+      }
+      title.textContent = '로그인 완료';
+      detail.textContent = '앱으로 돌아갑니다.';
+      var target = 'kimgosu://auth/callback?token=' + encodeURIComponent(result.body.session.accessToken);
+      location.replace(target);
+      back.hidden = false;
+      back.href = target;
+    })
+    .catch(function () {
+      done('네트워크에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+    });
+})();
+</script>
+</body>
+</html>

@@ -24,6 +24,9 @@ if (!process.env.DATABASE_URL) {
 const ACCOUNTS = [
   ...Array.from({ length: 10 }, (_, i) => ({ slot: i + 1, role: 'USER', name: `일반 사용자 ${String(i + 1).padStart(2, '0')}`, expert: false })),
   ...Array.from({ length: 10 }, (_, i) => ({ slot: i + 11, role: 'EXPERT', name: `고수 ${String(i + 1).padStart(2, '0')}`, expert: true })),
+  // 운영 콘솔은 관리자 권한이 있어야 열린다. 관리자 계정도 임시로그인 목록에 올려
+  // 담당자가 슬롯만 고르면 콘솔까지 들어갈 수 있게 한다.
+  { slot: 21, role: 'ADMIN', name: '관리자 01', expert: false },
 ];
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, max: 2 });
@@ -58,6 +61,13 @@ try {
         `INSERT INTO kg_membership.dev_test_accounts(slot,role,label,member_id) VALUES($1,$2,$3,$4)`,
         [account.slot, account.role, account.name, memberId],
       );
+      if (account.role === 'ADMIN') {
+        await pool.query(
+          `INSERT INTO kg_membership.role_grants(id,member_id,role_id,reason)
+           VALUES($1,$2,'ADMIN','개발계 임시로그인 관리자 계정')`,
+          [randomUUID(), memberId],
+        );
+      }
       await pool.query('COMMIT');
       created.push(account.slot);
     } catch (error) {
