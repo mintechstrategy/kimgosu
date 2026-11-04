@@ -146,6 +146,9 @@ class MainActivity : ComponentActivity() {
         val model = ViewModelProvider(this)[LaunchModel::class.java]
         val auth = ViewModelProvider(this)[AuthModel::class.java]
         // 콜드 스타트가 딥링크로 시작한 경우(앱이 백그라운드에서 정리된 뒤)에도 세션을 복원한다.
+        // start()를 먼저 끝내 두지 않으면, 스플래시 뒤 AuthHost의 start()가 진행 중인
+        // 콜백 세션 검증을 취소할 수 있다(start()는 멱등이라 두 번 호출해도 한 번만 실행된다).
+        if (intent.data != null) auth.start()
         intent.data?.let { auth.handleOAuthCallback(it) }
         val profile = ViewModelProvider(this)[ProfileModel::class.java]
         val expert = ViewModelProvider(this)[ExpertHomeModel::class.java]

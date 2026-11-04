@@ -10,7 +10,11 @@ import AuthenticationServices
         session?.cancel()
         let session = ASWebAuthenticationSession(url: url, callbackURLScheme: "kimgosu") { callback, error in
             if let callback { completion(.success(callback)) }
-            else { completion(.failure(error ?? KGAuthAPIError(status: 0, code: "OAUTH_SESSION_FAILED"))) }
+            else if let e = error as? ASWebAuthenticationSessionError, e.code == .canceledLogin {
+                completion(.failure(KGAuthAPIError(status: 0, code: "CANCELLED")))
+            } else {
+                completion(.failure(error ?? KGAuthAPIError(status: 0, code: "OAUTH_SESSION_FAILED")))
+            }
         }
         session.presentationContextProvider = self
         self.session = session
@@ -351,7 +355,10 @@ struct KGReturnTarget {
         guard oauthPending else { return }
         switch result {
         case .success(let url): handleOAuthCallback(url)
-        case .failure: oauthPending = false; state.error = "로그인을 취소하셨습니다."
+        case .failure(let error):
+            oauthPending = false
+            state.error = (error as? KGAuthAPIError)?.code == "CANCELLED"
+                ? "로그인을 취소하셨습니다." : "네트워크에 연결하지 못했습니다. 연결을 확인하고 다시 시도해주세요."
         }
     }
     /// kimgosu://auth/callback?token=… 또는 ?error=…. 토큰은 /v1/me 검증을 통과해야만 저장된다.
