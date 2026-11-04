@@ -162,6 +162,7 @@ final class OfflineProtocol: URLProtocol {
             // 고수 홈으로 바로 진입하는 경로(--open-expert-home)에서는 인증 화면을
             // 거치지 않으므로, 시작을 앱 수준에서 한 번 보장한다. start()는 멱등이다.
             .task { auth.start() }
+            .onOpenURL { auth.handleOAuthCallback($0) }
             .frame(maxWidth: .infinity, maxHeight: .infinity).background(Color.white)
                 .preferredColorScheme(.light).tint(DesignTokens.navy)
                 // 받은 견적 화면은 WS-43 몫이라 이 후보에는 없다. 탭이 죽은 채로 남지 않게 안내만 한다.
@@ -256,7 +257,7 @@ struct HomeView: View {
                     sessionCard
                     Button("서비스 운영정책") { onPolicy("OPERATIONS") }.frame(minHeight: 44)
                     Button("개인정보 처리방침") { onPolicy("PRIVACY_POLICY") }.frame(minHeight: 44)
-                    copy("소셜 로그인·문자 인증은 준비 중이며, 공개 탐색은 계속 이용할 수 있습니다.", size: 12, color: DesignTokens.muted).padding(.vertical, 24)
+                    copy("구글 로그인을 이용할 수 있으며, 문자 인증은 준비 중입니다.", size: 12, color: DesignTokens.muted).padding(.vertical, 24)
                     if let apiStatus { copy(apiStatus, size: 12, color: DesignTokens.muted).padding(.bottom, 16).accessibilityIdentifier("api-status") }
                 }.padding(.horizontal, 20)
             }.accessibilityIdentifier("main-scroll")

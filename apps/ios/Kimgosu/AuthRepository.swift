@@ -173,6 +173,11 @@ struct KGAuthRepository {
     }
     func health() async throws -> [String: Any] { try await request(.public, "GET", "/health") }
     func config() async throws -> [String: Any] { try await request(.public, "GET", "/v1/auth/config?metadata=policy-v0.3") }
+    /// 서버가 state를 저장하고 인가 URL을 발급한다. 토큰 교환은 콜백 페이지가 서버에 맡긴다.
+    func oauthStart(_ provider: String) async throws -> [String: Any] {
+        guard provider == "google" else { throw KGAuthAPIError(status: 0, code: "INVALID_PROVIDER") }
+        return try await request(.public, "POST", "/v1/auth/oauth/\(provider)/start")
+    }
     func policies() async throws -> [String: Any] { try await request(.public, "GET", "/v1/policies?metadata=policy-v0.3") }
     func policy(_ kind: KGAuthDocumentKind, version: String? = nil) async throws -> [String: Any] {
         var components = URLComponents(); components.path = "/v1/policies/" + kind.rawValue

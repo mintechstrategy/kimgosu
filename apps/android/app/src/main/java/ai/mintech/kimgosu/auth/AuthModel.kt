@@ -5,6 +5,7 @@ import androidx.compose.runtime.*
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import ai.mintech.kimgosu.auth.ui.*
+import android.net.Uri
 import kotlinx.coroutines.*
 import org.json.JSONObject
 import java.time.Instant
@@ -17,6 +18,9 @@ class AuthModel @JvmOverloads constructor(application: Application, private val 
     var browsing by mutableStateOf(false); private set
     var stack by mutableStateOf(listOf(AuthScreen.E1)); private set
     var entry by mutableStateOf("PUBLIC"); private set
+    /** 브라우저로 넘길 인가 URL. Activity가 열고 나면 consumeExternalUrl()로 비운다. */
+    var externalUrl by mutableStateOf<String?>(null); private set
+    private var oauthPending = false
     var returnTarget: ReturnTarget = ReturnTarget(); private set
     private val sessions = SecureSession(application)
     private var token: String? = null
@@ -214,6 +218,37 @@ class AuthModel @JvmOverloads constructor(application: Application, private val 
         state = state.copy(records = parsed, marketingConsented = marketing)
         preferences(repository.notifications(t))
     }
+    /** 외부 브라우저로 구글 동의 화면을 연다. state는 서버가 저장하고 콜백 페이지가 소비한다. */
+    private fun startGoogleLogin() {
+        execute {
+            try {
+                val result = repository.oauthStart("google")
+                val url = result.getString("authorizationUrl")
+                require(url.startsWith("https://accounts.google.com/"))
+                oauthPending = true
+                externalUrl = url
+            } catch (e: AuthFailure) {
+                if (e.code == "PROVIDER_NOT_CONFIGURED") openFailure("구글 로그인이 아직 연결되지 않았습니다.")
+                else throw e
+            }
+        }
+    }
+    fun consumeExternalUrl() { externalUrl = null }
+    /** 취소 안내는 사용자가 콜백 없이 브라우저를 닫고 돌아온 경우에만 쓴다. */
+    fun onBrowserReturned() {
+        if (!oauthPending) return
+        oauthPending = false
+        state = state.copy(error = "로그인을 취소하셨습니다.")
+    }
+    /** kimgosu://auth/callback?token=… 또는 ?error=…. 토큰은 /v1/me 검증을 통과해야만 저장된다. */
+    fun handleOAuthCallback(uri: Uri) {
+        if (uri.scheme != "kimgosu" || uri.host != "auth" || uri.path != "/callback") return
+        oauthPending = false
+        val token = uri.getQueryParameter("token")
+        if (token != null) { establishVerifiedSession(token); return }
+        state = state.copy(error = if (uri.getQueryParameter("error") == "CANCELLED") "로그인을 취소하셨습니다."
+            else "로그인을 완료하지 못했습니다. 다시 시도해주세요.")
+    }
     /** For a future approved OAuth callback only. Must revalidate before granting member UI. */
     fun establishVerifiedSession(bearer: String) {
         execute {
@@ -335,7 +370,7 @@ class AuthModel @JvmOverloads constructor(application: Application, private val 
             AuthAction.OPEN_DOCUMENT -> document(AuthDocumentKind.valueOf(event.key))
             AuthAction.RETRY_DOCUMENT -> document(AuthDocumentKind.valueOf(event.key), true)
             AuthAction.OTHER_LOGIN -> { cancelRequest(); stack = listOf(AuthScreen.E1); show(AuthScreen.E1) }
-            AuthAction.START_SOCIAL -> execute {
+            AuthAction.START_SOCIAL -> if (event.key == "google") startGoogleLogin() else execute {
                 loadConfig()
                 val providers = config!!.getJSONArray("providers")
                 val provider = (0 until providers.length()).map { providers.getJSONObject(it) }.firstOrNull { it.getString("id") == event.key }

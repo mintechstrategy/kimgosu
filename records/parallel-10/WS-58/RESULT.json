@@ -1,0 +1,99 @@
+{
+  "ws": "WS-58",
+  "status": "PARTIAL",
+  "summary": "AOS·iOS 구글 로그인 앱 연결을 완성했다(브라우저/ASWebAuthenticationSession 시작, kimgosu:// 딥링크 수신, /v1/me 검증 후 세션 저장, 취소·네트워크 실패 구분). 양 앱 dev/prod 빌드와 테스트 타깃 컴파일은 통과했고 dev API 계약도 실측 확인했으나, 실제 구글 계정 로그인·화면 실행 검증은 시뮬레이터/에뮬레이터 금지 정책(07-24)에 따라 NOT_RUN이다.",
+  "reason": "카드 지시대로 시뮬레이터·에뮬레이터를 실행하지 않았으므로 '버튼을 눌러 구글 동의 화면이 열린다', '로그인 후 앱 복귀·세션 유지', '취소/네트워크 실패 표시', '실제 로그인 1회 스크린샷'은 기기 실행 증거를 만들 수 없다. 대신 (1) 양 앱 빌드·테스트 타깃 컴파일, (2) dev API /v1/auth/config·/v1/auth/oauth/google/start 응답 계약, (3) 배포된 dev 콜백 페이지의 딥링크 문자열을 실측해 클라이언트가 기대하는 계약이 실제 서버·웹과 일치함을 확인했다.",
+  "worktree": "/Users/mintech-mac/hermes/dev-profile/shared/projects/wt-WS-58",
+  "branch": "ws/WS-58",
+  "baseCommit": "d98f69dc9199382548c166b02357ce7696a47161",
+  "changedFiles": [
+    "apps/android/app/src/main/java/ai/mintech/kimgosu/MainActivity.kt (콜드스타트 딥링크 시 auth.start()를 콜백 처리보다 먼저 호출 — 스플래시 뒤 AuthHost의 start()가 진행 중인 세션 검증을 취소하는 경쟁 제거)",
+    "apps/ios/Kimgosu/AuthModel.swift (ASWebAuthenticationSession 취소(canceledLogin)와 그 외 오류를 구분해 '로그인을 취소하셨습니다.' vs '네트워크에 연결하지 못했습니다…' 표시)",
+    "records/parallel-10/WS-58/RESULT.json (이 파일)"
+  ],
+  "preExistingWork": "브랜치에 이미 wip(ws-58) 커밋이 있어 아래 구현은 그 커밋에 포함되어 있었고, 이번 작업에서 코드 검토·빌드 검증·위 2건 수정으로 마무리했다. 검토 결과 카드 요구와 일치: AndroidManifest singleTop + kimgosu scheme intent-filter, MainActivity onNewIntent/onCreate 딥링크 전달, AuthHost 외부 브라우저 실행 + onBrowserReturned, AuthModel.startGoogleLogin/handleOAuthCallback/establishVerifiedSession(저장 전 /v1/me 검증), AuthRepository.oauthStart, iOS Info.plist CFBundleURLTypes, KimgosuApp .onOpenURL, KGGoogleAuthSession(ASWebAuthenticationSession), KGAuthView 'Google로 시작' 버튼, web callback 페이지 error=CANCELLED 구분.",
+  "verification": [
+    {
+      "check": "Android 빌드 (dev/prod)",
+      "command": "cd apps/android && JAVA_HOME=<jdk17> GRADLE_USER_HOME=<gradle-user-home> python3 build.py :app:assembleDevDebug :app:assembleProdDebug",
+      "result": "PASS",
+      "evidence": "BUILD SUCCESSFUL in 18s (75 actionable tasks: 9 executed). MainActivity.kt 수정 반영 후 재빌드."
+    },
+    {
+      "check": "Android 테스트 타깃 컴파일 (androidTest APK)",
+      "command": "python3 build.py :app:assembleDevDebugAndroidTest",
+      "result": "PASS",
+      "evidence": "BUILD SUCCESSFUL in 13s. 기존 androidTest 소스가 삭제된 DevTestLogin 참조 없이 컴파일됨(참조 grep 결과 0건)."
+    },
+    {
+      "check": "iOS 빌드 (시뮬레이터 SDK, CODE_SIGNING_ALLOWED=NO)",
+      "command": "xcodebuild -project apps/ios/Kimgosu.xcodeproj -scheme Kimgosu -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build",
+      "result": "PASS",
+      "evidence": "** BUILD SUCCEEDED ** (AuthModel.swift 수정 포함)"
+    },
+    {
+      "check": "iOS 테스트 타깃 컴파일 (KimgosuUITests build-for-testing)",
+      "command": "xcodebuild … build-for-testing",
+      "result": "PASS",
+      "evidence": "** TEST BUILD SUCCEEDED **"
+    },
+    {
+      "check": "dev API /v1/auth/config — google provider 활성",
+      "command": "curl -s 'https://api-dev-kimgosu.mintech.ai/v1/auth/config?metadata=policy-v0.3'",
+      "result": "PASS",
+      "evidence": "HTTP 200, providers 중 {'id':'google','enabled':true}. (signupReady=false — 문자 인증 경로 미완이며 이 카드 범위 밖.)"
+    },
+    {
+      "check": "dev API POST /v1/auth/oauth/google/start — 앱이 기대하는 authorizationUrl 계약",
+      "command": "curl -s -X POST -H 'Content-Type: application/json' -d '{}' https://api-dev-kimgosu.mintech.ai/v1/auth/oauth/google/start",
+      "result": "PASS",
+      "evidence": "HTTP 200, keys=['authorizationUrl','expiresInSeconds','provider','state'], authorizationUrl host=accounts.google.com, state 43자, redirect_uri=https://dev-kimgosu.mintech.ai/auth/callback. 양 앱의 require(url.startsWith(\"https://accounts.google.com/\"))/host 검사와 일치한다. (이 호출로 dev DB에 만료 예정 oauth state 1건이 생성됨.)"
+    },
+    {
+      "check": "배포된 dev 콜백 페이지 딥링크 계약",
+      "command": "curl -sL 'https://dev-kimgosu.mintech.ai/auth/callback?state=x&code=y'",
+      "result": "PASS",
+      "evidence": "HTTP 200(/auth/callback/ 로 308 리다이렉트 후), 페이지에 'kimgosu://auth/callback?token=' 및 'kimgosu://auth/callback?error=…' 경로와 CANCELLED 분기가 포함 — 앱의 handleOAuthCallback 파싱(scheme/host/path + token|error)과 일치."
+    },
+    {
+      "check": "실제 구글 계정 로그인 1회 (양 앱 버튼 누름 → 동의 화면 → 앱 복귀 → /v1/me 200 → 재실행 후 로그인 유지, 스크린샷)",
+      "command": "앱 실행 필요",
+      "result": "NOT_RUN",
+      "evidence": "NOT_RUN (시뮬레이터 정책) — 07-24 정책에 따라 시뮬레이터·에뮬레이터를 실행하지 않았다."
+    },
+    {
+      "check": "취소/네트워크 실패 화면 표시 육안 확인",
+      "command": "앱 실행 필요",
+      "result": "NOT_RUN",
+      "evidence": "NOT_RUN (시뮬레이터 정책). 코드 경로만 확인: Android는 브라우저 복귀 시 onBrowserReturned()→'로그인을 취소하셨습니다.', 콜백 ?error=CANCELLED 동일 문구, 그 외 실패 문구 분리. iOS는 canceledLogin→취소 문구, 그 외 오류→네트워크 문구(이번 수정)."
+    },
+    {
+      "check": "구글 테스트 사용자 미등록 계정 차단 시 앱 실패 처리",
+      "command": "실제 계정 필요",
+      "result": "NOT_RUN",
+      "evidence": "NOT_RUN (시뮬레이터 정책). 서버가 SOCIAL_AUTH_* 오류를 돌려주면 콜백 페이지가 kimgosu://auth/callback?error=FAILED로 되돌리고, 앱은 '로그인을 완료하지 못했습니다. 다시 시도해주세요.'로 처리하며 토큰을 저장하지 않는다(establishVerifiedSession은 token 파라미터가 있을 때만 호출)."
+    }
+  ],
+  "acceptance": [
+    { "criterion": "AOS·iOS 모두 버튼을 누르면 구글 동의 화면이 열린다", "status": "NOT_RUN", "note": "구현 완료(Android ACTION_VIEW 외부 브라우저, iOS ASWebAuthenticationSession). 기기 실행 미검증(시뮬레이터 정책)." },
+    { "criterion": "실제 구글 로그인 후 앱 복귀·세션 저장(/v1/me 200)", "status": "NOT_RUN", "note": "양 앱 모두 me() 성공 후에만 sessions.write() 하는 순서로 구현. 실 거래 미검증." },
+    { "criterion": "앱 재실행 후 로그인 유지", "status": "NOT_RUN", "note": "SecureSession(Android Keystore AES-GCM)/KGSecureSession(Keychain) 저장 경로 사용, ProfileModel·loadAccount가 기동 시 재조회. 실행 미검증." },
+    { "criterion": "취소·네트워크 실패가 명확히 표시되고 성공처럼 보이지 않는다", "status": "PARTIAL", "note": "코드 경로 확인(iOS 취소/네트워크 구분 수정 포함). 화면 실행 미검증." },
+    { "criterion": "두 앱 빌드 성공", "status": "PASS", "note": "Android dev/prod debug assemble + androidTest, iOS Debug simulator build + UITest build-for-testing 모두 성공." },
+    { "criterion": "실제 로그인 1회 스크린샷 첨부", "status": "NOT_RUN", "note": "NOT_RUN (시뮬레이터 정책)." }
+  ],
+  "open": [
+    "기기 실행 검증(양 앱 버튼→동의 화면→복귀→재실행 유지, 취소/네트워크 실패 문구, 실제 로그인 스크린샷)은 시뮬레이터/에뮬레이터 실행이 허용되는 별도 QA 슬롯에서 수행해야 한다.",
+    "Android는 androidx.browser 의존성이 없어 Custom Tabs 대신 ACTION_VIEW(기본 브라우저)로 연다. 새 의존성 추가 금지 조건에 따른 선택이며, Custom Tabs가 필요하면 의존성 추가 승인이 선행되어야 한다.",
+    "dev DB에 이번 계약 확인용 oauth state 1건이 만료 대기 상태로 남는다(사용자 데이터 아님)."
+  ],
+  "risks": [
+    "prod flavor는 API_BASE_URL이 api-kimgosu.mintech.ai이고 공개 콜백 페이지는 dev 도메인만 존재한다. 운영 로그인은 운영 API·콜백 배포가 선행돼야 하며 이 카드 범위 밖이다.",
+    "Android에서 브라우저 앱이 없으면 startActivity가 ActivityNotFoundException으로 실패한다(실기기 표준 환경에서는 발생하지 않아 별도 처리하지 않음).",
+    "iOS ASWebAuthenticationSession은 앱이 백그라운드로 밀리거나 세션이 중단되면 canceledLogin으로 보고되므로, 사용자가 '취소'를 누르지 않아도 취소 문구가 나올 수 있다."
+  ],
+  "next": [
+    "허용된 QA 슬롯에서 기기 실행 검증과 스크린샷 확보 후 수용 기준 1·2·3·5·6을 닫는다.",
+    "uiux 대응 QA에서 로그인 화면 문구·상태 표시 적합성 판정."
+  ]
+}
