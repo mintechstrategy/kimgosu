@@ -83,7 +83,7 @@ class CustomerFlowTests {
     private fun showChat(state: CustomerChatState, onWriteReview: () -> Unit = {}) {
         compose.setContent {
             CustomerChatContent(expertNickname = "테스트11", state = state, sending = false, actionBusy = false,
-                actionError = null, onRetry = {}, onSend = {}, onAccept = {}, onComplete = {},
+                actionError = null, onRetry = {}, onSend = {}, onPickPhoto = {}, onAccept = {}, onComplete = {},
                 onWriteReview = onWriteReview, onBack = {})
         }
     }
@@ -118,8 +118,8 @@ class CustomerFlowTests {
 
     @Test fun messagesRenderWithMineAlignedLast() {
         val messages = listOf(
-            CustomerMessage("m1", "other", "안녕하세요", "2026-11-04T07:00:01Z"),
-            CustomerMessage("m2", "me", "견적 요청드립니다", "2026-11-04T07:00:02Z"),
+            CustomerMessage("m1", "other", "안녕하세요", null, null, null, "2026-11-04T07:00:01Z"),
+            CustomerMessage("m2", "me", "견적 요청드립니다", null, null, null, "2026-11-04T07:00:02Z"),
         )
         showChat(CustomerChatState.Ready("me", messages, emptyList()))
         compose.onNodeWithTag("customer-messages").assertExists()

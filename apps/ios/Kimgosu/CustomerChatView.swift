@@ -1,9 +1,11 @@
+import PhotosUI
 import SwiftUI
 
 struct KGCustomerMessage: Identifiable, Equatable {
     let id: String
     let senderId: String
     let body: String
+    let imageUrl: String?
     let createdAt: String
 }
 
@@ -30,6 +32,7 @@ enum KGCustomerChatState: Equatable {
 @MainActor final class KGCustomerChatModel: ObservableObject {
     @Published private(set) var state: KGCustomerChatState = .loading
     @Published private(set) var sending = false
+    @Published private(set) var sendingPhoto = false
     @Published private(set) var actionBusy = false
     @Published private(set) var actionError: String?
     private let transport: KGAuthTransport
@@ -107,6 +110,53 @@ enum KGCustomerChatState: Equatable {
         mutate(ledgerId: ledgerId, path: "/v1/quotes/" + quote.id + "/complete", body: ["expectedVersion": quote.version])
     }
 
+    /// 사진은 presign → R2 PUT → imageKey 전송까지 KGChatApi가 처리한다.
+    /// 서버는 jpeg/png/webp만 받으므로 선택한 사진을 JPEG로 정규화하고 긴 변을 1600px로 줄인다.
+    func sendPhoto(ledgerId: String, image: UIImage) {
+        guard !sending, !sendingPhoto else { return }
+        guard let token = (try? sessions.read()) ?? nil else {
+            actionError = "세션이 만료되었습니다. 다시 로그인해주세요."
+            return
+        }
+        guard let jpeg = Self.jpegData(image) else {
+            reportPhotoUnreadable()
+            return
+        }
+        sendingPhoto = true
+        actionError = nil
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                _ = try await KGChatApi(transport: self.transport).sendPhoto(
+                    token, ledgerId: ledgerId, bytes: jpeg.data, contentType: "image/jpeg",
+                    width: jpeg.width, height: jpeg.height)
+                self.sendingPhoto = false
+                self.refresh(ledgerId: ledgerId)
+            } catch {
+                self.sendingPhoto = false
+                self.actionError = Self.message(for: error, fallback: "사진을 보내지 못했습니다.")
+            }
+        }
+    }
+
+    func reportPhotoUnreadable() {
+        actionError = "사진을 읽지 못했습니다. 다른 사진을 선택해주세요."
+    }
+
+    private static func jpegData(_ image: UIImage) -> (data: Data, width: Int, height: Int)? {
+        let longest = max(image.size.width, image.size.height)
+        guard longest > 0 else { return nil }
+        let scale = min(1, 1600 / longest)
+        let size = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1
+        let resized = UIGraphicsImageRenderer(size: size, format: format).image { _ in
+            image.draw(in: CGRect(origin: .zero, size: size))
+        }
+        guard let data = resized.jpegData(compressionQuality: 0.85) else { return nil }
+        return (data, Int(size.width), Int(size.height))
+    }
+
     private func mutate(ledgerId: String, path: String, body: [String: Any]) {
         guard !actionBusy else { return }
         guard let token = (try? sessions.read()) ?? nil else {
@@ -145,8 +195,10 @@ enum KGCustomerChatState: Equatable {
         let rows = (json["messages"] as? [[String: Any]] ?? []).compactMap { row -> KGCustomerMessage? in
             guard let id = row["id"] as? String, let sender = row["senderId"] as? String else { return nil }
             let deleted = row["deleted"] as? Bool ?? false
+            let rawImage = deleted ? nil : (row["imageUrl"] as? String)
             return KGCustomerMessage(id: id, senderId: sender,
                                      body: deleted ? "" : (row["body"] as? String ?? ""),
+                                     imageUrl: (rawImage?.isEmpty == false) ? rawImage : nil,
                                      createdAt: row["createdAt"] as? String ?? "")
         }
         return rows.reversed()
@@ -195,6 +247,7 @@ struct KGCustomerChatView: View {
     let onWriteReview: (String, String) -> Void
     @StateObject private var model = KGCustomerChatModel()
     @State private var draft = ""
+    @State private var pickedPhoto: PhotosPickerItem?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -253,10 +306,26 @@ struct KGCustomerChatView: View {
                             if message.senderId == ownId { Spacer(minLength: 40) }
                             VStack(alignment: .leading, spacing: 3) {
                                 if message.senderId != ownId { customerCopy("고수", size: 11, color: DesignTokens.muted) }
-                                customerCopy(message.body.isEmpty ? "삭제된 메시지" : message.body)
+                                if let raw = message.imageUrl, let url = URL(string: raw) {
+                                    AsyncImage(url: url) { phase in
+                                        if let image = phase.image {
+                                            image.resizable().scaledToFit()
+                                        } else {
+                                            Color.clear
+                                        }
+                                    }
+                                    .frame(maxWidth: 220, maxHeight: 260)
+                                    .background(DesignTokens.soft, in: RoundedRectangle(cornerRadius: 6))
+                                    .accessibilityIdentifier("customer-message-image")
+                                }
+                                if !message.body.isEmpty {
+                                    customerCopy(message.body)
+                                } else if message.imageUrl == nil {
+                                    customerCopy("삭제된 메시지")
+                                }
                                 customerCopy(hhmm(message.createdAt), size: 10, color: DesignTokens.muted)
                             }.padding(.horizontal, 12).padding(.vertical, 9)
-                                .background(message.senderId == ownId ? DesignTokens.soft : Color(white: 0.957),
+                                .background(message.senderId == ownId ? DesignTokens.soft : DesignTokens.track,
                                             in: RoundedRectangle(cornerRadius: 8))
                             if message.senderId != ownId { Spacer(minLength: 40) }
                         }.id(message.id)
@@ -271,6 +340,21 @@ struct KGCustomerChatView: View {
 
     private var composer: some View {
         HStack(spacing: 8) {
+            PhotosPicker(selection: $pickedPhoto, matching: .images, photoLibrary: .shared()) {
+                customerCopy("사진", color: DesignTokens.navy, semibold: true).frame(minHeight: 48)
+            }.accessibilityIdentifier("customer-message-photo")
+                .onChange(of: pickedPhoto) { _, item in
+                    guard let item else { return }
+                    pickedPhoto = nil
+                    Task {
+                        guard let data = try? await item.loadTransferable(type: Data.self),
+                              let image = UIImage(data: data) else {
+                            model.reportPhotoUnreadable()
+                            return
+                        }
+                        model.sendPhoto(ledgerId: ledgerId, image: image)
+                    }
+                }
             TextField("메시지를 입력하세요", text: $draft, axis: .vertical)
                 .font(.custom("Pretendard-Regular", size: 14, relativeTo: .body))
                 .lineLimit(1...4)
@@ -279,11 +363,11 @@ struct KGCustomerChatView: View {
             Button {
                 let text = draft; draft = ""; model.send(ledgerId: ledgerId, body: text)
             } label: {
-                customerCopy(model.sending ? "전송 중" : "전송", color: .white, semibold: true)
+                customerCopy(model.sending || model.sendingPhoto ? "전송 중" : "전송", color: .white, semibold: true)
                     .padding(.horizontal, 14).frame(minHeight: 48)
                     .background(DesignTokens.navy, in: RoundedRectangle(cornerRadius: 6))
             }.buttonStyle(.plain)
-                .disabled(model.sending || draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .disabled(model.sending || model.sendingPhoto || draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 .accessibilityIdentifier("customer-message-send")
         }.padding(12)
     }

@@ -4,11 +4,19 @@ import ai.mintech.kimgosu.auth.AuthFailure
 import ai.mintech.kimgosu.auth.AuthTransport
 import ai.mintech.kimgosu.auth.MembershipHttp
 import ai.mintech.kimgosu.auth.SecureSession
+import ai.mintech.kimgosu.chat.ChatApi
 import ai.mintech.kimgosu.expert.ExpertCopy
 import ai.mintech.kimgosu.expert.ExpertFailure
 import ai.mintech.kimgosu.expert.ExpertLoading
 import ai.mintech.kimgosu.ui.DesignTokens
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -25,6 +33,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.TextStyle
@@ -32,14 +42,22 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
 import java.io.IOException
+import java.net.HttpURLConnection
+import java.net.URL
 
 data class CustomerMessage(
     val id: String,
     val senderId: String,
     val body: String,
+    val imageUrl: String?,
+    val imageWidth: Int?,
+    val imageHeight: Int?,
     val createdAt: String,
 )
 
@@ -71,8 +89,10 @@ class CustomerChatModel(
     private val transport: AuthTransport = MembershipHttp(),
     private val sessions: SecureSession,
 ) {
+    private val chat = ChatApi(transport)
     var state by mutableStateOf<CustomerChatState>(CustomerChatState.Loading); private set
     var sending by mutableStateOf(false); private set
+    var sendingPhoto by mutableStateOf(false); private set
     var actionBusy by mutableStateOf(false); private set
     var actionError by mutableStateOf<String?>(null); private set
 
@@ -125,6 +145,38 @@ class CustomerChatModel(
             sending = false
             actionError = "메시지를 보내지 못했습니다. (INVALID_API_RESPONSE)"
         }
+    }
+
+    /** 사진은 presign → R2 PUT → imageKey 전송까지 ChatApi가 처리한다. */
+    suspend fun sendPhoto(ledgerId: String, photo: PickedPhoto) {
+        if (sending || sendingPhoto) return
+        val token = runCatching { sessions.read() }.getOrNull()
+        if (token == null) {
+            actionError = "세션이 만료되었습니다. 다시 로그인해주세요."
+            return
+        }
+        sendingPhoto = true
+        actionError = null
+        try {
+            chat.sendPhoto(token, ledgerId, photo.bytes, PHOTO_CONTENT_TYPE, photo.width, photo.height)
+            sendingPhoto = false
+            refresh(ledgerId)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: AuthFailure) {
+            sendingPhoto = false
+            actionError = if (e.status == 401) "세션이 만료되었습니다. 다시 로그인해주세요." else "사진을 보내지 못했습니다. (${e.code})"
+        } catch (_: IOException) {
+            sendingPhoto = false
+            actionError = "네트워크에 연결할 수 없습니다."
+        } catch (_: Exception) {
+            sendingPhoto = false
+            actionError = "사진을 보내지 못했습니다. (INVALID_API_RESPONSE)"
+        }
+    }
+
+    fun reportPhotoUnreadable() {
+        actionError = "사진을 읽지 못했습니다. 다른 사진을 선택해주세요."
     }
 
     /** 견적 상태 변경은 서버가 판정한다. 성공 후 전체를 다시 읽어 화면을 서버 값에 맞춘다. */
@@ -181,6 +233,9 @@ class CustomerChatModel(
                     id = row.getString("id"),
                     senderId = row.getString("senderId"),
                     body = if (row.isNull("body") || row.optBoolean("deleted")) "" else row.optString("body"),
+                    imageUrl = if (row.isNull("imageUrl")) null else row.optString("imageUrl").takeIf { it.isNotBlank() },
+                    imageWidth = if (row.isNull("imageWidth")) null else row.optInt("imageWidth").takeIf { it > 0 },
+                    imageHeight = if (row.isNull("imageHeight")) null else row.optInt("imageHeight").takeIf { it > 0 },
                     createdAt = row.optString("createdAt"),
                 )
             }.reversed()
@@ -214,6 +269,36 @@ class CustomerChatModel(
     }
 }
 
+/**
+ * 갤러리 원본은 HEIC처럼 서버가 받지 않는 형식일 수 있어 JPEG로 정규화하고,
+ * 긴 변을 1600px로 줄여 업로드 크기를 묶는다.
+ */
+private const val PHOTO_CONTENT_TYPE = "image/jpeg"
+
+class PickedPhoto(val bytes: ByteArray, val width: Int, val height: Int)
+
+private fun readPhoto(context: Context, uri: Uri): PickedPhoto? = runCatching {
+    val resolver = context.contentResolver
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+    var sample = 1
+    while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= 1600) sample *= 2
+    val decoded = resolver.openInputStream(uri)?.use {
+        BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = sample })
+    } ?: return null
+    val scale = 1600f / maxOf(decoded.width, decoded.height)
+    val bitmap = if (scale < 1f) {
+        Bitmap.createScaledBitmap(decoded, (decoded.width * scale).toInt().coerceAtLeast(1),
+            (decoded.height * scale).toInt().coerceAtLeast(1), true)
+    } else {
+        decoded
+    }
+    val out = ByteArrayOutputStream()
+    bitmap.compress(Bitmap.CompressFormat.JPEG, 85, out)
+    PickedPhoto(out.toByteArray(), bitmap.width, bitmap.height)
+}.getOrNull()
+
 @Composable
 fun CustomerChatScreen(
     ledgerId: String,
@@ -224,15 +309,22 @@ fun CustomerChatScreen(
     val context: Context = LocalContext.current.applicationContext
     val model = remember(ledgerId) { CustomerChatModel(MembershipHttp(context), SecureSession(context)) }
     val scope = rememberCoroutineScope()
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) scope.launch {
+            val photo = withContext(Dispatchers.IO) { readPhoto(context, uri) }
+            if (photo == null) model.reportPhotoUnreadable() else model.sendPhoto(ledgerId, photo)
+        }
+    }
     LaunchedEffect(ledgerId) { model.refresh(ledgerId) }
     CustomerChatContent(
         expertNickname = expertNickname,
         state = model.state,
-        sending = model.sending,
+        sending = model.sending || model.sendingPhoto,
         actionBusy = model.actionBusy,
         actionError = model.actionError,
         onRetry = { scope.launch { model.refresh(ledgerId) } },
         onSend = { text -> scope.launch { model.send(ledgerId, text) } },
+        onPickPhoto = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
         onAccept = { quote -> scope.launch { model.respondQuote(ledgerId, quote, "accept") } },
         onComplete = { quote -> scope.launch { model.confirmComplete(ledgerId, quote) } },
         onWriteReview = { onWriteReview(ledgerId, expertNickname) },
@@ -249,6 +341,7 @@ fun CustomerChatContent(
     actionError: String?,
     onRetry: () -> Unit,
     onSend: (String) -> Unit,
+    onPickPhoto: () -> Unit,
     onAccept: (CustomerQuote) -> Unit,
     onComplete: (CustomerQuote) -> Unit,
     onWriteReview: () -> Unit,
@@ -268,7 +361,7 @@ fun CustomerChatContent(
             is CustomerChatState.Failed -> ExpertFailure(state.network, state.code, onRetry)
             is CustomerChatState.Empty -> {
                 EmptyMessages(Modifier.weight(1f))
-                Composer(draft, sending, onDraft = { draft = it }, onSend = { text -> onSend(text); draft = "" })
+                Composer(draft, sending, onDraft = { draft = it }, onSend = { text -> onSend(text); draft = "" }, onPickPhoto = onPickPhoto)
             }
             is CustomerChatState.Ready -> {
                 val quote = CustomerChatModel.activeQuote(state.quotes)
@@ -283,7 +376,7 @@ fun CustomerChatContent(
                         items(state.messages, key = { it.id }) { message -> MessageBubble(message, message.senderId == state.ownId) }
                     }
                 }
-                Composer(draft, sending, onDraft = { draft = it }, onSend = { text -> onSend(text); draft = "" })
+                Composer(draft, sending, onDraft = { draft = it }, onSend = { text -> onSend(text); draft = "" }, onPickPhoto = onPickPhoto)
             }
         }
     }
@@ -297,8 +390,18 @@ private fun EmptyMessages(modifier: Modifier) {
 }
 
 @Composable
-private fun Composer(draft: String, sending: Boolean, onDraft: (String) -> Unit, onSend: (String) -> Unit) {
+private fun Composer(
+    draft: String,
+    sending: Boolean,
+    onDraft: (String) -> Unit,
+    onSend: (String) -> Unit,
+    onPickPhoto: () -> Unit,
+) {
     Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+        TextButton(onClick = onPickPhoto, enabled = !sending,
+            modifier = Modifier.heightIn(min = 48.dp).testTag("customer-message-photo")) {
+            ExpertCopy("사진", color = DesignTokens.navy, weight = FontWeight.SemiBold)
+        }
         OutlinedTextField(
             value = draft,
             onValueChange = { if (it.length <= 2000) onDraft(it) },
@@ -319,12 +422,39 @@ private fun Composer(draft: String, sending: Boolean, onDraft: (String) -> Unit,
 @Composable
 private fun MessageBubble(message: CustomerMessage, mine: Boolean) {
     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start) {
-        Column(Modifier.widthIn(max = 280.dp).background(if (mine) DesignTokens.soft else Color(0xFFF4F4F4), RoundedCornerShape(8.dp))
+        Column(Modifier.widthIn(max = 280.dp).background(if (mine) DesignTokens.soft else DesignTokens.track, RoundedCornerShape(8.dp))
             .padding(horizontal = 12.dp, vertical = 9.dp)) {
             if (!mine) ExpertCopy("고수", size = 11, color = DesignTokens.muted)
-            ExpertCopy(if (message.body.isBlank()) "삭제된 메시지" else message.body, size = 14)
+            message.imageUrl?.let { url -> MessageImage(url, message.imageWidth, message.imageHeight, message.body.isBlank()) }
+            if (message.body.isNotBlank()) ExpertCopy(message.body, size = 14)
+            else if (message.imageUrl == null) ExpertCopy("삭제된 메시지", size = 14)
             ExpertCopy(hhmm(message.createdAt), Modifier.padding(top = 3.dp), 10, color = DesignTokens.muted)
         }
+    }
+}
+
+/** 원본 비율을 유지한다. 서버가 준 픽셀 크기가 없으면 고정 높이로만 표시한다. */
+@Composable
+private fun MessageImage(url: String, width: Int?, height: Int?, last: Boolean) {
+    var bitmap by remember(url) { mutableStateOf<Bitmap?>(null) }
+    LaunchedEffect(url) {
+        bitmap = withContext(Dispatchers.IO) {
+            runCatching {
+                val connection = URL(url).openConnection() as HttpURLConnection
+                try {
+                    connection.connectTimeout = 8000; connection.readTimeout = 8000
+                    if (connection.responseCode !in 200..299) return@runCatching null
+                    connection.inputStream.use { BitmapFactory.decodeStream(it) }
+                } finally { connection.disconnect() }
+            }.getOrNull()
+        }
+    }
+    val shape = RoundedCornerShape(6.dp)
+    val ratio = if (width != null && height != null && width > 0 && height > 0) width.toFloat() / height else null
+    Box(Modifier.padding(bottom = if (last) 0.dp else 6.dp).widthIn(max = 220.dp)
+        .then(if (ratio != null) Modifier.aspectRatio(ratio) else Modifier.height(160.dp))
+        .background(DesignTokens.soft, shape).testTag("customer-message-image")) {
+        bitmap?.let { Image(it.asImageBitmap(), null, Modifier.fillMaxWidth(), contentScale = ContentScale.Fit) }
     }
 }
 
