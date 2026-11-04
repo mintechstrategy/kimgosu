@@ -42,6 +42,8 @@ enum KGCustomerStartState: Equatable {
 @MainActor final class KGCustomerExpertModel: ObservableObject {
     @Published private(set) var state: KGCustomerExpertState = .loading
     @Published private(set) var start: KGCustomerStartState = .idle
+    @Published private(set) var loadingMoreReviews = false
+    @Published private(set) var reviewsMoreFailed = false
     private let transport: KGAuthTransport
     private let sessions: KGSessionStorage
     private var task: Task<Void, Never>?
@@ -55,6 +57,7 @@ enum KGCustomerStartState: Equatable {
         task?.cancel()
         state = .loading
         start = .idle
+        reviewsMoreFailed = false
         task = Task { @MainActor [weak self] in
             guard let self else { return }
             do {
@@ -85,6 +88,28 @@ enum KGCustomerStartState: Equatable {
                 } else {
                     self.state = .failed(network: false, code: "INVALID_API_RESPONSE")
                 }
+            }
+        }
+    }
+
+    /// 서버가 준 offset 다음 후기부터 붙인다. 이미 받은 후기는 다시 요청하지 않는다.
+    func loadMoreReviews(expertId: String) {
+        guard case .ready(let detail, let reviewsUnavailable) = state, !reviewsUnavailable,
+              detail.reviews.count < detail.reviewCount, !loadingMoreReviews else { return }
+        loadingMoreReviews = true
+        reviewsMoreFailed = false
+        let offset = detail.reviews.count
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { self.loadingMoreReviews = false }
+            do {
+                let json = try await self.transport.request(
+                    "GET", "/v1/experts/" + expertId + "/reviews?limit=20&offset=\(offset)", token: nil, body: nil)
+                guard case .ready(var latest, let unavailable) = self.state else { return }
+                latest.reviews += Self.decodeReviews(json)
+                self.state = .ready(detail: latest, reviewsUnavailable: unavailable)
+            } catch {
+                self.reviewsMoreFailed = true
             }
         }
     }
@@ -179,7 +204,7 @@ struct KGCustomerExpertView: View {
             customerFailure(network: network, code: code, retry: { model.load(expertId: expertId) })
         case .ready(let detail, let reviewsUnavailable):
             ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
+                LazyVStack(alignment: .leading, spacing: 0) {
                     customerCopy(detail.nickname.isEmpty ? "고수" : detail.nickname, size: 22, bold: true).padding(.top, 8)
                     if !detail.activityRegion.isEmpty {
                         customerCopy(detail.activityRegion, size: 13, color: DesignTokens.muted).padding(.top, 4)
@@ -210,6 +235,16 @@ struct KGCustomerExpertView: View {
                         customerCopy("평점 " + averageText(detail.reviewAverage) + " · 후기 \(detail.reviewCount)개", size: 13, color: DesignTokens.muted)
                             .padding(.top, 8).accessibilityIdentifier("customer-review-summary")
                         ForEach(detail.reviews) { review in reviewRow(review) }
+                        if detail.reviews.count < detail.reviewCount {
+                            Button { model.loadMoreReviews(expertId: expertId) } label: {
+                                customerCopy(model.loadingMoreReviews ? "불러오는 중…"
+                                            : (model.reviewsMoreFailed ? "후기를 더 불러오지 못했습니다. 다시 시도" : "후기 더 보기"),
+                                            size: 13, semibold: true)
+                                    .frame(maxWidth: .infinity, minHeight: 44)
+                            }.buttonStyle(.plain)
+                                .disabled(model.loadingMoreReviews)
+                                .padding(.top, 8).accessibilityIdentifier("customer-reviews-more")
+                        }
                     }
                     Button {
                         model.startDeal(expertId: expertId) { ledgerId, nickname in onStartChat(ledgerId, nickname) }
@@ -229,14 +264,8 @@ struct KGCustomerExpertView: View {
 
     private func serviceRow(_ service: KGCustomerServiceItem) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            if let url = service.imageUrl.flatMap(URL.init(string:)) {
-                AsyncImage(url: url) { phase in
-                    if case .success(let image) = phase {
-                        image.resizable().scaledToFill().frame(height: 160).clipped()
-                    } else {
-                        RoundedRectangle(cornerRadius: 4).fill(DesignTokens.soft).frame(height: 160)
-                    }
-                }.frame(maxWidth: .infinity)
+            if let raw = service.imageUrl {
+                RemoteImage(url: raw, contentMode: .fill).frame(height: 160)
             }
             customerCopy(service.title.isEmpty ? service.category : service.title, size: 15, bold: true).padding(.top, 4)
             let price = service.basePrice.map { service.priceType == "NEGOTIABLE" ? "협의" : customerWon($0) }

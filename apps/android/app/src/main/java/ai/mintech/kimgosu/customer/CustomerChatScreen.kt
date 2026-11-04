@@ -9,6 +9,7 @@ import ai.mintech.kimgosu.expert.ExpertCopy
 import ai.mintech.kimgosu.expert.ExpertFailure
 import ai.mintech.kimgosu.expert.ExpertLoading
 import ai.mintech.kimgosu.ui.DesignTokens
+import ai.mintech.kimgosu.ui.RemoteImage
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -36,7 +37,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -51,8 +51,6 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.IOException
-import java.net.HttpURLConnection
-import java.net.URL
 
 data class CustomerMessage(
     val id: String,
@@ -593,26 +591,14 @@ private fun MessageBubble(message: CustomerMessage, mine: Boolean) {
 /** 원본 비율을 유지한다. 서버가 준 픽셀 크기가 없으면 고정 높이로만 표시한다. */
 @Composable
 private fun MessageImage(url: String, width: Int?, height: Int?, last: Boolean) {
-    var bitmap by remember(url) { mutableStateOf<Bitmap?>(null) }
-    LaunchedEffect(url) {
-        bitmap = withContext(Dispatchers.IO) {
-            runCatching {
-                val connection = URL(url).openConnection() as HttpURLConnection
-                try {
-                    connection.connectTimeout = 8000; connection.readTimeout = 8000
-                    if (connection.responseCode !in 200..299) return@runCatching null
-                    connection.inputStream.use { BitmapFactory.decodeStream(it) }
-                } finally { connection.disconnect() }
-            }.getOrNull()
-        }
-    }
-    val shape = RoundedCornerShape(6.dp)
     val ratio = if (width != null && height != null && width > 0 && height > 0) width.toFloat() / height else null
-    Box(Modifier.padding(bottom = if (last) 0.dp else 6.dp).widthIn(max = 220.dp)
-        .then(if (ratio != null) Modifier.aspectRatio(ratio) else Modifier.height(160.dp))
-        .background(DesignTokens.soft, shape).testTag("customer-message-image")) {
-        bitmap?.let { Image(it.asImageBitmap(), null, Modifier.fillMaxWidth(), contentScale = ContentScale.Fit) }
-    }
+    RemoteImage(
+        url,
+        Modifier.padding(bottom = if (last) 0.dp else 6.dp).widthIn(max = 220.dp)
+            .then(if (ratio != null) Modifier.aspectRatio(ratio) else Modifier.height(160.dp))
+            .testTag("customer-message-image"),
+        contentScale = ContentScale.Fit,
+    )
 }
 
 @Composable

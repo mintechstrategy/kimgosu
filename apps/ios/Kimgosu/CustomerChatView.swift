@@ -441,17 +441,11 @@ struct KGCustomerChatView: View {
                             if message.senderId == ownId { Spacer(minLength: 40) }
                             VStack(alignment: .leading, spacing: 3) {
                                 if message.senderId != ownId { customerCopy("고수", size: 11, color: DesignTokens.muted) }
-                                if let raw = message.imageUrl, let url = URL(string: raw) {
-                                    AsyncImage(url: url) { phase in
-                                        if let image = phase.image {
-                                            image.resizable().scaledToFit()
-                                        } else {
-                                            Color.clear
-                                        }
-                                    }
-                                    .frame(maxWidth: 220, maxHeight: 260)
-                                    .background(DesignTokens.soft, in: RoundedRectangle(cornerRadius: 6))
-                                    .accessibilityIdentifier("customer-message-image")
+                                if let raw = message.imageUrl {
+                                    RemoteImage(url: raw, contentMode: .fit)
+                                        .frame(maxWidth: 220, maxHeight: 260)
+                                        .background(DesignTokens.soft, in: RoundedRectangle(cornerRadius: 6))
+                                        .accessibilityIdentifier("customer-message-image")
                                 }
                                 if !message.body.isEmpty {
                                     customerCopy(message.body)
