@@ -1,0 +1,121 @@
+{
+  "ws": "WS-78",
+  "task": "운영(prod) 환경 검증",
+  "status": "DONE",
+  "worktree": "/Users/mintech-mac/hermes/dev-profile/shared/projects/wt-WS-78",
+  "baseCommit": "5bd1dc9",
+  "at": "2026-11-04T22:49:50+09:00",
+  "summary": "운영 API https://api-kimgosu.mintech.ai를 공인 HTTPS로 호출하고, api-prod 컨테이너 내부에서 운영 Postgres를 읽기 전용으로 조회해 검증했다. /health 200, POST /v1/auth/dev/login(slot 11·1) 404 ROUTE_NOT_FOUND, GET /v1/auth/dev/accounts 404, /v1/policies?metadata=policy-v0.3에서 TERMS/PRIVACY_CONSENT/PRIVACY_POLICY/MARKETING v0.2 4종 모두 current+display/canConsent=true, 운영 DB dev_test_accounts 0행·members 0행·sessions 0행·role_grants 0행, 컨테이너 환경에 KG_DEV_LOGIN 미설정, 관리자 API는 무인증 401을 확인했다. 운영에서 쓴 것은 SELECT와 HTTPS GET뿐이며 운영 설정·데이터·배포를 변경하지 않았다. 발견 사항은 고치지 않고 findings에 목록화했다. AOS·iOS는 같은 워크트리 소스로 각각 빌드해 BUILD SUCCESSFUL/SUCCESS를 확인했다.",
+  "environment": {
+    "prodApi": "https://api-kimgosu.mintech.ai",
+    "release": "5bd1dc90b89964d8e9b1d343864fa9e47ee464f8 (GET /health 응답 및 컨테이너 KG_RELEASE_SHA 동일)",
+    "railwayProject": "kimgosu (95b52b2c-e1c0-45da-909b-d7989ce08a90)",
+    "railwayEnvironment": "production",
+    "apiService": "api-prod",
+    "databaseService": "Postgres-MOuU (DATABASE_URL은 railway.internal 전용, 값은 출력하지 않음)",
+    "dbUser": "kg_dev_runtime (SELECT 결과의 current_user)",
+    "accessPath": "공인 HTTPS(curl) + `railway ssh ... -- node -e` 로 컨테이너 안에서만 접근 가능한 private DB 조회. 로컬에서는 internal 호스트명 해석 불가"
+  },
+  "prodChanges": "무변경 — 운영 API/DB/변수/배포/DNS를 수정하지 않았다. 실행한 원격 동작은 HTTP GET/POST(거부 확인용)와 컨테이너 내부 SELECT뿐이며 쓰기·DDL·배포·재시작이 없다. 워크트리 git status도 clean(소스 변경 0).",
+  "acceptanceCriteria": [
+    {
+      "criterion": "GET https://api-kimgosu.mintech.ai/health → 200",
+      "status": "PASS",
+      "evidence": "3회 연속 호출 모두 HTTP 200, 응답 본문 {\"status\":\"ok\",\"scope\":\"membership-development\",\"release\":\"5bd1dc90b89964d8e9b1d343864fa9e47ee464f8\"}. 응답 헤더 x-railway-request-id·cf-ray 확인(Cloudflare 경유 Railway 직결)."
+    },
+    {
+      "criterion": "POST /v1/auth/dev/login {slot:11} → 거부",
+      "status": "PASS",
+      "evidence": "HTTP 404, 본문 {\"error\":{\"code\":\"ROUTE_NOT_FOUND\"}}. slot 1로 재확인도 404. 즉 dev 로그인 라우트가 운영에 등록되지 않았다(열려 있지 않음 → FAIL 아님)."
+    },
+    {
+      "criterion": "GET /v1/auth/dev/accounts → 거부",
+      "status": "PASS",
+      "evidence": "HTTP 404, 본문 {\"error\":{\"code\":\"ROUTE_NOT_FOUND\"}}."
+    },
+    {
+      "criterion": "GET /v1/policies → v0.2 4종 current/display",
+      "status": "PASS",
+      "evidence": "GET /v1/policies?metadata=policy-v0.3 → 200. policySnapshot.schemaVersion=policy-v0.3, currentDocuments: TERMS/PRIVACY_CONSENT/PRIVACY_POLICY/MARKETING 모두 v0.2, canConsent=true; OPERATIONS는 문서 없음(currentDocument null, missingReadyKinds=[]). documents 4건 전부 status=READY, isCurrent=true, isDisplay=true, operator=mintech, effectiveAt=2026-11-02T15:00:00Z. 옵트인 없는 GET /v1/policies는 계약대로 legacy shape(documents 4건 raw)만 반환한다(findings 참조)."
+    },
+    {
+      "criterion": "prod DB에 dev 테스트 계정이 없음",
+      "status": "PASS",
+      "evidence": "운영 DB(api-prod 컨테이너 내부, kg_dev_runtime)에서 SELECT: dev_test_accounts 0, members 0, sessions 0, role_grants 0 행. 같은 조회에서 current_database()=railway 확인. 테이블은 존재하므로 '테이블 부재로 인한 오류'가 아니라 실제 0행이다."
+    },
+    {
+      "criterion": "발견 문제 목록화, 수정하지 않음",
+      "status": "PASS",
+      "evidence": "아래 findings 5건. 운영 수정·재배포·설정 변경은 수행하지 않았다."
+    },
+    {
+      "criterion": "AOS·iOS 함께 빌드",
+      "status": "PASS",
+      "evidence": "AOS: gradle :app:assembleDevDebug BUILD SUCCESSFUL(38 tasks), APK apps/android/app/build/outputs/apk/dev/debug/app-dev-debug.apk(15,346,464 bytes, sha256 28fc8ad5…669bc, package ai.mintech.kimgosu.dev versionName 0.1.0-dev). iOS: xcodebuild -scheme Kimgosu -configuration Debug -sdk iphonesimulator ** BUILD SUCCEEDED **, 산출물 Kimgosu.app(CFBundleIdentifier ai.mintech.kimgosu.dev, CFBundleShortVersionString 0.1.0). 시뮬레이터/에뮬레이터 실행은 하지 않았다(웨이브 공통 규칙)."
+    }
+  ],
+  "verified": [
+    "공인 HTTPS: /health 200 (3회), POST /v1/auth/dev/login {slot:11} 404, GET /v1/auth/dev/accounts 404, GET /v1/policies?metadata=policy-v0.3 200(v0.2 4종 current/display), GET /v1/auth/config 200(signupReady=false, providers kakao/naver/google 모두 enabled=false, sms.available=false)",
+    "안전 보조 확인: GET /v1/admin/members 401 AUTH_REQUIRED, GET /v1/admin/reviews 401 AUTH_REQUIRED, 위조 Bearer로 GET /v1/me 401 SESSION_INVALID, 미정의 경로 /v1/nope 404 ROUTE_NOT_FOUND",
+    "컨테이너 환경: RAILWAY_ENVIRONMENT_NAME=production, NODE_ENV=production, KG_DEV_LOGIN 키 자체 미설정, KG_IDENTITY_HMAC_KEY 미설정, KG_RELEASE_SHA=5bd1dc90b89964d8e9b1d343864fa9e47ee464f8",
+    "운영 DB: dev_test_accounts 0 / members 0 / sessions 0 / role_grants 0, policy_documents 4건 모두 v0.2 READY·operator_name=mintech·approved_at not null·effective_at<=now()",
+    "AOS 빌드: BUILD SUCCESSFUL in 27s (JDK 17.0.21 + SDK 35 + gradle 8.11.1, --no-daemon --max-workers=2)",
+    "iOS 빌드: ** BUILD SUCCEEDED ** (xcodebuild, iphonesimulator generic destination, ad-hoc 'Sign to Run Locally')",
+    "워크트리 git status clean — 이 작업이 소스를 변경하지 않았고 커밋·푸시도 하지 않았다"
+  ],
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "info",
+      "title": "옵트인 없는 GET /v1/policies는 current/display를 주지 않는 legacy 응답",
+      "detail": "app.ts:141-147은 metadata=policy-v0.3가 있을 때만 policySnapshot(currentDocuments/isCurrent/isDisplay 포함)을 반환하고, 없으면 policySelect 원본 4행만 반환한다. PLAN-WAVE11의 'GET /v1/policies → v0.2 4종 current/display' 문구를 그대로 실행하면 legacy 응답을 받아 오판할 수 있다. 코드 주석상 의도된 계약이며 결함으로 판정하지 않았다. 수정·배포는 하지 않았다."
+    },
+    {
+      "id": "F2",
+      "severity": "low",
+      "title": "/health의 scope 문자열이 운영에서도 'membership-development'",
+      "detail": "운영 컨테이너도 scope=membership-development를 반환한다. 배포 식별자는 KG_RELEASE_SHA 설정으로 실제 SHA가 노출되어 추적은 가능하나, 응답만으로는 dev/prod 구분이 되지 않는다. KLG 릴리스 식별자 기본값(UNVERSIONED-DEVELOPMENT) 문제와 같은 계열이며 이번 범위에서는 고치지 않았다."
+    },
+    {
+      "id": "F3",
+      "severity": "low",
+      "title": "운영 DB 런타임 롤 이름이 kg_dev_runtime",
+      "detail": "운영 접속 계정 이름이 dev 명칭이다. 실제 권한은 제한적(조회 중심)이며 운영 전용 자격증명으로 보이나, 이름만 보고 dev DB로 오인할 위험이 있다. 마이그레이션 GRANT 문이 이 이름을 하드코딩해 변경은 별도 작업이다."
+    },
+    {
+      "id": "F4",
+      "severity": "medium",
+      "title": "api-prod가 GitHub 소스에 연결돼 있지 않아 운영 배포가 수동",
+      "detail": "운영 이미지는 `railway up` 수동 업로드로 만들어져 커밋 SHA와 이미지의 자동 연결·CI 게이트가 없다. 현재 KG_RELEASE_SHA=5bd1dc9로 추적 중이나, 소스 변경이 자동 반영되지 않고 배포 이력도 서버측에서 강제되지 않는다. 배포 경로 변경은 승인 대상이라 실행하지 않았다."
+    },
+    {
+      "id": "F5",
+      "severity": "info",
+      "title": "운영은 현재 로그인·가입 수단이 없어 실사용자 트래픽을 받을 수 없는 상태",
+      "detail": "/v1/auth/config에서 signupReady=false, kakao/naver/google 모두 enabled=false(PROVIDER_INTEGRATION_NOT_CONNECTED), sms.available=false, KG_IDENTITY_HMAC_KEY 미설정. 운영 DB members=0과 일치한다. '안전하게 닫혀 있음'으로 판정했으나, 동시에 운영 기능 검증(로그인·가입·거래)은 불가능하다."
+    }
+  ],
+  "notRun": [
+    "운영 로그인·가입·거래 실제 흐름 — OAuth/SMS/identity key 미구성으로 호출 가능한 경로가 없다(F5). 대체 시험이 아니라 대상 부재.",
+    "앱(AOS/iOS) 실제 기기·시뮬레이터 실행 및 운영 API 연결 거래 — 웨이브 공통 규칙으로 시뮬레이터·에뮬레이터 실행 금지, 빌드까지만 수행",
+    "부하·장애·롤백 리허설, 백업/모니터링 확인 — 이번 카드 범위 밖",
+    "prod 로그 스트리밍 조회(railway logs) — 이번 카드의 수용 항목이 아니어서 실행하지 않았다"
+  ],
+  "commands": [
+    "curl -sS -w '%{http_code}' https://api-kimgosu.mintech.ai/health  (3회)",
+    "curl -X POST https://api-kimgosu.mintech.ai/v1/auth/dev/login -H 'content-type: application/json' -d '{\"slot\":11}'  (slot 1 재확인 포함)",
+    "curl https://api-kimgosu.mintech.ai/v1/auth/dev/accounts",
+    "curl https://api-kimgosu.mintech.ai/v1/policies",
+    "curl 'https://api-kimgosu.mintech.ai/v1/policies?metadata=policy-v0.3'",
+    "curl https://api-kimgosu.mintech.ai/v1/auth/config",
+    "curl https://api-kimgosu.mintech.ai/v1/admin/members  / /v1/admin/reviews  (무인증 401 확인)",
+    "railway ssh -p 95b52b2c-... -e production -s api-prod -- node -e '<pg SELECT: dev_test_accounts/members/sessions/role_grants count, policy_documents>'",
+    "railway ssh -p 95b52b2c-... -e production -s api-prod -- node -e '<process.env 안전 필드만 출력>'",
+    "cd apps/android && gradle --no-daemon --max-workers=2 :app:assembleDevDebug",
+    "xcodebuild -project apps/ios/Kimgosu.xcodeproj -scheme Kimgosu -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath <scratch>/DerivedData build"
+  ],
+  "notes": [
+    "DB 접속 정보·SSH 키 경로·변수 값은 출력·기록하지 않았다. SSH는 기존 등록 키(kimgosu-develop)를 그대로 사용했고 새 자격증명을 만들지 않았다.",
+    "빌드 산출물(AOS build/, iOS DerivedData)은 .gitignore 대상 또는 scratch 경로라 저장소에 남기지 않았다."
+  ]
+}
