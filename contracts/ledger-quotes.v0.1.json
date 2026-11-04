@@ -1033,6 +1033,68 @@
           "when": "the caller already confirmed completion"
         }
       ]
+    },
+    {
+      "id": "quoteInbox",
+      "method": "GET",
+      "path": "/v1/me/quotes",
+      "authentication": "session-active",
+      "source": "services/backend/src/quotes.ts",
+      "notes": "고수 홈의 받은 견적 목록. 원장별 조회로는 '오늘 들어온 요청'을 만들 수 없어 별도 경로가 필요하다.",
+      "querySchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "PROPOSED",
+              "ACCEPTED",
+              "REJECTED",
+              "COMPLETED"
+            ]
+          },
+          "limit": {
+            "type": "string",
+            "pattern": "^[0-9]{1,3}$"
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "quotes"
+          ],
+          "properties": {
+            "quotes": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      },
+      "errors": [
+        {
+          "status": 400,
+          "code": "INVALID_REQUEST",
+          "when": "status or limit is malformed"
+        },
+        {
+          "status": 401,
+          "code": "AUTH_REQUIRED",
+          "when": "missing or malformed Authorization header"
+        },
+        {
+          "status": 403,
+          "code": "ACCOUNT_RESTRICTED",
+          "when": "member has an active restriction"
+        }
+      ]
     }
   ],
   "openItems": [

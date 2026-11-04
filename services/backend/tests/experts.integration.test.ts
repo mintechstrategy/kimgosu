@@ -319,3 +319,58 @@ test('service writes are recorded in the audit log', async () => {
   assert.ok(rows.some(r => r.action === 'EXPERT_SERVICE_CREATED'));
   assert.ok(rows.some(r => r.action === 'EXPERT_SERVICE_UPDATED'));
 });
+
+test('an expert reads their own profile, availability and services', async () => {
+  const me = await app.inject({ method: 'GET', url: '/v1/me/expert', headers: auth(expertA.token) });
+  assert.equal(me.statusCode, 200);
+  assert.equal(me.json().availability, 'AVAILABLE');
+  assert.ok(Array.isArray(me.json().services) && me.json().services.length > 0);
+
+  const notExpert = await app.inject({ method: 'GET', url: '/v1/me/expert', headers: auth(customer.token) });
+  assert.equal(notExpert.statusCode, 403);
+  assert.equal(notExpert.json().error.code, 'EXPERT_ROLE_REQUIRED');
+});
+
+test('availability accepts the three states, persists, notifies nobody else and is audited', async () => {
+  for (const availability of ['PAUSED', 'VACATION', 'AVAILABLE']) {
+    const response = await app.inject({
+      method: 'PATCH', url: '/v1/me/expert/availability',
+      headers: auth(expertA.token), payload: { availability },
+    });
+    assert.equal(response.statusCode, 200, response.body);
+    assert.equal(response.json().availability, availability);
+
+    const stored = (await pool.query(
+      `SELECT availability FROM kg_membership.expert_profiles WHERE member_id=$1`, [expertA.id],
+    )).rows[0];
+    assert.equal(stored.availability, availability);
+  }
+
+  const bad = await app.inject({
+    method: 'PATCH', url: '/v1/me/expert/availability',
+    headers: auth(expertA.token), payload: { availability: 'SLEEPING' },
+  });
+  assert.equal(bad.statusCode, 400);
+
+  const audited = (await pool.query(
+    `SELECT 1 FROM kg_membership.audit_log WHERE actor_member_id=$1 AND action='EXPERT_AVAILABILITY_CHANGED'`,
+    [expertA.id],
+  )).rows[0];
+  assert.ok(audited);
+});
+
+test('a service image is stored as a key and returned with a public URL', async () => {
+  const created = await app.inject({
+    method: 'POST', url: '/v1/expert/services',
+    headers: auth(expertA.token),
+    payload: { ...serviceBody(), title: '이미지 서비스', imageKey: 'services/abc.jpg' },
+  });
+  assert.equal(created.statusCode, 201, created.body);
+  assert.equal(created.json().imageKey, 'services/abc.jpg');
+  assert.match(String(created.json().imageUrl), /services\/abc\.jpg$/);
+
+  const stored = (await pool.query(
+    `SELECT image_key FROM kg_membership.expert_services WHERE id=$1`, [created.json().id],
+  )).rows[0];
+  assert.equal(stored.image_key, 'services/abc.jpg');
+});

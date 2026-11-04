@@ -28,11 +28,16 @@ const uuidSchema = { type: 'string', format: 'uuid' };
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const profileSelect = `p.member_id AS "expertId", p.introduction, p.career,
-  p.activity_region AS "activityRegion", p.status,
+  p.activity_region AS "activityRegion", p.status, p.availability,
   p.created_at AS "createdAt", p.updated_at AS "updatedAt"`;
 const serviceSelect = `s.id, s.category, s.title, s.description, s.price_type AS "priceType",
-  s.base_price AS "basePrice", s.visibility,
+  s.base_price AS "basePrice", s.visibility, s.image_key AS "imageKey",
   s.created_at AS "createdAt", s.updated_at AS "updatedAt"`;
+
+// 이미지 자체는 R2에 있고 DB에는 키만 둔다. 공개 도메인이 바뀌어도 마이그레이션이 필요 없다.
+const publicImageUrl = (key: unknown) =>
+  typeof key === 'string' && key ? `${process.env.KG_R2_PUBLIC_BASE ?? ''}/${key}` : null;
+const withImageUrl = <T extends { imageKey?: unknown }>(row: T) => ({ ...row, imageUrl: publicImageUrl(row.imageKey) });
 
 const encodeCursor = (at: unknown, expertId: unknown) =>
   Buffer.from(`${new Date(String(at)).toISOString()}|${String(expertId)}`, 'utf8').toString('base64url');
@@ -118,12 +123,13 @@ export function registerExpertRoutes(app: FastifyInstance, db: Sql, authenticate
   });
 
   // ── Services (owner) ───────────────────────────────────────────────────────
-  app.post<{ Body: { category: string; title: string; description: string; priceType: string; basePrice?: number | null; visibility?: string } }>('/v1/expert/services', {
+  app.post<{ Body: { category: string; title: string; description: string; priceType: string; basePrice?: number | null; visibility?: string; imageKey?: string | null } }>('/v1/expert/services', {
     schema: body({
       category: string(1, 50), title: string(1, 100), description: string(1, 2000),
       priceType: { type: 'string', enum: ['FIXED', 'HOURLY', 'NEGOTIABLE'] },
       basePrice: { type: ['integer', 'null'], minimum: 0, maximum: 100000000 },
       visibility: { type: 'string', enum: ['VISIBLE', 'HIDDEN'] },
+      imageKey: { type: ['string', 'null'], minLength: 1, maxLength: 300 },
     }, ['category', 'title', 'description', 'priceType']),
   }, async (request, reply) => {
     const auth = await requireExpert(request, reply); if (!auth) return;
@@ -134,25 +140,27 @@ export function registerExpertRoutes(app: FastifyInstance, db: Sql, authenticate
       )).rows[0];
       if (!profile) throw new ApiError(409, 'EXPERT_PROFILE_REQUIRED');
       const service = (await sql.query(
-        `INSERT INTO ${SCHEMA}.expert_services(id,expert_member_id,category,title,description,price_type,base_price,visibility)
-         VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING ${serviceSelect.replace(/s\./g, '')}`,
+        `INSERT INTO ${SCHEMA}.expert_services(id,expert_member_id,category,title,description,price_type,base_price,visibility,image_key)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING ${serviceSelect.replace(/s\./g, '')}`,
         [randomUUID(), auth.memberId, request.body.category.trim(), request.body.title.trim(), request.body.description.trim(),
-          request.body.priceType, request.body.basePrice ?? null, request.body.visibility ?? 'VISIBLE'],
+          request.body.priceType, request.body.basePrice ?? null, request.body.visibility ?? 'VISIBLE',
+          request.body.imageKey ?? null],
       )).rows[0];
       await audit(sql, auth.memberId, 'EXPERT_SERVICE_CREATED', 'expert_service', String(service.id), null, { visibility: service.visibility });
-      return service;
+      return withImageUrl(service);
     });
     return reply.code(201).send(service);
   });
 
-  app.patch<{ Params: { id: string }; Body: { category?: string; title?: string; description?: string; priceType?: string; basePrice?: number | null; visibility?: string } }>('/v1/expert/services/:id', {
+  app.patch<{ Params: { id: string }; Body: { category?: string; title?: string; description?: string; priceType?: string; basePrice?: number | null; visibility?: string; imageKey?: string | null } }>('/v1/expert/services/:id', {
     schema: {
       params: { type: 'object', additionalProperties: false, required: ['id'], properties: { id: uuidSchema } },
       body: { type: 'object', additionalProperties: false, minProperties: 1, required: [],
         properties: { category: string(1, 50), title: string(1, 100), description: string(1, 2000),
           priceType: { type: 'string', enum: ['FIXED', 'HOURLY', 'NEGOTIABLE'] },
           basePrice: { type: ['integer', 'null'], minimum: 0, maximum: 100000000 },
-          visibility: { type: 'string', enum: ['VISIBLE', 'HIDDEN'] } } },
+          visibility: { type: 'string', enum: ['VISIBLE', 'HIDDEN'] },
+          imageKey: { type: ['string', 'null'], minLength: 1, maxLength: 300 } } },
     },
   }, async (request, reply) => {
     const auth = await requireExpert(request, reply); if (!auth) return;
@@ -169,7 +177,7 @@ export function registerExpertRoutes(app: FastifyInstance, db: Sql, authenticate
 
       const columns: Record<string, string> = {
         category: 'category', title: 'title', description: 'description',
-        priceType: 'price_type', basePrice: 'base_price', visibility: 'visibility',
+        priceType: 'price_type', basePrice: 'base_price', visibility: 'visibility', imageKey: 'image_key',
       };
       const values: unknown[] = [request.params.id, auth.memberId];
       const sets: string[] = [];
@@ -189,6 +197,43 @@ export function registerExpertRoutes(app: FastifyInstance, db: Sql, authenticate
       await audit(sql, auth.memberId, 'EXPERT_SERVICE_UPDATED', 'expert_service', String(request.params.id), null, { visibility: updated.visibility });
       return updated;
     });
+  });
+
+  // ── Self ───────────────────────────────────────────────────────────────────
+  // The app's expert screens read the caller's own profile, availability and
+  // services. The public /v1/experts/:id view belongs to someone else, so it
+  // cannot answer "am I on vacation right now".
+  app.get('/v1/me/expert', async (request, reply) => {
+    const auth = await requireExpert(request, reply); if (!auth) return;
+    const profile = (await db.query(
+      `SELECT ${profileSelect} FROM ${SCHEMA}.expert_profiles p WHERE p.member_id=$1`, [auth.memberId],
+    )).rows[0];
+    if (!profile) throw new ApiError(404, 'EXPERT_PROFILE_REQUIRED');
+    const services = (await db.query(
+      `SELECT ${serviceSelect} FROM ${SCHEMA}.expert_services s
+        WHERE s.expert_member_id=$1 ORDER BY s.created_at DESC`, [auth.memberId],
+    )).rows;
+    return { ...profile, services };
+  });
+
+  // 수신 중 / 일시중지 / 휴가. Operator visibility (status) is a different axis
+  // and is not settable from here.
+  app.patch<{ Body: { availability: string } }>('/v1/me/expert/availability', {
+    schema: body({ availability: { type: 'string', enum: ['AVAILABLE', 'PAUSED', 'VACATION'] } }, ['availability']),
+  }, async (request, reply) => {
+    const auth = await requireExpert(request, reply); if (!auth) return;
+    const updated = await db.transaction(async sql => {
+      const row = (await sql.query(
+        `UPDATE ${SCHEMA}.expert_profiles p SET availability=$2, updated_at=now()
+          WHERE p.member_id=$1 RETURNING ${profileSelect}`,
+        [auth.memberId, request.body.availability],
+      )).rows[0];
+      if (!row) throw new ApiError(404, 'EXPERT_PROFILE_REQUIRED');
+      await audit(sql, auth.memberId, 'EXPERT_AVAILABILITY_CHANGED', 'expert_profile', String(auth.memberId),
+        null, { availability: request.body.availability });
+      return row;
+    });
+    return updated;
   });
 
   // ── Public search ──────────────────────────────────────────────────────────
