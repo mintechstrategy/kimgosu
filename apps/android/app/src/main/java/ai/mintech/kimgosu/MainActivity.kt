@@ -3,6 +3,7 @@ package ai.mintech.kimgosu
 import android.app.Application
 import ai.mintech.kimgosu.auth.*
 import ai.mintech.kimgosu.auth.ui.*
+import ai.mintech.kimgosu.customer.*
 import ai.mintech.kimgosu.ui.DesignTokens
 import android.graphics.BitmapFactory
 import android.os.Bundle
@@ -60,6 +61,14 @@ import java.net.URL
 import java.time.Instant
 
 internal val LocalBrandFont = staticCompositionLocalOf<FontFamily> { FontFamily.Default }
+
+/** 고객 거래 흐름의 화면 스택. 뒤로가기는 한 단계씩만 되돌린다. */
+sealed interface CustomerRoute {
+    data class Search(val category: String?) : CustomerRoute
+    data class Expert(val expertId: String, val nickname: String) : CustomerRoute
+    data class Chat(val ledgerId: String, val expertId: String, val nickname: String) : CustomerRoute
+    data class Review(val ledgerId: String, val expertId: String, val nickname: String) : CustomerRoute
+}
 
 data class Item(val label: String, val icon: String)
 class Home(val json: JSONObject) {
@@ -159,6 +168,7 @@ class MainActivity : ComponentActivity() {
             var devReady by remember { mutableStateOf(!devLoginRequired || storedSession) }
             var expertHomeOpen by rememberSaveable { mutableStateOf(false) }
             var quotesPendingNotice by rememberSaveable { mutableStateOf(false) }
+            var customerRoute by remember { mutableStateOf<CustomerRoute?>(null) }
             val fonts = remember { FontFamily(Font("regular.otf", assets), Font("semibold.otf", assets, FontWeight.SemiBold), Font("bold.otf", assets, FontWeight.Bold)) }
             MaterialTheme(colorScheme = lightColorScheme(primary = DesignTokens.navy, onPrimary = Color.White, surface = Color.White, onSurface = DesignTokens.navy)) {
                 CompositionLocalProvider(LocalBrandFont provides fonts) {
@@ -181,20 +191,54 @@ class MainActivity : ComponentActivity() {
                         DevTestLoginGate { devReady = true }
                     } else model.home?.let { home ->
                         // The root screen has no splash entry in its back stack.
-                        BackHandler { if (expertHomeOpen) expertHomeOpen = false else moveTaskToBack(true) }
-                        if (expertHomeOpen) {
-                            ExpertHomeScreen(
-                                nickname = (profile.state as? ProfileState.Ready)?.nickname.orEmpty(),
-                                onBack = { expertHomeOpen = false },
-                                onOpenQuotes = { quotesPendingNotice = true })
-                        } else AuthHost(auth) {
-                            MainScreen(home, if (verify) model.apiStatus else null,
-                                profile = profile.state,
-                                onRetryProfile = { profile.refresh() },
-                                onProfileLogin = { devReady = false },
-                                onExpertHome = { expertHomeOpen = true },
-                                onProtected = { auth.enter(ReturnTarget(screenId = "A1", targetId = it)) },
-                                onPolicy = { auth.handle(AuthEvent(AuthAction.OPEN_DOCUMENT, it)) })
+                        BackHandler {
+                            val route = customerRoute
+                            when {
+                                route is CustomerRoute.Review -> customerRoute = CustomerRoute.Chat(route.ledgerId, route.expertId, route.nickname)
+                                route is CustomerRoute.Chat -> customerRoute = CustomerRoute.Expert(route.expertId, route.nickname)
+                                route is CustomerRoute.Expert -> customerRoute = CustomerRoute.Search(null)
+                                route is CustomerRoute.Search -> customerRoute = null
+                                expertHomeOpen -> expertHomeOpen = false
+                                else -> moveTaskToBack(true)
+                            }
+                        }
+                        when (val route = customerRoute) {
+                            is CustomerRoute.Search -> CustomerSearchScreen(
+                                category = route.category,
+                                onBack = { customerRoute = null },
+                                onOpenExpert = { id, nickname -> customerRoute = CustomerRoute.Expert(id, nickname) },
+                                onClearCategory = { customerRoute = CustomerRoute.Search(null) })
+                            is CustomerRoute.Expert -> CustomerExpertScreen(
+                                expertId = route.expertId,
+                                onBack = { customerRoute = CustomerRoute.Search(null) },
+                                onStartChat = { ledgerId, nickname -> customerRoute = CustomerRoute.Chat(ledgerId, route.expertId, nickname) })
+                            is CustomerRoute.Chat -> CustomerChatScreen(
+                                ledgerId = route.ledgerId,
+                                expertNickname = route.nickname,
+                                onBack = { customerRoute = CustomerRoute.Expert(route.expertId, route.nickname) },
+                                onWriteReview = { ledgerId, nickname ->
+                                    customerRoute = CustomerRoute.Review(ledgerId, route.expertId, nickname)
+                                })
+                            is CustomerRoute.Review -> CustomerReviewScreen(
+                                ledgerId = route.ledgerId,
+                                expertNickname = route.nickname,
+                                onBack = { customerRoute = CustomerRoute.Chat(route.ledgerId, route.expertId, route.nickname) },
+                                onDone = { customerRoute = CustomerRoute.Expert(route.expertId, route.nickname) })
+                            null -> if (expertHomeOpen) {
+                                ExpertHomeScreen(
+                                    nickname = (profile.state as? ProfileState.Ready)?.nickname.orEmpty(),
+                                    onBack = { expertHomeOpen = false },
+                                    onOpenQuotes = { quotesPendingNotice = true })
+                            } else AuthHost(auth) {
+                                MainScreen(home, if (verify) model.apiStatus else null,
+                                    profile = profile.state,
+                                    onRetryProfile = { profile.refresh() },
+                                    onProfileLogin = { devReady = false },
+                                    onExpertHome = { expertHomeOpen = true },
+                                    onCustomerSearch = { category -> customerRoute = CustomerRoute.Search(category) },
+                                    onProtected = { auth.enter(ReturnTarget(screenId = "A1", targetId = it)) },
+                                    onPolicy = { auth.handle(AuthEvent(AuthAction.OPEN_DOCUMENT, it)) })
+                            }
                         }
                         LaunchedEffect(Unit) { model.event("main-visible") }
                     }
@@ -232,11 +276,17 @@ class MainActivity : ComponentActivity() {
 }
 @Composable private fun MainScreen(home: Home, apiStatus: String?, profile: ProfileState,
                                    onRetryProfile: () -> Unit, onProfileLogin: () -> Unit,
-                                   onExpertHome: () -> Unit,
+                                   onExpertHome: () -> Unit, onCustomerSearch: (String?) -> Unit,
                                    onProtected: (String) -> Unit, onPolicy: (String) -> Unit) {
     var notice by rememberSaveable { mutableStateOf<String?>(null) }
     var popular by rememberSaveable { mutableIntStateOf(0) }
-    val open: (String) -> Unit = { if (it in listOf("알림", "마이페이지", "마이", "내정보", "견적요청", "서비스등록", "채팅", "원장") || it.contains("요청") || it.contains("등록")) onProtected(it) else notice = it }
+    val open: (String) -> Unit = { title ->
+        when {
+            title == "검색" -> onCustomerSearch(null)
+            title in listOf("알림", "마이페이지", "마이", "내정보", "견적요청", "서비스등록", "채팅", "원장") || title.contains("요청") || title.contains("등록") -> onProtected(title)
+            else -> notice = title
+        }
+    }
     Column(Modifier.fillMaxSize().background(Color.White).safeDrawingPadding().testTag("main")) {
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).testTag("main-scroll")) {
             Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -249,7 +299,7 @@ class MainActivity : ComponentActivity() {
             ProfileCard(profile, onRetryProfile, onProfileLogin, onExpertHome)
             Copy(home.text("introduction"), Modifier.fillMaxWidth().padding(top = 20.dp).testTag("main-introduction"), 20, true, align = TextAlign.Center)
             Row(Modifier.padding(top = 16.dp).fillMaxWidth().heightIn(min = 48.dp).border(1.dp, DesignTokens.border, RoundedCornerShape(6.dp))
-                .clickable { open("검색") }.padding(14.dp).testTag("search"), verticalAlignment = Alignment.CenterVertically) {
+                .clickable { onCustomerSearch(null) }.padding(14.dp).testTag("search"), verticalAlignment = Alignment.CenterVertically) {
                 AssetImage("nav_1.png", null, Modifier.size(20.dp))
                 Copy(home.text("search"), Modifier.padding(start = 14.dp), 16, color = DesignTokens.muted)
             }
@@ -266,7 +316,7 @@ class MainActivity : ComponentActivity() {
                         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             pair.forEach { item ->
                                 val modifier = Modifier.width(itemWidth).heightIn(min = 90.dp).then(if (column == 4) Modifier.clearAndSetSemantics { } else Modifier)
-                                Column(modifier.clickable { open(item.label) }.padding(top = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                Column(modifier.clickable { onCustomerSearch(item.label) }.padding(top = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                                     AssetImage(item.icon, null, Modifier.size(48.dp))
                                     Copy(item.label, Modifier.padding(top = 6.dp), 12, align = TextAlign.Center)
                                 }

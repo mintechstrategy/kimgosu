@@ -109,10 +109,18 @@ final class OfflineProtocol: URLProtocol {
 }
 #endif
 
+enum KGCustomerRoute {
+    case search(category: String?)
+    case expert(id: String, nickname: String)
+    case chat(ledgerId: String, expertId: String, nickname: String)
+    case review(ledgerId: String, expertId: String, nickname: String)
+}
+
 @main struct KimgosuApp: App {
     @StateObject private var model = LaunchModel()
     @StateObject private var auth = KGAuthModel()
     @State private var expertHomeOpen = KGExpertHomeDebug.openOnLaunch
+    @State private var customerRoute: KGCustomerRoute?
     @State private var quotesPendingNotice = false
     private var expertNickname: String {
         if case .loaded(let member) = auth.state.member { return member.nickname }
@@ -139,7 +147,9 @@ final class OfflineProtocol: URLProtocol {
                             await model.prepare()
                         }
                 } else if let home = model.home {
-                    if expertHomeOpen {
+                    if let route = customerRoute {
+                        customerScreen(route)
+                    } else if expertHomeOpen {
                         ExpertHomeView(nickname: expertNickname,
                                        onBack: { expertHomeOpen = false },
                                        onOpenQuotes: { quotesPendingNotice = true })
@@ -152,7 +162,8 @@ final class OfflineProtocol: URLProtocol {
                                 onPolicy: { auth.handle(KGAuthEvent(action: .OPEN_DOCUMENT, key: $0)) },
                                 onLogin: { auth.enter(KGReturnTarget()) },
                                 onRetryMember: { auth.retryMember() },
-                                onExpertHome: { expertHomeOpen = true })
+                                onExpertHome: { expertHomeOpen = true },
+                                onCustomerSearch: { customerRoute = .search(category: $0) })
                         }
                             .onAppear { model.record("main-appeared") }
                     }
@@ -168,6 +179,34 @@ final class OfflineProtocol: URLProtocol {
                 .alert("받은 견적", isPresented: $quotesPendingNotice) {
                     Button("확인", role: .cancel) { }
                 } message: { Text("받은 견적 화면은 다음 통합에서 연결됩니다.") }
+        }
+    }
+
+    @ViewBuilder private func customerScreen(_ route: KGCustomerRoute) -> some View {
+        switch route {
+        case .search(let category):
+            KGCustomerSearchView(category: category,
+                                 onBack: { customerRoute = nil },
+                                 onOpenExpert: { id, nickname in customerRoute = .expert(id: id, nickname: nickname) },
+                                 onClearCategory: { customerRoute = .search(category: nil) })
+        case .expert(let id, let nickname):
+            KGCustomerExpertView(expertId: id,
+                                 onBack: { customerRoute = .search(category: nil) },
+                                 onStartChat: { ledgerId, chatNickname in
+                                     customerRoute = .chat(ledgerId: ledgerId, expertId: id,
+                                                           nickname: chatNickname.isEmpty ? nickname : chatNickname)
+                                 })
+        case .chat(let ledgerId, let expertId, let nickname):
+            KGCustomerChatView(ledgerId: ledgerId, expertNickname: nickname,
+                               onBack: { customerRoute = .expert(id: expertId, nickname: nickname) },
+                               onWriteReview: { reviewLedger, reviewNickname in
+                                   customerRoute = .review(ledgerId: reviewLedger, expertId: expertId,
+                                                           nickname: reviewNickname.isEmpty ? nickname : reviewNickname)
+                               })
+        case .review(let ledgerId, let expertId, let nickname):
+            KGCustomerReviewView(ledgerId: ledgerId, expertNickname: nickname,
+                                 onBack: { customerRoute = .chat(ledgerId: ledgerId, expertId: expertId, nickname: nickname) },
+                                 onDone: { customerRoute = .expert(id: expertId, nickname: nickname) })
         }
     }
 }
@@ -189,6 +228,7 @@ struct HomeView: View {
     let onLogin: () -> Void
     let onRetryMember: () -> Void
     let onExpertHome: () -> Void
+    let onCustomerSearch: (String?) -> Void
     @State private var notice: String?
     @State private var popular = 0
     var body: some View {
@@ -207,7 +247,7 @@ struct HomeView: View {
                     }.padding(.top, 8)
                     copy(home.introduction, size: 20, bold: true).multilineTextAlignment(.center)
                         .frame(maxWidth: .infinity).padding(.top, 20).accessibilityIdentifier("main-introduction")
-                    Button { notice = "검색" } label: {
+                    Button { onCustomerSearch(nil) } label: {
                         HStack(spacing: 14) { asset("nav_1.png", size: 20); copy(home.search, size: 16, color: DesignTokens.muted); Spacer(minLength: 0) }
                             .padding(14).frame(minHeight: 48).overlay(RoundedRectangle(cornerRadius: 6).stroke(DesignTokens.border))
                     }.padding(.top, 16).accessibilityIdentifier("search")
@@ -218,7 +258,7 @@ struct HomeView: View {
                                     VStack(spacing: 10) {
                                         ForEach(0..<2, id: \.self) { row in
                                             let item = home.categories[(column * 2 + row) % 8]
-                                            Button { notice = item.label } label: {
+                                            Button { onCustomerSearch(item.label) } label: {
                                                 VStack(spacing: 6) {
                                                     asset(item.icon, size: 48)
                                                     copy(item.label, size: 12).multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
@@ -326,6 +366,7 @@ struct HomeView: View {
         }
     }
     private func open(_ title: String) {
+        if title == "검색" { onCustomerSearch(nil); return }
         if ["알림", "마이페이지", "마이", "내정보", "견적요청", "서비스등록", "채팅", "원장"].contains(title) || title.contains("요청") || title.contains("등록") { onProtected(title) } else { notice = title }
     }
     private func banner(_ text: String, action: String) -> some View {
