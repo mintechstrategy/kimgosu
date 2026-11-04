@@ -4,6 +4,7 @@ import type { Sql } from './app.ts';
 import type { Authenticate } from './auth.ts';
 import { ApiError } from './security.ts';
 import { audit, fail, requireActiveMember } from './kernel.ts';
+import { notify } from './notifications.ts';
 
 const body = (properties: Record<string, unknown>, required = Object.keys(properties)) =>
   ({ body: { type: 'object', additionalProperties: false, properties, required } });
@@ -184,7 +185,7 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Sql, authenticate
       const auth = await requireMember(request, reply); if (!auth) return;
       return db.transaction(async sql => {
         const current = (await sql.query(
-          `SELECT id, requester_member_id AS "requesterMemberId", counterpart_member_id AS "counterpartMemberId",
+          `SELECT id, ledger_id AS "ledgerId", requester_member_id AS "requesterMemberId", counterpart_member_id AS "counterpartMemberId",
                   status, version::int AS version FROM kg_membership.agreements WHERE id=$1 FOR UPDATE`,
           [request.params.id],
         )).rows[0];
@@ -211,6 +212,17 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Sql, authenticate
         )).rows[0];
         if (!updated) throw new ApiError(409, 'VERSION_CONFLICT');
         await audit(sql, auth.memberId, `AGREEMENT_${next}`, 'agreement', String(request.params.id));
+        if (action === 'complete') {
+          // The completing side already knows; the counterpart is the one who needs to see it.
+          const counterpart = String(current.requesterMemberId) === String(auth.memberId)
+            ? current.counterpartMemberId : current.requesterMemberId;
+          await notify(sql, {
+            memberId: counterpart, kind: 'AGREEMENT',
+            title: '거래가 완료되었습니다',
+            body: '완료된 거래의 후기를 남길 수 있습니다.',
+            ledgerId: current.ledgerId,
+          });
+        }
         return updated;
       });
     });

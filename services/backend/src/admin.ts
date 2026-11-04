@@ -4,6 +4,7 @@ import type { Sql } from './app.ts';
 import { requireAdminScope } from './admin-session.ts';
 import { ApiError } from './security.ts';
 import { audit, fail } from './kernel.ts';
+import { notify } from './notifications.ts';
 
 /**
  * Operator (admin) routes: member/ledger lookup and account restriction.
@@ -260,7 +261,8 @@ export function registerAdminRoutes(app: FastifyInstance, db: Sql) {
     const auth = await requireAdmin(request, reply); if (!auth) return;
     return db.transaction(async sql => {
       const review = (await sql.query(
-        `SELECT id, hidden_at AS "hiddenAt" FROM kg_membership.reviews WHERE id=$1 FOR UPDATE`,
+        `SELECT id, ledger_id AS "ledgerId", author_id AS "authorId", hidden_at AS "hiddenAt"
+           FROM kg_membership.reviews WHERE id=$1 FOR UPDATE`,
         [request.params.id],
       )).rows[0];
       if (!review) throw new ApiError(404, 'REVIEW_NOT_FOUND');
@@ -273,6 +275,12 @@ export function registerAdminRoutes(app: FastifyInstance, db: Sql) {
         [request.params.id, reason],
       )).rows[0];
       await audit(sql, auth.memberId, 'REVIEW_HIDDEN', 'review', String(hidden!.id), reason, { hidden: true });
+      await notify(sql, {
+        memberId: review.authorId, kind: 'REPORT',
+        title: '신고가 접수되어 후기가 가려졌습니다',
+        body: '후기 운영정책에 따라 후기가 공개 목록에서 제외되었습니다.',
+        ledgerId: review.ledgerId,
+      });
       return { ...hidden, hidden: true };
     });
   });
