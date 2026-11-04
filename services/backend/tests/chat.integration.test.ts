@@ -515,3 +515,126 @@ test('같은 밀리초에 생성된 메시지도 커서 페이지네이션에서
   assert.equal(collected.length, 4, '같은 밀리초 행이 누락되면 안 된다');
   assert.equal(new Set(collected).size, 4, '페이지 간 중복이 없어야 한다');
 });
+
+// ── WS-51: 이미지 첨부 ────────────────────────────────────────────────────────
+// 키는 POST /v1/uploads(kind=chat)가 만드는 chat/<memberId>/<uuid>.<ext> 형태이며,
+// 이 테스트는 실제 R2에 올리지 않고 키 소유권·저장·조회 투영만 검증한다.
+const R2_BASE = 'https://cdn.kimgosu.test';
+const imageUrlOf = (key: string) => `${R2_BASE}/${key}`;
+
+test('이미지만 / 텍스트+이미지 전송이 저장되고 조회 응답에 imageUrl이 실린다', async () => {
+  await pool.query(`DELETE FROM kg_membership.chat_messages WHERE ledger_id=$1`, [LEDGER]);
+  process.env.R2_PUBLIC_BASE_URL = R2_BASE;
+
+  const onlyImageKey = `chat/${EXPERT.id}/${randomUUID()}.jpg`;
+  const onlyImage = await app.inject({
+    method: 'POST', url: `/v1/ledgers/${LEDGER}/messages`, headers: bearer(EXPERT.token),
+    payload: { imageKey: onlyImageKey, imageWidth: 800, imageHeight: 600 },
+  });
+  assert.equal(onlyImage.statusCode, 201, onlyImage.body);
+  const imageRow = onlyImage.json();
+  assert.equal(imageRow.body, '', '이미지 메시지는 본문 없이 저장된다');
+  assert.equal(imageRow.imageKey, onlyImageKey);
+  assert.equal(imageRow.imageWidth, 800);
+  assert.equal(imageRow.imageHeight, 600);
+  assert.equal(imageRow.imageUrl, imageUrlOf(onlyImageKey));
+
+  const withTextKey = `chat/${EXPERT.id}/${randomUUID()}.png`;
+  const withText = await app.inject({
+    method: 'POST', url: `/v1/ledgers/${LEDGER}/messages`, headers: bearer(EXPERT.token),
+    payload: { body: '이 사진 참고해주세요', imageKey: withTextKey },
+  });
+  assert.equal(withText.statusCode, 201, withText.body);
+  assert.equal(withText.json().body, '이 사진 참고해주세요');
+  assert.equal(withText.json().imageUrl, imageUrlOf(withTextKey));
+  assert.equal(withText.json().imageWidth, null, '크기는 선택 항목이다');
+
+  const stored = (await pool.query(
+    `SELECT body, image_key, image_width, image_height FROM kg_membership.chat_messages WHERE id=$1`,
+    [imageRow.id],
+  )).rows[0];
+  assert.equal(stored.body, '');
+  assert.equal(stored.image_key, onlyImageKey);
+  assert.equal(stored.image_width, 800);
+
+  // 상대 참여자도 같은 사진을 볼 수 있다.
+  const seen = await app.inject({ method: 'GET', url: `/v1/ledgers/${LEDGER}/messages`, headers: bearer(CUSTOMER.token) });
+  assert.equal(seen.statusCode, 200);
+  const messages = seen.json().messages as Array<Record<string, unknown>>;
+  assert.equal(messages.length, 2);
+  const listed = messages.find(message => message.id === imageRow.id)!;
+  assert.equal(listed.imageUrl, imageUrlOf(onlyImageKey));
+  assert.equal(listed.imageWidth, 800);
+  assert.equal(listed.imageHeight, 600);
+  assert.equal(messages.find(message => message.id === withText.json().id)!.imageUrl, imageUrlOf(withTextKey));
+
+  // 기존 텍스트 전용 메시지는 필드가 null로만 추가되고 동작은 그대로다(하위 호환).
+  const textOnly = await app.inject({
+    method: 'POST', url: `/v1/ledgers/${LEDGER}/messages`, headers: bearer(CUSTOMER.token),
+    payload: { body: '텍스트만' },
+  });
+  assert.equal(textOnly.statusCode, 201);
+  assert.equal(textOnly.json().body, '텍스트만');
+  assert.equal(textOnly.json().imageKey, null);
+  assert.equal(textOnly.json().imageUrl, null);
+
+  // 본문도 이미지도 없으면 400 (anyOf).
+  const neither = await app.inject({
+    method: 'POST', url: `/v1/ledgers/${LEDGER}/messages`, headers: bearer(EXPERT.token),
+    payload: { imageWidth: 100, imageHeight: 100 },
+  });
+  assert.equal(neither.statusCode, 400);
+  assert.equal(neither.json().error.code, 'INVALID_REQUEST');
+
+  // 삭제된 이미지 메시지는 상대에게 자리만 남고 사진 정보가 노출되지 않는다.
+  const del = await app.inject({ method: 'DELETE', url: `/v1/ledgers/${LEDGER}/messages/${imageRow.id}`, headers: bearer(EXPERT.token) });
+  assert.equal(del.statusCode, 200);
+  assert.equal(del.json().imageUrl, null);
+  const counterpart = await app.inject({ method: 'GET', url: `/v1/ledgers/${LEDGER}/messages`, headers: bearer(CUSTOMER.token) });
+  const tombstone = (counterpart.json().messages as Array<Record<string, unknown>>).find(message => message.id === imageRow.id)!;
+  assert.equal(tombstone.deleted, true);
+  assert.equal(tombstone.imageKey, null);
+  assert.equal(tombstone.imageUrl, null);
+  assert.equal(tombstone.imageWidth, null);
+
+  await pool.query(`DELETE FROM kg_membership.chat_messages WHERE ledger_id=$1`, [LEDGER]);
+});
+
+test('남의 키·chat/ 밖의 키는 403 IMAGE_NOT_OWNED로 거부되고 저장되지 않는다', async () => {
+  await pool.query(`DELETE FROM kg_membership.chat_messages WHERE ledger_id=$1`, [LEDGER]);
+  process.env.R2_PUBLIC_BASE_URL = R2_BASE;
+
+  const foreignKey = `chat/${CUSTOMER.id}/${randomUUID()}.jpg`;
+  const foreign = await app.inject({
+    method: 'POST', url: `/v1/ledgers/${LEDGER}/messages`, headers: bearer(EXPERT.token),
+    payload: { body: '남의 사진', imageKey: foreignKey },
+  });
+  assert.equal(foreign.statusCode, 403);
+  assert.equal(foreign.json().error.code, 'IMAGE_NOT_OWNED');
+
+  const wrongKind = await app.inject({
+    method: 'POST', url: `/v1/ledgers/${LEDGER}/messages`, headers: bearer(EXPERT.token),
+    payload: { imageKey: `service/${EXPERT.id}/${randomUUID()}.jpg` },
+  });
+  assert.equal(wrongKind.statusCode, 403);
+  assert.equal(wrongKind.json().error.code, 'IMAGE_NOT_OWNED');
+
+  // 접두어만 맞춘 다른 회원 id도 통과하지 않는다.
+  const lookalike = await app.inject({
+    method: 'POST', url: `/v1/ledgers/${LEDGER}/messages`, headers: bearer(EXPERT.token),
+    payload: { imageKey: `chat/${EXPERT.id}0/${randomUUID()}.jpg` },
+  });
+  assert.equal(lookalike.statusCode, 403);
+  assert.equal(lookalike.json().error.code, 'IMAGE_NOT_OWNED');
+
+  const stored = await pool.query(`SELECT count(*)::int AS n FROM kg_membership.chat_messages WHERE ledger_id=$1`, [LEDGER]);
+  assert.equal(stored.rows[0].n, 0, '거부된 전송은 아무것도 남기지 않는다');
+
+  // 비참여자는 남의 키를 보내기 전에 원장 존재 여부부터 숨긴다.
+  const outsider = await app.inject({
+    method: 'POST', url: `/v1/ledgers/${LEDGER}/messages`, headers: bearer(OUTSIDER.token),
+    payload: { imageKey: `chat/${OUTSIDER.id}/${randomUUID()}.jpg` },
+  });
+  assert.equal(outsider.statusCode, 404);
+  assert.equal(outsider.json().error.code, 'LEDGER_NOT_FOUND');
+});

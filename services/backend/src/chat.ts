@@ -28,22 +28,40 @@ import { audit, requireActiveMember } from './kernel.ts';
  *     repeated request is distinguishable from a wrong id).
  *   * `total` counts the rows visible to the caller (own tombstones excluded),
  *     so the number never disagrees with what paging can return.
+ *   * Images (WS-51): a message may carry an R2 key instead of, or along with, the
+ *     text. Only keys the caller uploaded through POST /v1/uploads (kind=chat,
+ *     i.e. `chat/<member id>/...`) are accepted; anything else is 403
+ *     `IMAGE_NOT_OWNED`. The public URL is composed at read time.
  *   * Retention / restoration of deleted bodies is OPEN and deliberately not
  *     implemented: `deleted_at` is set, the text stays in the column.
  */
 
 const MAX_BODY_LENGTH = 2000;
+const MAX_IMAGE_KEY_LENGTH = 300;
 const MAX_LIMIT = 100;
 const DEFAULT_LIMIT = 50;
 
-// `deleted` is derived, not stored: the column is `deleted_at`. The body of a
-// deleted message is replaced by null here so the text cannot leak to the other
-// participant through any read path.
+// `deleted` is derived, not stored: the column is `deleted_at`. The body and the
+// image of a deleted message are replaced by null here so neither the text nor
+// the photo can leak to the other participant through any read path.
 const messageColumns = `id, ledger_id AS "ledgerId", sender_id AS "senderId",
     CASE WHEN deleted_at IS NULL THEN body ELSE NULL END AS "body",
+    CASE WHEN deleted_at IS NULL THEN image_key ELSE NULL END AS "imageKey",
+    CASE WHEN deleted_at IS NULL THEN image_width ELSE NULL END AS "imageWidth",
+    CASE WHEN deleted_at IS NULL THEN image_height ELSE NULL END AS "imageHeight",
     (deleted_at IS NOT NULL) AS "deleted",
     created_at AS "createdAt", read_at AS "readAt", deleted_at AS "deletedAt"`;
 const messageSelect = `SELECT ${messageColumns} FROM kg_membership.chat_messages`;
+
+// DB stores the R2 key only; the public URL is composed per response so the
+// bucket domain is configuration, not data (same rule as expert service images).
+const publicImageUrl = (key: unknown) =>
+  typeof key === 'string' && key ? `${(process.env.R2_PUBLIC_BASE_URL ?? process.env.KG_R2_PUBLIC_BASE ?? '').replace(/\/+$/, '')}/${key}` : null;
+const withImageUrl = <T extends { imageKey?: unknown }>(row: T) => ({ ...row, imageUrl: publicImageUrl(row.imageKey) });
+
+// An image must be one this member uploaded: POST /v1/uploads scopes every key
+// to `chat/<memberId>/...`, so anything else is another member's object.
+const ownsImage = (key: string, memberId: unknown) => key.startsWith(`chat/${String(memberId)}/`);
 
 // Visibility for one viewer: live rows plus the *other* side's tombstones. The
 // viewer's own deleted messages are excluded from their list (WS-25 policy).
@@ -68,34 +86,48 @@ export function registerChatRoutes(app: FastifyInstance, db: Sql, authenticate: 
     return ledger;
   };
 
-  app.post<{ Params: { id: string }; Body: { body: string } }>('/v1/ledgers/:id/messages', {
+  app.post<{ Params: { id: string }; Body: { body?: string; imageKey?: string; imageWidth?: number; imageHeight?: number } }>('/v1/ledgers/:id/messages', {
     schema: {
       params: ledgerParams,
+      // A message is text, an image, or both. `anyOf` keeps `body` optional for
+      // an image message without accepting an empty message.
       body: {
-        type: 'object', additionalProperties: false, required: ['body'],
-        properties: { body: { type: 'string', minLength: 1, maxLength: MAX_BODY_LENGTH } },
+        type: 'object', additionalProperties: false, required: [],
+        anyOf: [{ required: ['body'] }, { required: ['imageKey'] }],
+        properties: {
+          body: { type: 'string', minLength: 0, maxLength: MAX_BODY_LENGTH },
+          imageKey: { type: 'string', minLength: 1, maxLength: MAX_IMAGE_KEY_LENGTH },
+          imageWidth: { type: 'integer', minimum: 1, maximum: 20000 },
+          imageHeight: { type: 'integer', minimum: 1, maximum: 20000 },
+        },
       },
     },
   }, async (request, reply) => {
     const auth = await requireMember(request, reply); if (!auth) return;
-    // A body of only whitespace passes minLength but violates the table's
-    // trim() CHECK, so it is refused here as a client error instead of a 500.
-    if (!request.body.body.trim()) throw new ApiError(400, 'MESSAGE_BODY_INVALID');
+    const imageKey = request.body.imageKey;
+    const raw = request.body.body ?? '';
+    // Text keeps the previous rule: a whitespace-only body is a client error, not
+    // a 500 from the table's trim() CHECK. An image message may omit the text, so
+    // such a message is stored with an empty body.
+    const text = raw.trim() ? (imageKey ? raw.trim() : raw) : '';
+    if (!text && !imageKey) throw new ApiError(400, 'MESSAGE_BODY_INVALID');
+    if (imageKey && !ownsImage(imageKey, auth.memberId)) throw new ApiError(403, 'IMAGE_NOT_OWNED');
     // The response is sent only after COMMIT: sending inside the transaction
     // would let a client read back before the row is durable (the same race that
     // makes other suites flaky).
     const message = await db.transaction(async sql => {
       await requireParticipant(sql, request.params.id, auth.memberId);
       const inserted = (await sql.query(
-        `INSERT INTO kg_membership.chat_messages(id,ledger_id,sender_id,body)
-         VALUES($1,$2,$3,$4)
+        `INSERT INTO kg_membership.chat_messages(id,ledger_id,sender_id,body,image_key,image_width,image_height)
+         VALUES($1,$2,$3,$4,$5,$6,$7)
          RETURNING ${messageColumns}`,
-        [randomUUID(), request.params.id, auth.memberId, request.body.body],
+        [randomUUID(), request.params.id, auth.memberId, text, imageKey ?? null,
+          request.body.imageWidth ?? null, request.body.imageHeight ?? null],
       )).rows[0];
       await sql.query(`UPDATE kg_membership.ledgers SET updated_at=now() WHERE id=$1`, [request.params.id]);
       return inserted;
     });
-    return reply.code(201).send(message);
+    return reply.code(201).send(withImageUrl(message));
   });
 
   app.get<{ Params: { id: string }; Querystring: { before?: string; limit?: string } }>('/v1/ledgers/:id/messages', {
@@ -155,7 +187,7 @@ export function registerChatRoutes(app: FastifyInstance, db: Sql, authenticate: 
     const hasMore = rows.length > limit;
     const messages = hasMore ? rows.slice(0, limit) : rows;
     const last = messages[messages.length - 1];
-    return { messages, total, nextCursor: hasMore && last ? String(last.id) : null };
+    return { messages: messages.map(withImageUrl), total, nextCursor: hasMore && last ? String(last.id) : null };
   });
 
   // WS-25: a member may delete only their own message. Non-participants get the
@@ -193,6 +225,6 @@ export function registerChatRoutes(app: FastifyInstance, db: Sql, authenticate: 
       return row;
     });
     // Sent after COMMIT so an immediate re-read cannot miss the deletion.
-    return reply.code(200).send(deleted);
+    return reply.code(200).send(withImageUrl(deleted));
   });
 }
