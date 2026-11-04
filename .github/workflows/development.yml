@@ -101,3 +101,35 @@ jobs:
             -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
             CODE_SIGNING_ALLOWED=NO build
         working-directory: apps/ios
+
+  ios-ui:
+    # The expert-home UI tests drive the real dev API, so they are reported but
+    # never block a merge: a dev outage must not read as a code regression.
+    # Signing stays on. Turning it off removes the keychain entitlement, and a
+    # session that cannot be stored looks exactly like a broken login.
+    runs-on: macos-latest
+    timeout-minutes: 30
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Pick a simulator
+        id: sim
+        run: |
+          name=$(xcrun simctl list devices available --json \
+            | python3 -c 'import json,sys; d=json.load(sys.stdin)["devices"]; print([v for k,v in d.items() if "iOS" in k][0][0]["name"])')
+          xcrun simctl boot "$name" 2>/dev/null || true
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+        working-directory: apps/ios
+      - name: Expert home UI tests against dev
+        run: |
+          xcodebuild test -project Kimgosu.xcodeproj -scheme Kimgosu \
+            -destination "platform=iOS Simulator,name=${{ steps.sim.outputs.name }}" \
+            -only-testing:KimgosuUITests/WS41ExpertHomeTests
+        working-directory: apps/ios
+      - name: Keep the screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-expert-home
+          path: ~/Library/Developer/Xcode/DerivedData/**/Logs/Test/*.xcresult
+          retention-days: 7
