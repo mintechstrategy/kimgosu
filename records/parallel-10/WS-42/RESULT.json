@@ -1,0 +1,137 @@
+{
+  "ws": "WS-42",
+  "task": "고수 프로필 + 서비스(목록·등록·수정) — AOS·iOS 동시 구현",
+  "status": "DONE",
+  "worktree": "/Users/mintech-mac/hermes/dev-profile/shared/projects/wt-WS-42",
+  "baseCommit": "2e73b77",
+  "summary": "고수 프로필 조회·수정과 서비스 목록·등록·수정 화면을 Compose(ExpertProfileScreen·ExpertServiceScreen)와 SwiftUI(ExpertProfileView·ExpertServiceView)로 동시 구현하고, 저장소에 self-view/프로필/서비스 API 4종을 추가했다. 두 앱 빌드 성공, 실 dev API에서 프로필 저장→재조회 반영→원복, 서비스 생성 201→공개 목록 노출, 노출 HIDDEN 토글→공개 조회에서 제거, 가격 규칙 400(INVALID_PRICE)을 실제 호출로 확인했고, iOS 14개 화면 상태를 실제 SwiftUI 렌더 PNG로 남겼다. AOS 런타임 화면과 내비게이션 경유 앱 조작은 NOT_RUN(내비게이션은 WS-41 소관, 공용 에뮬레이터는 다른 워커 사용 중).",
+  "changedFiles": [
+    "apps/android/app/src/main/java/ai/mintech/kimgosu/expert/ExpertProfileScreen.kt",
+    "apps/android/app/src/main/java/ai/mintech/kimgosu/expert/ExpertServiceScreen.kt",
+    "apps/android/app/src/main/java/ai/mintech/kimgosu/auth/AuthRepository.kt",
+    "apps/ios/Kimgosu/ExpertProfileView.swift",
+    "apps/ios/Kimgosu/ExpertServiceView.swift",
+    "apps/ios/Kimgosu/AuthRepository.swift",
+    "apps/ios/Kimgosu.xcodeproj/project.pbxproj",
+    "records/parallel-10/WS-42/RESULT.json",
+    "records/parallel-10/WS-42/shots/ios/*.png (14장)"
+  ],
+  "implementation": {
+    "android": {
+      "files": [
+        "expert/ExpertProfileScreen.kt — ExpertProfileModel(로딩/빈/오류/네트워크), 소개·경력·활동지역 수정, PATCH 후 GET 재조회 확인",
+        "expert/ExpertServiceScreen.kt — ExpertServiceModel(로딩/빈/오류/네트워크), 목록·노출 Switch·등록/수정 폼, 가격유형 FIXED/HOURLY/NEGOTIABLE"
+      ],
+      "repository": "AuthRepository.expertSelf / patchExpertProfile / createExpertService / patchExpertService (기존 PRIVATE transport 재사용, 새 의존성 없음)"
+    },
+    "ios": {
+      "files": [
+        "Kimgosu/ExpertProfileView.swift — ExpertProfileModel(@MainActor), 상태 4종, 폼 저장 후 재조회",
+        "Kimgosu/ExpertServiceView.swift — ExpertServiceModel, ServiceList/ServiceRow, ServiceForm, 노출 토글 낙관 갱신·실패 시 원복"
+      ],
+      "repository": "KGAuthRepository.expertSelf / patchExpertProfile / createExpertService / patchExpertService",
+      "project": "Kimgosu.xcodeproj에 두 파일 PBXFileReference/BuildFile/Sources 등록 (그룹·Sources phase)"
+    },
+    "common": [
+      "상태 4종을 양 앱 동일 문구 체계로 구현: 로딩 / 빈 / 오류(코드 표시 + 재시도) / 네트워크 실패(별도 문구 + 재시도)",
+      "업무 데이터 로컬 저장 없음. 모든 목록·프로필은 GET /v1/me/expert 응답만 사용",
+      "클라이언트 임의 보정 없음: NEGOTIABLE이면 basePrice를 null로 전송하고, FIXED/HOURLY인데 가격이 비면 그대로 전송해 서버 400(INVALID_PRICE)을 화면에 표시",
+      "디자인 토큰은 기존 DesignTokens(navy/lime/soft/border/muted/track)만 사용, 새 색 없음. Pretendard 폰트 번들 사용"
+    ]
+  },
+  "verification": [
+    {
+      "check": "AOS 빌드 (dev flavor)",
+      "command": "JAVA_HOME=<wt>/.local-toolchains/jdk17/... ANDROID_HOME=<wt>/.local-toolchains/android-sdk GRADLE_USER_HOME=<wt>/.local-toolchains/gradle-user-home python3 apps/android/build.py --offline :app:assembleDevDebug",
+      "result": "PASS",
+      "evidence": "BUILD SUCCESSFUL (최종 소스 기준 재실행, 오류 0). Kotlin 컴파일 경고 없음."
+    },
+    {
+      "check": "iOS 빌드 (Kimgosu, 시뮬레이터 SDK, 서명 없음)",
+      "command": "xcodebuild -project apps/ios/Kimgosu.xcodeproj -scheme Kimgosu -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath $TMPDIR/ws42-dd CODE_SIGNING_ALLOWED=NO build",
+      "result": "PASS",
+      "evidence": "** BUILD SUCCEEDED **. 신규 2개 소스가 Sources phase에 포함되어 컴파일됨(최초 1회 인자 순서 오류 'color must precede semibold' 수정 후)."
+    },
+    {
+      "check": "iOS 상태 4종 + 폼 실제 렌더 (제품 뷰 소스 컴파일, macOS ImageRenderer)",
+      "command": "swiftc -swift-version 5 -o render main.swift stub.swift DesignTokens.swift AuthRepository.swift KGAuthModels.swift ExpertProfileView.swift ExpertServiceView.swift && WS42_SHOTS=$PWD/shots ./render",
+      "result": "PASS",
+      "evidence": "14장 생성. 렌더된 PNG를 Vision OCR로 판독: profile-loading='프로필 / 불러오는 중입니다...', profile-empty='고수 프로필이 아직 없습니다. / 새로고침', profile-error='정보를 불러오지 못했습니다. (INTERNAL) / 다시 시도', profile-network='네트워크에 연결할 수 없습니다... / 다시 시도', profile-form-saved='소개·경력·활동지역 / 저장 / 저장했습니다. 서버에서 다시 읽어 확인했습니다.', profile-form-error='저장하지 못했습니다. (INVALID_REQUEST)', services-list='거실 도배 / 도배 · 850000원, 천장 도장 / 도장 · 가격 협의', service-form-negotiable='협의 유형은 가격을 입력하지 않습니다. / 저장하지 못했습니다. (INVALID_PRICE)', service-form-network='네트워크에 연결할 수 없습니다...'. 산출물: records/parallel-10/WS-42/shots/ios/*.png",
+      "limitation": "ImageRenderer는 UIKit 기반 TextField 내부 텍스트를 그리지 않으므로 입력 필드에 채워진 값 자체는 이미지로 확인되지 않았다(라벨·버튼·상태 문구·목록 행·가격 비활성 안내는 확인). 스크롤 컨테이너는 하네스 사본에서 같은 내용의 스택으로 치환해 렌더했다(제품 소스 불변)."
+    },
+    {
+      "check": "실 dev API — 인증 및 self-view 응답",
+      "command": "POST https://api-dev-kimgosu.mintech.ai/v1/auth/dev/login {\"slot\":11} → GET /v1/me/expert",
+      "result": "PASS",
+      "evidence": "로그인 200, accessToken 발급(값 비노출). GET /v1/me/expert 200 응답 필드: expertId/introduction/career/activityRegion/status/availability/createdAt/updatedAt/services[]. 같은 호출이 12:56 KST 최초 시도에서 404 ROUTE_NOT_FOUND였다가 13:03 KST에 200으로 바뀜(배포 진행 중으로 판단). 이후 200 유지, cache-control: no-store, cf-cache-status: DYNAMIC, cf-ray a550636f4ca198cc-NRT."
+    },
+    {
+      "check": "실 dev API — 프로필 수정 저장·재조회·원복",
+      "command": "PATCH /v1/expert/profile {\"introduction\":\"WS42-115614 프로필 저장 검증\"} → GET /v1/experts?limit=50 → PATCH 원복",
+      "result": "PASS",
+      "evidence": "PATCH 200(updatedAt 갱신), 공개 목록 재조회에서 introduction='WS42-115614 프로필 저장 검증' 확인, 원복 PATCH 200 후 재조회 'E2E 검증용 프로필'/career null/'경기도 양주시'로 원상 복구 확인. availability는 변경하지 않음(VACATION 유지)."
+    },
+    {
+      "check": "실 dev API — 서비스 생성 → 공개 목록 노출",
+      "command": "POST /v1/expert/services {category,title,description,priceType:FIXED,basePrice:12345} → GET /v1/experts?limit=50",
+      "result": "PASS",
+      "evidence": "201, id=a7bc0804-c134-4266-a032-279fc7956c86, visibility=VISIBLE, basePrice=12345. 공개 목록의 serviceCount 13→14 및 노출 서비스 목록에 'WS42-115614 테스트 서비스' 표시."
+    },
+    {
+      "check": "실 dev API — 노출 토글 HIDDEN → 공개 조회에서 제거",
+      "command": "PATCH /v1/expert/services/:id {\"visibility\":\"HIDDEN\"} → GET /v1/experts?limit=50 및 GET /v1/experts/:id",
+      "result": "PASS",
+      "evidence": "PATCH 200 visibility=HIDDEN. 공개 목록 serviceCount 14→13, 노출 서비스 목록에서 해당 제목 사라짐. 공개 상세 /v1/experts/6c5e6a8f... 는 VISIBLE만 반환하므로 HIDDEN 서비스 미포함, 새로 만든 NEGOTIABLE 서비스만 포함."
+    },
+    {
+      "check": "실 dev API — 가격 규칙(클라이언트 임의 보정 금지) 서버 판정",
+      "command": "POST /v1/expert/services 3종 (FIXED 무가격 / NEGOTIABLE+가격 / NEGOTIABLE 무가격)",
+      "result": "PASS",
+      "evidence": "FIXED basePrice 없음 → 400 {\"error\":{\"code\":\"INVALID_PRICE\"}}, NEGOTIABLE basePrice=1000 → 400 INVALID_PRICE, NEGOTIABLE basePrice=null → 201 basePrice=null. 앱은 이 세 경우 모두 요청을 그대로 보내고 응답 코드를 화면에 표시한다."
+    },
+    {
+      "check": "앱이 만드는 payload와 동일한 본문 수용 확인",
+      "command": "PATCH /v1/expert/services/:id (category,title,description,priceType,basePrice,imageKey:null 전체) / PATCH /v1/expert/profile (introduction,career:null,activityRegion)",
+      "result": "PASS",
+      "evidence": "둘 다 200. 서비스 PATCH 후 visibility는 HIDDEN 유지(토글 상태를 폼 저장이 덮어쓰지 않음), imageKey null 수용, 프로필 3필드 수용."
+    },
+    {
+      "check": "AOS 화면 런타임 표시(에뮬레이터 스크린샷)",
+      "command": "실행하지 않음",
+      "result": "NOT_RUN",
+      "evidence": "공용 에뮬레이터(emulator-5554)에서 다른 워커의 ai.mintech.kimgosu.dev가 포커스 상태로 실행 중이어서 같은 패키지 APK 설치가 그 작업의 검증을 깨뜨릴 수 있었다. 또한 이 WS는 내비게이션 진입점을 만들지 않는다(PLAN 진행 규칙: 홈→각 화면 연결은 WS-41 담당). AOS 상태 표시는 코드·빌드로만 확인했다."
+    },
+    {
+      "check": "양 앱 내비게이션 경유 실제 조작(프로필 저장/서비스 등록/토글 클릭)",
+      "command": "실행하지 않음",
+      "result": "NOT_RUN",
+      "evidence": "WS-41이 홈·내비게이션을 붙인 뒤에만 화면 진입이 가능하다. 이번 작업에서 앱 코드가 만드는 것과 동일한 요청 본문은 curl로 실제 dev API에 보내 수용·영속·재조회까지 확인했으나, 앱 UI 조작 자체의 실행 증거는 아니다."
+    },
+    {
+      "check": "GitHub–Railway–Cloudflare 배포 결합 검증(이 커밋 SHA의 새 배포)",
+      "command": "실행하지 않음",
+      "result": "NOT_RUN",
+      "evidence": "PLAN 공통 규칙 1에 따라 commit/push를 하지 않았다. 호출한 dev API는 기존 배포본이며 이 작업 트리의 SHA와 배포 ID를 연결하는 증거는 없다."
+    }
+  ],
+  "acceptance": [
+    {"criterion": "프로필 수정이 저장되고 재조회로 확인된다(양 앱)", "status": "PASS(API)/NOT_RUN(앱 UI 조작)", "evidence": "양 앱 모두 PATCH 후 expertSelf 재조회로 화면 갱신. 실 API에서 저장·재조회·원복 확인."},
+    {"criterion": "서비스 생성 → 목록에 나타난다(양 앱)", "status": "PASS(API)/NOT_RUN(앱 UI 조작)", "evidence": "양 앱 모두 저장 성공 시 폼을 닫고 목록을 재조회. 실 API에서 201 후 공개 목록 serviceCount 13→14 확인."},
+    {"criterion": "노출 토글이 서버에 반영되고 검색 결과에서 사라진다", "status": "PASS(서버/공개 조회)", "evidence": "HIDDEN PATCH 후 공개 목록·상세에서 제거 확인. 단 배포본의 /v1/experts?q= 필터는 모든 검색어에 빈 배열을 반환해(risks 참조) 검색어 질의 대신 공개 목록·상세로 확인했다."},
+    {"criterion": "NEGOTIABLE이면 가격 입력 비활성, 없이 저장하면 서버 400(클라이언트 보정 없음)", "status": "PASS(구현+서버)", "evidence": "양 앱에서 NEGOTIABLE 선택 시 가격 필드 disabled·입력 초기화, basePrice null 전송. 서버는 FIXED 무가격과 NEGOTIABLE+가격에 400 INVALID_PRICE. 렌더 스크린샷 service-form-negotiable.png에 안내·오류 표시 확인."},
+    {"criterion": "상태 4종 표시, 두 앱 빌드 성공", "status": "PASS(iOS 렌더+양 앱 빌드)/NOT_RUN(AOS 런타임)", "evidence": "iOS 4종 렌더 PNG 확인, AOS는 동일 4종 상태 구현·빌드 성공(런타임 미실행)."}
+  ],
+  "risks": [
+    "배포된 dev API의 공개 검색 /v1/experts?q=가 'E2E', 'WS42', '협의정상' 등 어떤 검색어에도 experts:[]를 반환했다(같은 시각 q 없이 호출하면 정상 목록). 이 WS 변경과 무관한 배포본 동작이며, 검색어 기반 검증을 쓸 수 없어 공개 목록·상세로 대체 확인했다. 후속 확인 필요.",
+    "테스트 계정 slot 11에 검증용 서비스 2건이 남아 있다(a7bc0804-c134-4266-a032-279fc7956c86 'WS42-115614 테스트 서비스', 7c4f8b9a-052e-449a-80b1-db5473f9bd7b 'WS42-115614 협의정상'). 삭제 API가 없어 둘 다 visibility=HIDDEN으로 마감했고 공개 목록에서는 제외됨(serviceCount 14→13).",
+    "AOS 화면은 상태 4종·토글·폼을 코드로만 검증했다. WS-41 내비게이션 통합 후 에뮬레이터에서 4종 스크린샷과 토글 실패 원복을 다시 확인해야 한다.",
+    "iOS 렌더 하네스는 TextField 내부 값을 그리지 못해 입력값 표시는 이미지로 확인되지 않았다. 실기기/시뮬레이터 UI 테스트로 보완 필요.",
+    "dev API의 GET /v1/me/expert가 최초 호출 시 404였다가 200으로 바뀌었다(배포 진행 중으로 추정). 앱은 이 경로가 없으면 오류 상태를 표시하므로, 배포 완료 전 빌드로 QA하면 오류 화면이 보일 수 있다."
+  ],
+  "nextActions": [
+    "WS-41이 홈→프로필/서비스 진입점을 연결한 뒤, AOS 에뮬레이터에서 상태 4종·프로필 저장·서비스 등록·노출 토글 실패 원복을 스크린샷으로 재검증.",
+    "부모: 이 트리 커밋/푸시 후 배포된 dev API로 양 앱 실제 거래 검증(이 WS는 원격 쓰기 금지로 미실행).",
+    "배포본 /v1/experts?q= 검색 필터 동작 확인(별도 백엔드 이슈)."
+  ],
+  "selfQa": "자체 검증이며 독립 QA가 아니다."
+}
