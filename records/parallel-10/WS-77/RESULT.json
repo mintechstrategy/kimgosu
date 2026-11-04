@@ -1,0 +1,167 @@
+{
+  "ws": "WS-77",
+  "task": "웨이브 10 통합·계약 정리 — ws/WS-72~75를 wave10/integration(WS-71 병합 상태) 위에 순서대로 병합하고 계약 테스트 라우트 목록을 합집합으로 정리, verify 전체 통과 + AOS/iOS 빌드",
+  "status": "DONE",
+  "worktree": "/Users/mintech-mac/hermes/dev-profile/shared/projects/wt-WS-77",
+  "branch": "ws/WS-77",
+  "baseCommit": "0eb20db (wave10/integration, = 5bd1dc9 + WS-71)",
+  "resultCommit": "f85b4cc1064e0352aa34b216df50dc60451a6dd1",
+  "summary": "작업트리는 5bd1dc9에서 시작했으므로 먼저 wave10/integration(0eb20db)으로 fast-forward한 뒤 ws/WS-72, WS-73, WS-74, WS-75를 순서대로 병합했다. 충돌은 2곳: 계약 테스트의 operation 개수(각 브랜치가 자기 기준값 33/32를 주장)와 services/backend/package.json의 test:integration 목록(admin-stats vs notifications). 개수는 추정하지 않고 병합 후 실제 contracts/*.v0.1.json의 operations 합계(ledger-quotes 15 + chat 3 + reviews 3 + admin 11 + registration 2 = 34)를 계산해 34로 확정했고, 나머지는 양쪽 항목을 모두 남기는 합집합으로 해소했다. npm run verify 전체 통과(api 28 / contract 68 / web 233, fail 0, web build 성공), AOS assembleDevDebug·iOS 시뮬레이터 빌드 모두 성공. push·새 의존성 추가 없음.",
+  "merges": [
+    {"order": 1, "branch": "wave10/integration", "sha": "0eb20db", "method": "fast-forward from 5bd1dc9", "conflict": false},
+    {"order": 2, "branch": "ws/WS-72", "sha": "9ce0c91", "mergeCommit": "bb84ce9", "conflict": true, "conflictFiles": ["tests/contract/ws27-contracts.test.ts"]},
+    {"order": 3, "branch": "ws/WS-73", "sha": "2fdcb3e", "mergeCommit": "db2cbbe", "conflict": false, "note": "ws27-contracts.test.ts 자동 병합(documentedGaps에 expert availability period 3개 라우트 추가)"},
+    {"order": 4, "branch": "ws/WS-74", "sha": "f92449d", "mergeCommit": "9d3e997", "conflict": false, "note": "iOS project.pbxproj 자동 병합(RemoteImageView.swift 등재 확인)"},
+    {"order": 5, "branch": "ws/WS-75", "sha": "3253cc1", "mergeCommit": "f85b4cc", "conflict": true, "conflictFiles": ["services/backend/package.json"]}
+  ],
+  "conflictResolution": [
+    {
+      "file": "tests/contract/ws27-contracts.test.ts",
+      "lines": "테스트 이름의 operation 개수, claimed.length 단언",
+      "head": "33 (5bd1dc9의 31 + WS-71이 추가한 ledger 취소 라우트 2개)",
+      "incoming": "32 (5bd1dc9의 31 + WS-72가 추가한 admin 라우트 1개)",
+      "resolution": "숫자를 협상하지 않고 병합 결과의 계약 파일에서 실제 합계를 계산: ledger-quotes 15 + chat 3 + reviews 3 + admin 11 + registration 2 = 34. 테스트 이름과 단언을 34로 갱신했다. 라우트 존재성 검사(hasRoute)·중복 검사·unclaimed 차집합 검사는 그대로 두었으므로 테스트는 약화되지 않았다(개수 상향 + 라우트 실등록 검증 유지).",
+      "verification": "verify:contract 68 tests / 68 pass / 0 fail"
+    },
+    {
+      "file": "tests/contract/ws27-contracts.test.ts",
+      "lines": "documentedGaps 배열 (자동 병합, 충돌 없음)",
+      "resolution": "WS-73의 GET/POST/DELETE /v1/me/expert/availability/periods 3개와 WS-75의 GET /v1/notifications, POST /v1/notifications/read-all 2개가 모두 남아 합집합 12개가 되었다. 삭제된 항목 없음.",
+      "verification": "unclaimed 라우트 차집합 단언 통과(68 tests 중 해당 테스트 pass)"
+    },
+    {
+      "file": "services/backend/package.json",
+      "lines": "scripts.test:integration",
+      "head": "... admin.integration.test.ts && admin-stats.integration.test.ts && phone-masked ... policy-v02",
+      "incoming": "... admin.integration.test.ts && phone-masked ... policy-v02 && notifications.integration.test.ts",
+      "resolution": "양쪽을 모두 포함: admin-stats.integration.test.ts를 유지하고 notifications.integration.test.ts를 끝에 추가했다. 어떤 스위트도 빠지지 않았다."
+    }
+  ],
+  "changedFiles": [
+    "tests/contract/ws27-contracts.test.ts (operation 개수 34, documentedGaps 합집합)",
+    "services/backend/package.json (test:integration 합집합)",
+    "그 외 42개 파일은 ws/WS-72~75 병합으로 들어온 변경(신규 추가·수정 그대로)"
+  ],
+  "diffStatVsBase": "44 files changed, 2942 insertions(+), 187 deletions(-)",
+  "acceptance": [
+    {
+      "criterion": "5개 브랜치가 모두 병합됨",
+      "status": "PASS",
+      "evidence": "git log wave10/integration..HEAD 에 ws/WS-72 9ce0c91, WS-73 2fdcb3e, WS-74 f92449d, WS-75 3253cc1 과 merge 커밋 4개(bb84ce9, db2cbbe, 9d3e997, f85b4cc)가 모두 존재. wave10/integration(0eb20db, WS-71 포함)은 fast-forward로 조상."
+    },
+    {
+      "criterion": "verify 통과(유닛·계약·웹)",
+      "status": "PASS",
+      "evidence": "npm run verify exit 0 — verify:api tests 28/pass 28/fail 0, verify:contract tests 68/pass 68/fail 0, verify:web typecheck + tests 233/pass 233/fail 0 + vite build 성공(✓ built in 1.07s)."
+    },
+    {
+      "criterion": "두 앱 빌드 성공",
+      "status": "PASS",
+      "evidence": "AOS: python3 apps/android/build.py :app:assembleDevDebug → BUILD SUCCESSFUL in 33s, APK 생성(15,444,827 bytes). iOS: npm run build:ios → ** BUILD SUCCEEDED ** (신규 NotificationsView.swift·RemoteImageView.swift 컴파일 로그 확인)."
+    },
+    {
+      "criterion": "충돌 해소 방식을 RESULT에 기록",
+      "status": "PASS",
+      "evidence": "conflictResolution 절 참조(계약 operation 개수 실측 34, package.json 합집합, documentedGaps 합집합)."
+    }
+  ],
+  "verification": [
+    {
+      "check": "전체 verify",
+      "command": "npm run verify",
+      "result": "PASS",
+      "evidence": "exit 0. verify:api(tsc --noEmit + node --test src/*.test.ts) 28/28, verify:contract 68/68, verify:web(vue-tsc + tests 233 + vite build) 전부 fail 0."
+    },
+    {
+      "check": "백엔드 타입체크",
+      "command": "cd services/backend && npm run check",
+      "result": "PASS",
+      "evidence": "tsc --noEmit 오류 0 (verify:api 내부에서 실행)"
+    },
+    {
+      "check": "계약 라우트 인벤토리",
+      "command": "node --test tests/contract/contract.test.ts tests/contract/oauth.test.ts tests/contract/ws27-contracts.test.ts tests/policy/metadata.test.ts",
+      "result": "PASS",
+      "evidence": "tests 68 / pass 68 / fail 0. 34개 operation 실등록 일치, unclaimed 라우트 차집합 = documentedGaps 일치."
+    },
+    {
+      "check": "웹 유닛 + 빌드",
+      "command": "cd apps/web && npm run typecheck && npm run test:unit && npm run build",
+      "result": "PASS",
+      "evidence": "tests 233 / pass 233 / fail 0, vite build ✓ built in 1.07s"
+    },
+    {
+      "check": "AOS 빌드",
+      "command": "JAVA_HOME=<.local-toolchains/jdk17/zulu17.68.203.../Contents/Home> ANDROID_HOME=<.local-toolchains/android-sdk> python3 apps/android/build.py :app:assembleDevDebug",
+      "result": "PASS",
+      "evidence": "BUILD SUCCESSFUL in 33s, 38 tasks executed. 산출물 apps/android/app/build/outputs/apk/dev/debug/app-dev-debug.apk, sha256 c24089cb9563e54e0783fb8730324ad2bc8b3eeb811bae64a3473c2525614959"
+    },
+    {
+      "check": "iOS 빌드",
+      "command": "npm run build:ios (xcodebuild -project Kimgosu.xcodeproj -scheme Kimgosu -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build)",
+      "result": "PASS",
+      "evidence": "** BUILD SUCCEEDED ** (exit 0). NotificationsView.swift·RemoteImageView.swift 각 10회 컴파일 로그 확인 = 양쪽 병합 파일이 실제 타깃에 포함됨. 경고 23건은 전부 기존 파일(KGAuthModels.swift:51 등)에서 발생한 것으로 이번 병합이 만든 것이 아니다."
+    },
+    {
+      "check": "통합(실제 DB) 스위트 npm run verify:db",
+      "command": "npm run verify:db",
+      "result": "NOT_RUN",
+      "evidence": "PLAN-WAVE11의 verify 수용 기준은 npm run verify(유닛·계약·웹)이며 DB 클러스터 기동은 이 카드 범위가 아니어서 실행하지 않았다. 신규 admin-stats·notifications 통합 테스트는 로컬 DB 없이 실행되지 않는다."
+    },
+    {
+      "check": "시뮬레이터/에뮬레이터 실행",
+      "command": "-",
+      "result": "NOT_RUN",
+      "evidence": "PLAN-WAVE11 공통 지시(07-24)로 실행 금지. 빌드까지만 수행했다."
+    },
+    {
+      "check": "dev API 실제 거래",
+      "command": "-",
+      "result": "NOT_RUN",
+      "evidence": "이번 병합 결과는 dev에 배포되지 않았다(push·배포 금지). 계약 정리 작업이라 신규 엔드포인트 호출도 없다."
+    }
+  ],
+  "rawOutput": [
+    "$ git merge --ff-only wave10/integration → Updating 5bd1dc9..0eb20db (Fast-forward)",
+    "$ git merge --no-ff ws/WS-72 → CONFLICT (content): Merge conflict in tests/contract/ws27-contracts.test.ts",
+    "$ git merge --no-ff ws/WS-73 → Merge made by the 'ort' strategy (자동 병합)",
+    "$ git merge --no-ff ws/WS-74 → Merge made by the 'ort' strategy (project.pbxproj·CustomerSearchView.swift 자동 병합)",
+    "$ git merge --no-ff ws/WS-75 → CONFLICT (content): Merge conflict in services/backend/package.json",
+    "",
+    "충돌 해소 후 계약 개수 실측:",
+    "ledger-quotes:15 chat:3 reviews:3 admin:11 registration:2 total 34",
+    "",
+    "$ npm run verify",
+    "ℹ tests 28   ℹ pass 28   ℹ fail 0        (verify:api)",
+    "ℹ tests 68   ℹ pass 68   ℹ fail 0        (verify:contract)",
+    "ℹ tests 233  ℹ pass 233  ℹ fail 0        (verify:web)",
+    "✓ built in 1.07s",
+    "EXIT=0",
+    "",
+    "$ python3 apps/android/build.py :app:assembleDevDebug",
+    "BUILD SUCCESSFUL in 33s",
+    "38 actionable tasks: 38 executed",
+    "EXIT=0",
+    "",
+    "$ npm run build:ios",
+    "** BUILD SUCCEEDED **",
+    "EXIT=0"
+  ],
+  "notCovered": [
+    "npm run verify:db(실제 PostgreSQL 통합 스위트)는 실행하지 않았다 — 이 카드의 verify 기준은 npm run verify(유닛·계약·웹)다. ws/WS-72(admin-stats)·ws/WS-75(notifications)의 통합 테스트는 그래서 이번 통합에서 실행 증거가 없다.",
+    "시뮬레이터·에뮬레이터 실행 금지로 앱 화면 렌더·동작은 확인하지 않았다. 빌드 성공까지만이다.",
+    "dev API 실측 없음(push·배포 금지).",
+    "wave10/integration 브랜치 ref 자체는 옮기지 않았다(다른 워크트리 kimgosu-ci가 체크아웃 중). 통합 결과는 ws/WS-77 브랜치에 있다.",
+    "dev 브랜치의 최신 2개 커밋(494f3d9, 9e236b9 디자인 토큰)은 이번 통합 기준(wave10/integration)에 포함되지 않았다."
+  ],
+  "risks": [
+    "ws/WS-75의 RESULT.json이 경고한 대로, 다른 레인 작업트리에 같은 이름 kg_membership.notifications 테이블을 다른 스키마(recipient_member_id/026_notifications.sql)로 정의한 사본이 있다. 이번 병합은 ws/WS-75의 021(member_id) 정의만 가져왔으므로, 그 레인들이 나중에 병합되면 마이그레이션 번호·테이블 정의 충돌을 조정해야 한다. CREATE TABLE IF NOT EXISTS라 조용히 지나갈 수 있다.",
+    "계약 미등재 라우트 12개(experts 도메인, apple callback, availability periods 3개, notifications 2개)가 documentedGaps에 남아 있다. 후속 계약 개정 카드에서 계약 JSON에 등재해야 한다.",
+    "iOS 빌드 경고 23건은 기존 파일에서 발생한 것으로 병합으로 늘지 않았지만, Xcode 27 기준 KGAuthModels.swift:51 등의 경고는 별도 정리 대상이다."
+  ],
+  "notes": [
+    "push 없음, 새 의존성 추가 없음, 소스 기능 변경 없음. 통합을 위해 만든 커밋은 병합 커밋 4개와 fast-forward 1회뿐이다(기능 커밋 없음). '커밋 금지' 지시와 관련해: 브랜치 병합은 병합 커밋 생성이 불가피하므로 병합 커밋만 만들었고, 어떤 브랜치도 push하지 않았다.",
+    "검증은 node v26.7.0(PATH 기본)으로 돌았고, apps/android는 빌드 스크립트가 요구하는 JDK17(zulu17.68.203)·SDK 35를 .local-toolchains에서 지정해 사용했다. build.py는 jdk17 디렉터리에 JDK가 2개 있어 자동 선택에 실패하므로 JAVA_HOME을 명시해야 한다(기존 동작, 이번에 스크립트는 수정하지 않았다).",
+    "git status 깨끗함(미커밋 변경 없음)."
+  ]
+}
