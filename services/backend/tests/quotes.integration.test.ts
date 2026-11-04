@@ -310,3 +310,27 @@ test('every transition is present in audit_log', async () => {
   }
   assert.ok(rows.every(r => r.target_id), 'each audit row must point at a quote');
 });
+
+test('an expert lists the quotes they received across every ledger', async () => {
+  const mine = await app.inject({
+    method: 'GET', url: '/v1/me/quotes', headers: auth(EXPERT.token),
+  });
+  assert.equal(mine.statusCode, 200);
+  const quotes = mine.json().quotes;
+  assert.ok(Array.isArray(quotes) && quotes.length > 0, 'expert inbox must not be empty');
+  assert.ok(quotes.every(q => q.expertMemberId === EXPERT.id), 'only own quotes');
+  assert.ok(quotes[0].customerNickname, 'the inbox needs the customer name');
+  assert.ok(typeof quotes[0].version === 'number' && quotes[0].version > 0);
+
+  const newestFirst = quotes.every((q, i) => i === 0 || new Date(quotes[i - 1].createdAt) >= new Date(q.createdAt));
+  assert.ok(newestFirst, 'newest first');
+
+  const filtered = await app.inject({
+    method: 'GET', url: '/v1/me/quotes?status=PROPOSED', headers: auth(EXPERT.token),
+  });
+  assert.equal(filtered.statusCode, 200);
+  assert.ok(filtered.json().quotes.every(q => q.status === 'PROPOSED'));
+
+  const anonymous = await app.inject({ method: 'GET', url: '/v1/me/quotes' });
+  assert.equal(anonymous.statusCode, 401);
+});

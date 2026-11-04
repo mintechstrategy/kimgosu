@@ -182,6 +182,29 @@ export function registerQuoteRoutes(app: FastifyInstance, db: Sql, authenticate:
     });
 
   // List a ledger's quotes. Participants only, newest first, bounded page.
+  // An expert's inbox. The ledger-scoped list cannot answer "what came in
+  // today", which is what the expert home screen needs.
+  app.get<{ Querystring: { status?: string; limit?: string } }>('/v1/me/quotes', {
+    schema: { querystring: { type: 'object', additionalProperties: false, required: [],
+      properties: { status: { type: 'string', enum: ['PROPOSED', 'ACCEPTED', 'REJECTED', 'COMPLETED'] },
+        limit: { type: 'string', pattern: '^[0-9]{1,3}$' } } } },
+  }, async (request, reply) => {
+    const auth = await requireMember(request, reply); if (!auth) return;
+    const limit = Math.min(Number(request.query.limit ?? 50), 100);
+    const rows = (await db.query(
+      `SELECT ${quoteColumns}, m.nickname AS "customerNickname", l.display_name AS "ledgerName"
+         FROM kg_membership.quotes q
+         JOIN kg_membership.members m ON m.id = q.customer_member_id
+         JOIN kg_membership.ledgers l ON l.id = q.ledger_id
+        WHERE q.expert_member_id = $1
+          AND ($2::text IS NULL OR q.status = $2)
+        ORDER BY q.created_at DESC
+        LIMIT $3`,
+      [auth.memberId, request.query.status ?? null, limit],
+    )).rows;
+    return { quotes: rows };
+  });
+
   app.get<{ Params: { id: string }; Querystring: { limit?: number } }>('/v1/ledgers/:id/quotes', {
     schema: {
       params: { type: 'object', required: ['id'], additionalProperties: false, properties: { id: idSchema } },
