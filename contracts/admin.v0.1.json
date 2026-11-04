@@ -18,6 +18,67 @@
   ],
   "operations": [
     {
+      "id": "adminStats",
+      "method": "GET",
+      "path": "/v1/admin/stats",
+      "authentication": "admin",
+      "source": "services/backend/src/admin.ts",
+      "querySchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "from": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" },
+          "to": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" }
+        }
+      },
+      "responses": {
+        "200": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["from", "to", "totals", "daily"],
+          "properties": {
+            "from": { "type": "string" },
+            "to": { "type": "string" },
+            "totals": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["trades", "completed", "completionRate", "reports", "newMembers"],
+              "properties": {
+                "trades": { "type": "integer", "minimum": 0 },
+                "completed": { "type": "integer", "minimum": 0 },
+                "completionRate": { "type": "number", "minimum": 0, "maximum": 100 },
+                "reports": { "type": "integer", "minimum": 0 },
+                "newMembers": { "type": "integer", "minimum": 0 }
+              }
+            },
+            "daily": {
+              "type": "array",
+              "maxItems": 7,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["date", "trades", "completed", "reports", "newMembers"],
+                "properties": {
+                  "date": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" },
+                  "trades": { "type": "integer", "minimum": 0 },
+                  "completed": { "type": "integer", "minimum": 0 },
+                  "reports": { "type": "integer", "minimum": 0 },
+                  "newMembers": { "type": "integer", "minimum": 0 }
+                }
+              }
+            }
+          }
+        }
+      },
+      "notes": "Dashboard aggregates for one operator console. `from`/`to` are calendar dates (YYYY-MM-DD); the day boundary is Asia/Seoul (+09:00) and `to` is inclusive. Omitted dates default to the last 7 days ending today (KST). One trade is one agreement: `trades` counts agreements requested inside the period and `completed` those of them that are COMPLETED, so `completionRate` is a percentage (one decimal) of the same cohort. `reports` counts kg_membership.reports (WS-61) and `newMembers` counts members created in the period. `daily` covers the last (at most) 7 days of the period and is the only trend source — the client plots these numbers and never recomputes them.",
+      "errors": [
+        { "status": 400, "code": "INVALID_REQUEST", "when": "from/to not matching YYYY-MM-DD, an impossible date, from later than to, or an unknown query property" },
+        { "status": 401, "code": "AUTH_REQUIRED", "when": "missing or malformed Authorization header" },
+        { "status": 403, "code": "ADMIN_SESSION_REQUIRED", "when": "the bearer token is a member session, not an admin session" },
+        { "status": 403, "code": "ADMIN_REQUIRED", "when": "the session owner has no live ADMIN role grant" }
+      ]
+    },
+    {
       "id": "adminSessionCreate",
       "method": "POST",
       "path": "/v1/admin/session",

@@ -248,3 +248,28 @@ test('WS23 the session probe validates the operator envelope', async () => {
   broken.api.setAdminSession(TOKEN);
   await assert.rejects(() => broken.api.session(), (e: unknown) => e instanceof AdminApiError && e.code === 'INVALID_RESPONSE');
 });
+
+// ── WS-72: dashboard aggregates ──────────────────────────────────────────────
+
+const STATS = {
+  from: '2026-10-29', to: '2026-11-04',
+  totals: { trades: 8, completed: 5, completionRate: 62.5, reports: 2, newMembers: 3 },
+  daily: [{ date: '2026-11-04', trades: 2, completed: 1, reports: 0, newMembers: 1 }],
+};
+
+test('WS72 the dashboard sends the picked period and keeps the server numbers', async () => {
+  const { api, calls } = client(() => respond(200, STATS));
+  api.setAdminSession(TOKEN);
+  const stats = await api.stats({ from: '2026-10-29', to: '2026-11-04' });
+  assert.equal(calls[0]!.url, 'http://127.0.0.1:55433/v1/admin/stats?from=2026-10-29&to=2026-11-04');
+  assert.equal(stats.totals.trades, 8);
+  assert.equal(stats.totals.completionRate, 62.5, 'the rate is the server value, not 5/8 recomputed here');
+  assert.equal(stats.daily[0]!.newMembers, 1);
+
+  await api.stats();
+  assert.equal(calls[1]!.url, 'http://127.0.0.1:55433/v1/admin/stats', 'an empty period leaves the server default window');
+
+  const broken = client(() => respond(200, { ...STATS, totals: { ...STATS.totals, completionRate: 140 } }));
+  broken.api.setAdminSession(TOKEN);
+  await assert.rejects(() => broken.api.stats(), (e: unknown) => e instanceof AdminApiError && e.code === 'INVALID_RESPONSE');
+});

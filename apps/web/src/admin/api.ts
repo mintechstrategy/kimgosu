@@ -13,7 +13,7 @@
 import {
   adminMember, adminMemberRelease, adminMemberRestrict, adminMembers,
   adminReviewHide, adminReviewList, adminReviewUnhide,
-  adminSessionCreate, adminSessionGet, adminSessionLogout,
+  adminSessionCreate, adminSessionGet, adminSessionLogout, adminStats,
   type AdminMemberRestrictRequest, type ApiCall, type HttpMethod,
 } from '../api/generated.ts';
 
@@ -42,6 +42,10 @@ export interface ReviewPage { reviews: ReviewRow[]; total: number }
 export interface MemberDetail { member: AdminMemberDetailRow; restrictions: RestrictionRow[]; consents: ConsentRow[]; ledgers: LedgerRow[]; roles: RoleRow[] }
 export interface AdminOperator { memberId: string; nickname: string; customerNumber: string }
 export interface AdminSessionInfo { operator: AdminOperator; expiresAt: string }
+/** One day of the dashboard trend, exactly as the server aggregated it. */
+export interface StatsDay { date: string; trades: number; completed: number; reports: number; newMembers: number }
+export interface StatsTotals { trades: number; completed: number; completionRate: number; reports: number; newMembers: number }
+export interface Stats { from: string; to: string; totals: StatsTotals; daily: StatsDay[] }
 
 export class AdminApiError extends Error {
   readonly status: number;
@@ -165,6 +169,13 @@ export function createAdminApi(baseUrl: string, transport: typeof fetch = fetch,
     if (rating < 1 || rating > 5) return invalid();
     return { id: str(d.id), authorNickname: str(d.authorNickname), rating, body: nullable(d.body), createdAt: str(d.createdAt), hiddenAt: nullable(d.hiddenAt), hiddenReason: nullable(d.hiddenReason) };
   };
+  /** completionRate is a server-computed percentage; a client-side division would be a second source of truth. */
+  const percentage = (value: unknown): number =>
+    typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 100 ? value : invalid();
+  const readStatsDay = (value: unknown): StatsDay => {
+    const d = obj(value);
+    return { date: str(d.date), trades: count(d.trades), completed: count(d.completed), reports: count(d.reports), newMembers: count(d.newMembers) };
+  };
 
   return {
     hasSession: () => adminToken !== undefined,
@@ -232,6 +243,21 @@ export function createAdminApi(baseUrl: string, transport: typeof fetch = fetch,
     async unhideReview(id: string, reason: string): Promise<void> {
       const d = obj(await adminReviewUnhide(callAuthed, { id }, { reason }));
       if (d.hidden !== false) return invalid();
+    },
+    /** Dashboard aggregates: dates are passed through only when the operator picked them. */
+    async stats(params: { from?: string; to?: string } = {}): Promise<Stats> {
+      const d = obj(await adminStats(callAuthed, { from: params.from, to: params.to }));
+      const totalsRow = obj(d.totals);
+      return {
+        from: str(d.from),
+        to: str(d.to),
+        totals: {
+          trades: count(totalsRow.trades), completed: count(totalsRow.completed),
+          completionRate: percentage(totalsRow.completionRate),
+          reports: count(totalsRow.reports), newMembers: count(totalsRow.newMembers),
+        },
+        daily: list(d.daily).map(v => readStatsDay(v)),
+      };
     },
   };
 }
