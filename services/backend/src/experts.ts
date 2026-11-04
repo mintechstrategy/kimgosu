@@ -36,7 +36,7 @@ const serviceSelect = `s.id, s.category, s.title, s.description, s.price_type AS
 
 // 이미지 자체는 R2에 있고 DB에는 키만 둔다. 공개 도메인이 바뀌어도 마이그레이션이 필요 없다.
 const publicImageUrl = (key: unknown) =>
-  typeof key === 'string' && key ? `${process.env.KG_R2_PUBLIC_BASE ?? ''}/${key}` : null;
+  typeof key === 'string' && key ? `${(process.env.R2_PUBLIC_BASE_URL ?? process.env.KG_R2_PUBLIC_BASE ?? '').replace(/\/+$/, '')}/${key}` : null;
 const withImageUrl = <T extends { imageKey?: unknown }>(row: T) => ({ ...row, imageUrl: publicImageUrl(row.imageKey) });
 
 const encodeCursor = (at: unknown, expertId: unknown) =>
