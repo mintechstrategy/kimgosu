@@ -1,0 +1,148 @@
+{
+  "ws": "WS-60",
+  "status": "DONE",
+  "summary": "관리자 콘솔을 실제로 쓸 수 있는 상태로 마무리했다. WS-56 작업(리뷰 목록 API·화면)이 ws/WS-60에 병합되어 있지 않아 그 diff를 작업트리에 적용한 뒤, (1) 임시로그인 슬롯 상한 20→30으로 고쳐 ADMIN 슬롯 21 로그인이 막히던 버그를 없애고, (2) 403(ADMIN_REQUIRED/ADMIN_SESSION_REQUIRED)을 세션 종료가 아닌 '권한이 없습니다' 전용 상태로 분리해 4상태(로딩·빈·오류·권한없음)를 갖췄다. 로컬 PostgreSQL + 실제 Chrome으로 슬롯21 로그인→회원 목록/상세→리뷰 목록→사유 없는 숨김 400→숨김→공개 API에서 사라짐→숨김해제→권한 박탈 시 권한없음 패널까지 10단계를 실측했고, API 레벨 23개 검증도 전부 통과했다. 웹 typecheck·unit 232·build, 계약 68, 백엔드 28, 리뷰 통합 21·admin 6·admin-session 8 통과. iOS 빌드 성공, Android는 이 머신에 JDK가 없어 BLOCKED.",
+  "changedFiles": [
+    "apps/web/src/admin/login.ts — devLogin 슬롯 상한 20→30. 마이그레이션 017이 슬롯을 30까지 늘렸고 21이 ADMIN인데 클라이언트가 20에서 막아 관리자 로그인이 INVALID_REQUEST로 실패하던 실제 버그",
+    "apps/web/src/admin/AdminApp.vue — WS-56 리뷰 탭/다이얼로그 위에 콘솔 공통 403 상태 추가: isForbidden/denyAccess, forbidden 패널('권한이 없습니다' + 로그인 화면으로), 401/세션만료만 endSession 유지. 리뷰·회원·상세·제한·숨김 모든 catch에 동일 적용",
+    "apps/web/src/admin/api.ts — WS-56: ReviewRow/ReviewPage, reviews()/hideReview()/unhideReview(), REVIEW_* 에러코드",
+    "apps/web/src/api/generated.ts — WS-56 재생성본(adminReviewList 포함 31 operations). 계약에 이미 있던 quoteInbox도 함께 생성됨(생성기 드리프트 교정)",
+    "apps/web/tests/unit/admin-api.test.ts — WS-56: 목록 URL/7키 파싱/별점 범위, hide·unhide body 무가공, 빈 사유 400 전파, 403 통과",
+    "apps/web/tests/unit/admin-login.test.ts — 슬롯 21 허용·31 거부 단언 추가",
+    "contracts/admin.v0.1.json — WS-56: adminReviewList operation + AdminReview 정의",
+    "services/backend/src/admin.ts — WS-56: GET /v1/admin/reviews (requireAdmin, limit/offset, 숨김 행 포함 최신순)",
+    "services/backend/tests/reviews.integration.test.ts — WS-56: 익명 401/멤버 403/관리자 200 + 7키 검증",
+    "tests/contract/ws27-contracts.test.ts — WS-56: operation 수 30→31",
+    "records/parallel-10/WS-60/RESULT.json",
+    "records/parallel-10/WS-60/api-verify.json",
+    "records/parallel-10/WS-60/ui-smoke.json"
+  ],
+  "acceptanceCriteria": [
+    {
+      "criterion": "관리자 세션으로 리뷰 목록 API가 200, 일반 세션으로는 403",
+      "status": "PASS",
+      "evidence": "실 PostgreSQL + buildApp: GET /v1/admin/reviews 무토큰 401 AUTH_REQUIRED, 슬롯2(USER) 멤버 세션 403 ADMIN_SESSION_REQUIRED, 슬롯21 ADMIN 세션 교환 후 200(2건, 숨김행 포함). records/parallel-10/WS-60/api-verify.json"
+    },
+    {
+      "criterion": "숨김 처리 후 공개 목록에서 사라진다(API로 실측)",
+      "status": "PASS",
+      "evidence": "POST /v1/admin/reviews/:id/hide(사유 '정책 위반') 200 → GET /v1/experts/:id/reviews 에서 해당 리뷰 없음, pagination.total 1 감소. 관리자 목록에는 hiddenAt/hiddenReason='정책 위반'으로 남음. 실제 Chrome에서도 숨김 후 같은 공개 API를 조회해 부재 확인(ui-smoke step 7)."
+    },
+    {
+      "criterion": "사유 없이 숨김 → 400이 화면에 표시되고 성공처럼 보이지 않는다",
+      "status": "PASS",
+      "evidence": "빈 사유·1자 사유·본문 없음 모두 400 INVALID_REQUEST(API). Chrome: 사유 비우고 확인 → 다이얼로그 유지, '서버가 400 INVALID_REQUEST로 거부했습니다...' 표시, 행은 계속 '공개', 성공 안내 없음(ws60-3-hide-400.png). 숨김해제도 동일."
+    },
+    {
+      "criterion": "빌드·유닛·타입체크 통과",
+      "status": "PASS",
+      "evidence": "apps/web: typecheck exit 0, test:unit 232/232, build(vue-tsc+vite) 성공(admin 번들 39.51 kB)."
+    }
+  ],
+  "verification": [
+    {
+      "check": "웹 타입체크",
+      "command": "cd apps/web && npm run typecheck",
+      "result": "PASS",
+      "evidence": "vue-tsc --noEmit 출력 없음, exit 0."
+    },
+    {
+      "check": "웹 유닛 테스트",
+      "command": "cd apps/web && npm run test:unit",
+      "result": "PASS",
+      "evidence": "tests 232 / pass 232 / fail 0. admin-api(WS-56 리뷰 클라이언트) + admin-login(슬롯 21 허용, 0·31 거부) 포함."
+    },
+    {
+      "check": "웹 빌드",
+      "command": "cd apps/web && npm run build",
+      "result": "PASS",
+      "evidence": "vue-tsc + vite build 성공, '✓ built in 540ms'. dist는 gitignore."
+    },
+    {
+      "check": "계약 테스트",
+      "command": "node --test tests/contract/contract.test.ts tests/contract/oauth.test.ts tests/contract/ws27-contracts.test.ts tests/policy/metadata.test.ts",
+      "result": "PASS",
+      "evidence": "tests 68 / pass 68 / fail 0. 31 operations 인벤토리 = 실제 등록 라우트."
+    },
+    {
+      "check": "백엔드 타입체크",
+      "command": "cd services/backend && npx tsc --noEmit",
+      "result": "PASS",
+      "evidence": "출력 없음, exit 0."
+    },
+    {
+      "check": "백엔드 유닛 테스트",
+      "command": "cd services/backend && npm test",
+      "result": "PASS",
+      "evidence": "tests 28 / pass 28 / fail 0."
+    },
+    {
+      "check": "리뷰 통합 테스트 (실제 PostgreSQL)",
+      "command": "KG_TEST_DATABASE_URL=postgres://postgres@127.0.0.1:55432/kgtest_ws60 node --test tests/reviews.integration.test.ts",
+      "result": "PASS",
+      "evidence": "tests 21 / pass 21 / fail 0. kgtest 템플릿으로 만든 전용 DB(kgtest_ws60)에서 실행해 병렬 레인과 충돌하지 않게 했다."
+    },
+    {
+      "check": "관리자 통합 회귀",
+      "command": "KG_TEST_DATABASE_URL=...kgtest_ws60 node --test tests/admin.integration.test.ts / tests/admin-session.integration.test.ts",
+      "result": "PASS",
+      "evidence": "admin 6/6, admin-session 8/8. 회원 목록·상세·제재와 세션 교환에 회귀 없음."
+    },
+    {
+      "check": "관리자 콘솔 API 레벨 실측 (23개 호출)",
+      "command": "scratch/ws60-api-verify.mjs → buildApp + kgtest_ws60 (포트 4610)",
+      "result": "PASS",
+      "evidence": "23/23: 슬롯21 로그인→세션교환 201→프로브 200, 리뷰목록 401/403/200, 회원목록 200·멤버세션 403, 회원상세 200, 공개목록 사전 포함→숨김 사유 3종 400→숨김 200→공개목록 제외·total-1→재숨김 409→해제 400→해제 200→공개목록 복귀, 감사로그 REVIEW_HIDDEN/UNHIDDEN(운영자·사유) 일치, offset 초과 빈 목록. 원문 records/parallel-10/WS-60/api-verify.json"
+    },
+    {
+      "check": "브라우저 UI 실측 (Chrome headless, 실제 백엔드)",
+      "command": "dist를 VITE_API_BASE_URL=http://127.0.0.1:4610로 빌드 → vite preview 127.0.0.1:4178 → Playwright channel=chrome",
+      "result": "PASS",
+      "evidence": "10/10, pageerror 0: 슬롯21 계정 표시→로그인→회원 20행→상세/목록으로→빈 검색→리뷰 로딩·오류(500)→다시 조회 2행→사유없는 숨김 400→숨김(사유 표시, 공개 API 제외)→해제 400→해제 성공→ADMIN grant 회수 후 '권한이 없습니다' 패널→로그인 화면 복귀. 원문 records/parallel-10/WS-60/ui-smoke.json, 스크린샷은 scratch(ws60-1..5.png)."
+    },
+    {
+      "check": "iOS 빌드",
+      "command": "cd apps/ios && xcodebuild -project Kimgosu.xcodeproj -scheme Kimgosu -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build",
+      "result": "PASS",
+      "evidence": "** BUILD SUCCEEDED **. 컴파일만 수행했고 시뮬레이터는 기동하지 않았다."
+    },
+    {
+      "check": "Android 빌드",
+      "command": "cd apps/android && ./gradlew :app:assembleDevDebug --offline",
+      "result": "BLOCKED",
+      "evidence": "'Unable to locate a Java Runtime' — 이 머신에 JDK가 없고(Android Studio JBR·/Library/Java·~/.gradle/jdks 모두 없음) 새 의존성/툴 설치가 금지되어 실행 불가. 앱 소스는 이번 카드에서 변경하지 않았다."
+    },
+    {
+      "check": "dev 배포본/실데이터 검증",
+      "command": "-",
+      "result": "NOT_RUN",
+      "evidence": "커밋·push·배포 금지. dev API에는 이번 라우트/화면이 아직 배포되지 않았다(WS-56 확인: GET /v1/admin/reviews 404 ROUTE_NOT_FOUND). 병합·배포 후 재확인이 필요하다."
+    },
+    {
+      "check": "시뮬레이터/에뮬레이터 실행",
+      "command": "-",
+      "result": "NOT_RUN (시뮬레이터 정책)",
+      "evidence": "07-24 정책에 따라 iOS 시뮬레이터·Android 에뮬레이터를 기동하지 않았다. 빌드까지만 검증."
+    }
+  ],
+  "contractChanges": [
+    "contracts/admin.v0.1.json: adminReviewList(GET /v1/admin/reviews) + AdminReview 정의 (WS-56분, 이 작업트리에 처음 반영)"
+  ],
+  "migrations": [],
+  "open": [
+    "WS-56은 PARTIAL로 끝나 ws/WS-56(6c73f89)에만 있고 ws/WS-60 베이스(9eb3bc6)에는 없었다. 카드가 'WS-56이 만든 것을 마무리'하라고 했으므로 그 diff를 커밋 없이 작업트리에 적용했다. 오케스트레이터는 병합 시 WS-56과 WS-60의 중복 반영 여부를 확인해야 한다.",
+    "생성 클라이언트를 재생성하면서 계약에 이미 있던 /v1/me/quotes(quoteInbox)가 함께 들어왔다. 기존 generated.ts가 계약보다 뒤처져 있던 드리프트이며 손편집은 없다.",
+    "dev 실데이터 수용 기준(로그인→실데이터 리뷰 목록, 실제 dev 공개 목록 반영)은 배포 후에만 확인 가능하다.",
+    "Android 빌드는 이 머신의 JDK 부재로 BLOCKED다. 카드 자체는 웹 항목이라 앱 소스 변경은 없으며(PLAN-WAVE7C 공통규칙 2 '웹 항목은 웹만'), iOS는 빌드로만 확인했다."
+  ],
+  "risks": [
+    "포함된 WS-56 변경은 별도 브랜치의 미병합 작업이라, 병합 순서에 따라 충돌이 날 수 있다(특히 admin.ts·AdminApp.vue·admin.v0.1.json·ws27-contracts.test.ts).",
+    "'권한없음' 상태는 브라우저 스모크에서 role_grants 회수로 재현했다. 운영 중 권한 회수 시나리오 자체의 서버 동작은 기존 requireAdminScope 그대로이며 이번에 바꾸지 않았다.",
+    "API 실측은 kgtest 템플릿에서 복제한 kgtest_ws60에서 했고, 통합 테스트가 그 DB를 TRUNCATE하므로 결과물의 픽스처 ID는 재현 시 달라진다."
+  ],
+  "next": [
+    "오케스트레이터: 병합 전 wt-WS-60에서 apps/web typecheck/test:unit/build, 계약 68, 리뷰·admin·admin-session 통합 재실행.",
+    "병합·배포 후 dev에서 슬롯21 로그인→리뷰 숨김→공개 목록 반영을 실데이터로 재확인.",
+    "JDK가 있는 환경에서 :app:assembleDevDebug 1회 실행(모바일 소스 변경은 없음)."
+  ]
+}
