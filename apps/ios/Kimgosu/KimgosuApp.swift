@@ -112,6 +112,12 @@ final class OfflineProtocol: URLProtocol {
 @main struct KimgosuApp: App {
     @StateObject private var model = LaunchModel()
     @StateObject private var auth = KGAuthModel()
+    @State private var expertHomeOpen = KGExpertHomeDebug.openOnLaunch
+    @State private var quotesPendingNotice = false
+    private var expertNickname: String {
+        if case .loaded(let member) = auth.state.member { return member.nickname }
+        return ""
+    }
     var body: some Scene {
         WindowGroup {
             Group {
@@ -133,18 +139,30 @@ final class OfflineProtocol: URLProtocol {
                             await model.prepare()
                         }
                 } else if let home = model.home {
-                    KGAuthHost(model: auth) {
-                        HomeView(home: home, apiStatus: model.verifyAPI ? model.apiStatus : nil,
-                            member: auth.state.member,
-                            onProtected: { auth.enter(KGReturnTarget(targetId: $0)) },
-                            onPolicy: { auth.handle(KGAuthEvent(action: .OPEN_DOCUMENT, key: $0)) },
-                            onLogin: { auth.enter(KGReturnTarget()) },
-                            onRetryMember: { auth.retryMember() })
+                    if expertHomeOpen {
+                        ExpertHomeView(nickname: expertNickname,
+                                       onBack: { expertHomeOpen = false },
+                                       onOpenQuotes: { quotesPendingNotice = true })
+                            .onAppear { model.record("expert-home-appeared") }
+                    } else {
+                        KGAuthHost(model: auth) {
+                            HomeView(home: home, apiStatus: model.verifyAPI ? model.apiStatus : nil,
+                                member: auth.state.member,
+                                onProtected: { auth.enter(KGReturnTarget(targetId: $0)) },
+                                onPolicy: { auth.handle(KGAuthEvent(action: .OPEN_DOCUMENT, key: $0)) },
+                                onLogin: { auth.enter(KGReturnTarget()) },
+                                onRetryMember: { auth.retryMember() },
+                                onExpertHome: { expertHomeOpen = true })
+                        }
+                            .onAppear { model.record("main-appeared") }
                     }
-                        .onAppear { model.record("main-appeared") }
                 }
             }.frame(maxWidth: .infinity, maxHeight: .infinity).background(Color.white)
                 .preferredColorScheme(.light).tint(DesignTokens.navy)
+                // 받은 견적 화면은 WS-43 몫이라 이 후보에는 없다. 탭이 죽은 채로 남지 않게 안내만 한다.
+                .alert("받은 견적", isPresented: $quotesPendingNotice) {
+                    Button("확인", role: .cancel) { }
+                } message: { Text("받은 견적 화면은 다음 통합에서 연결됩니다.") }
         }
     }
 }
@@ -165,6 +183,7 @@ struct HomeView: View {
     let onPolicy: (String) -> Void
     let onLogin: () -> Void
     let onRetryMember: () -> Void
+    let onExpertHome: () -> Void
     @State private var notice: String?
     @State private var popular = 0
     var body: some View {
@@ -281,6 +300,10 @@ struct HomeView: View {
                 copy("고객번호 " + member.customerNumber, size: 12, color: DesignTokens.muted).accessibilityIdentifier("main-member-customer-number")
                 copy(member.email, size: 12, color: DesignTokens.muted).accessibilityIdentifier("main-member-email")
                 if member.expertActive { copy("고수 활동 중", size: 12, color: DesignTokens.muted).accessibilityIdentifier("main-member-expert") }
+                if member.expertActive {
+                    Button("고수 홈") { onExpertHome() }.frame(minHeight: 44)
+                        .accessibilityIdentifier("open-expert-home")
+                }
             }.padding(14).frame(maxWidth: .infinity, alignment: .leading)
                 .overlay(RoundedRectangle(cornerRadius: 6).stroke(DesignTokens.border))
         case .failed(let failure):

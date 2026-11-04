@@ -28,6 +28,11 @@
 		C00000000000000000000005 = {isa = PBXBuildFile; fileRef = C10000000000000000000005; };
 D00000000000000000000001 = {isa = PBXBuildFile; fileRef = D10000000000000000000001; };
 D00000000000000000000002 = {isa = PBXBuildFile; fileRef = D10000000000000000000002; };
+		F00000000000000000000001 = {isa = PBXBuildFile; fileRef = F10000000000000000000001; };
+		F00000000000000000000002 = {isa = PBXBuildFile; fileRef = F10000000000000000000002; };
+		F00000000000000000000003 = {isa = PBXBuildFile; fileRef = F10000000000000000000003; };
+		F00000000000000000000004 = {isa = PBXBuildFile; fileRef = F10000000000000000000004; };
+		F00000000000000000000005 = {isa = PBXBuildFile; fileRef = F10000000000000000000005; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -60,6 +65,11 @@ D00000000000000000000002 = {isa = PBXBuildFile; fileRef = D100000000000000000000
 		C10000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/CoreRepairChecks.swift; sourceTree = "<group>"; };
 D10000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/PolicySnapshotChecks.swift; sourceTree = "<group>"; };
 D10000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = folder; path = "../../records/engineering/auth-v03-app-01/test-inputs"; sourceTree = "<group>"; };
+		F10000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Kimgosu/ExpertProfileView.swift; sourceTree = "<group>"; };
+		F10000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Kimgosu/ExpertServiceView.swift; sourceTree = "<group>"; };
+		F10000000000000000000003 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Kimgosu/ExpertHomeView.swift; sourceTree = "<group>"; };
+		F10000000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KimgosuUITests/WS41ExpertHomeTests.swift; sourceTree = "<group>"; };
+		F10000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Kimgosu/ExpertQuotesView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -98,6 +108,11 @@ D10000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = folder; 
 				A00000000000000000000035 /* KimgosuUITests/WS17MainDataTests.swift */,
 				A00000000000000000000036 /* KimgosuUITests/WS17DebugDump.swift */,
 				C10000000000000000000005,
+				F10000000000000000000001,
+				F10000000000000000000002,
+				F10000000000000000000003,
+				F10000000000000000000004,
+				F10000000000000000000005,
 				A00000000000000000000004 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -216,6 +231,10 @@ D10000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = folder; 
 				B00000000000000000000005,
 				B00000000000000000000006,
 				E00000000000000000000001,
+				F00000000000000000000001,
+				F00000000000000000000002,
+				F00000000000000000000003,
+				F00000000000000000000005,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -232,6 +251,7 @@ D10000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = folder; 
 				C00000000000000000000004,
 				C00000000000000000000005,
                 D00000000000000000000001,
+				F00000000000000000000004,
 
 			);
 			runOnlyForDeploymentPostprocessing = 0;

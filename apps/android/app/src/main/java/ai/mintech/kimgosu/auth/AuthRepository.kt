@@ -140,6 +140,15 @@ class AuthRepository(val transport: AuthTransport = MembershipHttp()) {
         return request(AuthRequestContext.PRIVATE, "POST", "/v1/auth/signup", body = body)
     }
     suspend fun logout(token: String) = request(AuthRequestContext.PRIVATE, "POST", "/v1/auth/logout", token)
+    // Expert self-view and owner writes. The server re-reads the expert flag and
+    // rejects invalid price combinations; the client never corrects a payload.
+    suspend fun expertSelf(token: String) = request(AuthRequestContext.PRIVATE, "GET", "/v1/me/expert", token)
+    suspend fun patchExpertProfile(token: String, fields: JSONObject) =
+        request(AuthRequestContext.PRIVATE, "PATCH", "/v1/expert/profile", token, fields)
+    suspend fun createExpertService(token: String, body: JSONObject) =
+        request(AuthRequestContext.PRIVATE, "POST", "/v1/expert/services", token, body)
+    suspend fun patchExpertService(token: String, id: String, body: JSONObject) =
+        request(AuthRequestContext.PRIVATE, "PATCH", "/v1/expert/services/" + java.net.URLEncoder.encode(id, "UTF-8"), token, body)
     // Temporary tester login (dev deployment only). The server issues the session;
     // nothing about these calls creates a local-only identity.
     suspend fun devAccounts() = request(AuthRequestContext.PUBLIC, "GET", "/v1/auth/dev/accounts")

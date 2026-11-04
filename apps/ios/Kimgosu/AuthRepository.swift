@@ -198,6 +198,19 @@ struct KGAuthRepository {
         return try await request(.private, "POST", "/v1/auth/signup", body: body)
     }
     func logout(_ token: String) async throws -> [String: Any] { try await request(.private, "POST", "/v1/auth/logout", token: token) }
+    // Expert self-view and owner writes. The server re-reads the expert flag and
+    // rejects invalid price combinations; the client never corrects a payload.
+    func expertSelf(_ token: String) async throws -> [String: Any] { try await request(.private, "GET", "/v1/me/expert", token: token) }
+    func patchExpertProfile(_ token: String, fields: [String: Any]) async throws -> [String: Any] {
+        try await request(.private, "PATCH", "/v1/expert/profile", token: token, body: fields)
+    }
+    func createExpertService(_ token: String, body: [String: Any]) async throws -> [String: Any] {
+        try await request(.private, "POST", "/v1/expert/services", token: token, body: body)
+    }
+    func patchExpertService(_ token: String, id: String, body: [String: Any]) async throws -> [String: Any] {
+        let encoded = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id
+        return try await request(.private, "PATCH", "/v1/expert/services/" + encoded, token: token, body: body)
+    }
     /// 개발 환경 전용 임시 로그인. 운영 빌드에서는 호출하지 않는다(KGEnvironment.isProduction 가드).
     /// 응답은 실제 서버가 발급한 세션이며 클라이언트가 토큰을 만들지 않는다.
     func devAccounts() async throws -> [String: Any] { try await request(.public, "GET", "/v1/auth/dev/accounts") }
