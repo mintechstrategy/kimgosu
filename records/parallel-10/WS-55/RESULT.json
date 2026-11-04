@@ -1,0 +1,182 @@
+{
+  "ws": "WS-55",
+  "task": "7단계 E2E 스크립트 — 실제 dev API에서 고객 거래 흐름 실행",
+  "status": "DONE_WITH_BLOCKED",
+  "worktree": "/Users/mintech-mac/hermes/dev-profile/shared/projects/wt-WS-55",
+  "baseCommit": "9eb3bc6",
+  "summary": "services/backend/scripts/e2e-customer-flow.mjs를 신규 작성해 dev API에서 7단계를 실제 실행했다. 고수(slot 11) 로그인 → R2 presign/PUT/공개 URL → 서비스 등록 → 일반(slot 1) 로그인 → 검색·원장·견적 220,000원·수락 → 텍스트 채팅 → 양측 완료 확인(COMPLETED) → 후기 작성·공개 후기 목록 노출까지 검사 18건 중 PASS 15, FAIL 0. 채팅 사진(WS-51)과 서비스 다중 이미지(WS-54)는 dev에 미배포라 HTTP 400 INVALID_REQUEST로 확인되어 BLOCKED 3건으로 남기고 성공으로 세지 않았다(exit 2).",
+  "changedFiles": [
+    "services/backend/scripts/e2e-customer-flow.mjs",
+    "records/parallel-10/WS-55/RESULT.json"
+  ],
+  "implementation": {
+    "file": "services/backend/scripts/e2e-customer-flow.mjs (신규 1개, 의존성 0 — node 내장 fetch만 사용)",
+    "cli": "node scripts/e2e-customer-flow.mjs [--base-url https://api-dev-kimgosu.mintech.ai]",
+    "steps": [
+      "1. slot 11 로그인 (expertActive=true 확인)",
+      "2. 1x1 PNG 3장 presign(service/*) → R2 PUT 200 → 공개 URL 200 → 고수 프로필(409면 PATCH) → 서비스 등록. imageKeys 3장을 먼저 보내고 400이면 imageKey 1장으로 재등록하며 그 검사만 BLOCKED",
+      "3. slot 1 로그인 (expertActive=false 확인)",
+      "4. GET /v1/experts 검색 노출 → GET /v1/experts/:id 상세 → POST /v1/ledgers(기존 원장이면 200 created=false) → 견적(부가세 별도 totalAmount=220000) → respond accept",
+      "5. 텍스트 메시지 POST 201 → 상대 토큰으로 조회해 동일 id/body 확인. 이어 POST /v1/uploads kind=chat 시도, 201이면 PUT 후 imageKey 메시지 전송·imageUrl 조회까지 검증, 400이면 BLOCKED",
+      "6. 고수 complete(ACCEPTED 유지) → 고객 complete(COMPLETED) — 한쪽만으로 완료되지 않는지 확인",
+      "7. 후기 POST(201, 재실행 409 REVIEW_EXISTS면 /v1/me/reviews에서 기존 id 회수) → GET /v1/experts/:id/reviews에 동일 id 노출·email/authorId 미노출 확인"
+    ],
+    "exitCodes": "0 = 7단계 전부 PASS / 2 = FAIL 없음, BLOCKED 존재(성공 아님) / 1 = 기대 불일치 또는 예외(실패 단계·기대·실제 출력)",
+    "output": "단계마다 기대값/실제 응답을 출력하고 마지막에 serviceId·ledgerId·quoteId·messageId·reviewId·imageKey를 출력"
+  },
+  "verification": [
+    {
+      "check": "스크립트 문법",
+      "command": "node --check scripts/e2e-customer-flow.mjs",
+      "result": "PASS",
+      "evidence": "syntax OK"
+    },
+    {
+      "check": "dev API 7단계 실제 실행",
+      "command": "node scripts/e2e-customer-flow.mjs",
+      "result": "PASS_WITH_BLOCKED",
+      "evidence": "검사 18건: PASS 15, BLOCKED 3, FAIL 0. exit 2. 전문은 rawOutput 참조."
+    },
+    {
+      "check": "실패 경로(잘못된 base URL)",
+      "command": "node scripts/e2e-customer-flow.mjs --base-url https://api-dev-kimgosu.mintech.ai/nope",
+      "result": "PASS",
+      "evidence": "exit 1, \"실패 단계: 1. 고수 로그인 / 기대: 고수 로그인 → HTTP 200 / 실제: ... HTTP 404 ROUTE_NOT_FOUND\" 출력 확인"
+    },
+    {
+      "check": "tsc (services/backend)",
+      "command": "tsc --noEmit",
+      "result": "NOT_RUN",
+      "evidence": "worktree에 node_modules가 없어 tsc 미설치. 또한 신규 파일은 .mjs이고 tsconfig include는 src/**/*.ts, scripts/**/*.ts라 대상이 아니다."
+    },
+    {
+      "check": "백엔드 유닛·통합 테스트",
+      "command": "npm test / npm run test:integration",
+      "result": "NOT_RUN",
+      "evidence": "WS-55는 서버 코드를 변경하지 않았고(스크립트 1개 추가) 로컬 DB·의존성 설치가 필요해 실행하지 않았다."
+    }
+  ],
+  "blocked": [
+    {
+      "lane": "서비스 다중 이미지(WS-54)",
+      "step": 2,
+      "actual": "POST /v1/expert/services + imageKeys: [...] → HTTP 400 INVALID_REQUEST (additionalProperties=false). 단일 imageKey로 재등록해 2단계 나머지는 통과.",
+      "unblock": "WS-54 배포 후 재실행하면 자동으로 PASS 판정"
+    },
+    {
+      "lane": "고수 상세 다중 이미지(WS-54)",
+      "step": 4,
+      "actual": "GET /v1/experts/:id 의 services[]에 images 필드 없음",
+      "unblock": "WS-54 배포 후 재실행"
+    },
+    {
+      "lane": "채팅 사진(WS-51)",
+      "step": 5,
+      "actual": "POST /v1/uploads {kind:'chat'} → HTTP 400 INVALID_REQUEST (kind enum이 service|avatar뿐). 텍스트 메시지 단계는 PASS.",
+      "unblock": "WS-51 배포 후 재실행하면 uploads kind=chat → imageKey 메시지 → imageUrl 조회까지 검증"
+    }
+  ],
+  "notCovered": [
+    "모바일(AOS/iOS): WS-55 범위가 백엔드 E2E 스크립트뿐이라 앱 코드 변경·검증이 없다. 이 시나리오의 화면 구현은 WS-52(AOS)·WS-53(iOS) 소관.",
+    "GET /v1/experts/:id 응답에는 reviews 필드가 없다(후기 목록은 GET /v1/experts/:id/reviews). 스크립트는 후자로 노출을 확인했다."
+  ],
+  "createdData": {
+    "expertMemberId": "6c5e6a8f-7cdf-4522-8fe2-8fe0dc1c4eb0",
+    "customerMemberId": "96e5388e-298c-4895-ae4c-a17158e7c9b8",
+    "serviceId": "bca8a120-12ac-4754-bc53-f982543d4a49",
+    "ledgerId": "c6240e9a-6bd6-425e-97e8-0368d9ed4231",
+    "quoteId": "8e8021cc-09fa-4be6-ad8a-7efe2c6c2fed",
+    "messageId": "d6f7fb69-704e-4148-b0c3-8e43c52c3239",
+    "reviewId": "29d4a2b7-af76-48a2-9999-c589cf7a2ab0"
+  },
+  "rawOutput": [
+    "7단계 고객 거래 E2E — https://api-dev-kimgosu.mintech.ai",
+    "",
+    "[1] 1. 고수 로그인",
+    "  PASS  slot 11 로그인",
+    "        기대: HTTP 200, expertActive=true",
+    "        실제: HTTP 200, 테스트11 expertActive=true",
+    "",
+    "[2] 2. 서비스 등록 + 이미지 업로드",
+    "  PASS  R2 presign → PUT → 키",
+    "        기대: HTTP 201 presign, PUT 200, key service/<memberId>/…",
+    "        실제: PUT 200, key=service/6c5e6a8f-7cdf-4522-8fe2-8fe0dc1c4eb0/84c92fc8-a96b-4c5b-88a7-1650936f02ae.png",
+    "  PASS  공개 URL 조회",
+    "        기대: HTTP 200",
+    "        실제: HTTP 200 https://media-dev-kimgosu.mintech.ai/service/6c5e6a8f-7cdf-4522-8fe2-8fe0dc1c4eb0/84c92fc8-a96b-4c5b-88a7-1650936f02ae.png",
+    "  PASS  고수 프로필",
+    "        기대: 기존 프로필 유지(409 후 PATCH 200)",
+    "        실제: HTTP 409 EXPERT_PROFILE_EXISTS → PATCH 200",
+    "  BLOCKED  서비스 다중 이미지 3장(WS-54)",
+    "        기대: HTTP 201, images 3장",
+    "        실제: HTTP 400 {\"error\":{\"code\":\"INVALID_REQUEST\"}} — imageKeys 미배포, 대표 이미지 1장으로 계속",
+    "  PASS  서비스 저장 + 대표 이미지",
+    "        기대: imageKey/imageUrl = 첫 번째 키",
+    "        실제: imageKey=service/6c5e6a8f-7cdf-4522-8fe2-8fe0dc1c4eb0/84c92fc8-a96b-4c5b-88a7-1650936f02ae.png",
+    "",
+    "[3] 3. 일반 사용자 로그인",
+    "  PASS  slot 1 로그인",
+    "        기대: HTTP 200, expertActive=false",
+    "        실제: HTTP 200, 테스트01 expertActive=false",
+    "",
+    "[4] 4. 검색 → 원장 → 견적 → 수락",
+    "  PASS  고수 검색 노출",
+    "        기대: expertId=6c5e6a8f-7cdf-4522-8fe2-8fe0dc1c4eb0 포함",
+    "        실제: expertId=6c5e6a8f-7cdf-4522-8fe2-8fe0dc1c4eb0, services=5",
+    "  BLOCKED  고수 상세 다중 이미지(WS-54)",
+    "        기대: images 3장, url 포함",
+    "        실제: WS-54 미배포 — imageKey/imageUrl 1장만",
+    "  PASS  원장 생성",
+    "        기대: HTTP 200/201 + id",
+    "        실제: HTTP 200, created=false, id=c6240e9a-6bd6-425e-97e8-0368d9ed4231",
+    "  PASS  견적 제시",
+    "        기대: HTTP 201, totalAmount=220000, version=1",
+    "        실제: HTTP 201, totalAmount=220000, version=1",
+    "  PASS  견적 수락",
+    "        기대: HTTP 200, status=ACCEPTED, agreementId",
+    "        실제: HTTP 200, status=ACCEPTED, version=2",
+    "",
+    "[5] 5. 채팅 메시지 + 사진",
+    "  PASS  텍스트 메시지",
+    "        기대: HTTP 201 → 상대 조회에서 동일 id/body",
+    "        실제: HTTP 201, total=11",
+    "  BLOCKED  채팅 사진(WS-51)",
+    "        기대: POST /v1/uploads kind=chat → 201 chat/<memberId>/…",
+    "        실제: HTTP 400 {\"error\":{\"code\":\"INVALID_REQUEST\"}}",
+    "",
+    "[6] 6. 양측 완료 확인",
+    "  PASS  고수 완료 확인",
+    "        기대: HTTP 200, status=ACCEPTED",
+    "        실제: HTTP 200, status=ACCEPTED, version=3",
+    "  PASS  고객 완료 확인",
+    "        기대: HTTP 200, status=COMPLETED",
+    "        실제: HTTP 200, status=COMPLETED, completedAt=2026-11-04T07:53:31.342Z",
+    "",
+    "[7] 7. 후기 작성 + 노출",
+    "  PASS  후기 작성",
+    "        기대: HTTP 201 또는 409 REVIEW_EXISTS(재실행)",
+    "        실제: HTTP 409 REVIEW_EXISTS, 기존 id=29d4a2b7-af76-48a2-9999-c589cf7a2ab0",
+    "  PASS  고수 후기 목록 노출",
+    "        기대: GET /v1/experts/:id/reviews에 동일 review id",
+    "        실제: HTTP 200, id=29d4a2b7-af76-48a2-9999-c589cf7a2ab0, rating=5, count=4",
+    "        참고: GET /v1/experts/:id 응답에는 reviews 필드가 없다(후기 목록은 /reviews 라우트).",
+    "",
+    "단계별 결과 (18개 검사): PASS 15, BLOCKED 3, FAIL 0",
+    "  BLOCKED  2단계 서비스 다중 이미지 3장(WS-54): HTTP 400 {\"error\":{\"code\":\"INVALID_REQUEST\"}} — imageKeys 미배포, 대표 이미지 1장으로 계속",
+    "  BLOCKED  4단계 고수 상세 다중 이미지(WS-54): WS-54 미배포 — imageKey/imageUrl 1장만",
+    "  BLOCKED  5단계 채팅 사진(WS-51): HTTP 400 {\"error\":{\"code\":\"INVALID_REQUEST\"}}",
+    "",
+    "생성 데이터 (dev DB/R2에 이력으로 남는다):",
+    "  expertMemberId 6c5e6a8f-7cdf-4522-8fe2-8fe0dc1c4eb0",
+    "  customerMemberId 96e5388e-298c-4895-ae4c-a17158e7c9b8",
+    "  serviceId bca8a120-12ac-4754-bc53-f982543d4a49",
+    "  ledgerId  c6240e9a-6bd6-425e-97e8-0368d9ed4231",
+    "  quoteId   8e8021cc-09fa-4be6-ad8a-7efe2c6c2fed",
+    "  messageId d6f7fb69-704e-4148-b0c3-8e43c52c3239",
+    "  reviewId  29d4a2b7-af76-48a2-9999-c589cf7a2ab0",
+    "  imageKeys (채팅 이미지 없음)",
+    "",
+    "BLOCKED 단계가 있어 7단계 전체 통과는 아니다.",
+    ""
+  ]
+}
