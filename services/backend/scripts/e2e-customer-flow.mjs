@@ -68,13 +68,15 @@ function expectStatus(r, status, label) {
 
 async function uploadImage(token, kind) {
   const presign = await call('POST', '/v1/uploads', { token, body: { contentType: 'image/png', kind } });
-  if (presign.status !== 201) return { presign };
+  // 호출부는 { presign: { status, body } } 를 기대한다. 성공 시 body만 돌려주면
+  // 상태 비교가 항상 어긋나 정상 동작도 BLOCKED로 기록된다.
+  if (presign.status !== 201) return { presign: presign.body, presignStatus: presign.status };
   const put = await fetch(presign.body.uploadUrl, {
     method: 'PUT',
     headers: presign.body.headers ?? { 'Content-Type': presign.body.contentType },
     body: PNG,
   });
-  return { presign: presign.body, putStatus: put.status };
+  return { presign: presign.body, presignStatus: presign.status, putStatus: put.status };
 }
 
 async function main() {
@@ -221,8 +223,8 @@ async function main() {
   pass(5, '텍스트 메시지', 'HTTP 201 → 상대 조회에서 동일 id/body', `HTTP 201, total=${messages.total}`);
 
   const chatUpload = await uploadImage(customerToken, 'chat');
-  if (chatUpload.presign?.status === 201 && String(chatUpload.presign.body?.key ?? '').startsWith(`chat/${customerId}/`)) {
-    const key = chatUpload.presign.body.key;
+  if (chatUpload.presignStatus === 201 && String(chatUpload.presign?.key ?? '').startsWith(`chat/${customerId}/`)) {
+    const key = chatUpload.presign.key;
     ids.chatImageKey = key;
     const withImage = await call('POST', `/v1/ledgers/${ids.ledgerId}/messages`, {
       token: customerToken, body: { body: 'E2E 채팅 사진', imageKey: key },
@@ -237,7 +239,7 @@ async function main() {
     }
   } else {
     blocked(5, '채팅 사진(WS-51)', 'POST /v1/uploads kind=chat → 201 chat/<memberId>/…',
-      `HTTP ${chatUpload.presign?.status ?? '?'} ${JSON.stringify(chatUpload.presign?.body ?? {}).slice(0, 300)}`);
+      `HTTP ${chatUpload.presignStatus ?? '?'} ${JSON.stringify(chatUpload.presign ?? {}).slice(0, 300)}`);
   }
 
   // ── 6. 양측 완료 확인 → COMPLETED ────────────────────────────────────────
