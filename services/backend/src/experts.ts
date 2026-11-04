@@ -213,7 +213,7 @@ export function registerExpertRoutes(app: FastifyInstance, db: Sql, authenticate
       `SELECT ${serviceSelect} FROM ${SCHEMA}.expert_services s
         WHERE s.expert_member_id=$1 ORDER BY s.created_at DESC`, [auth.memberId],
     )).rows;
-    return { ...profile, services };
+    return { ...profile, services: services.map(withImageUrl) };
   });
 
   // 수신 중 / 일시중지 / 휴가. Operator visibility (status) is a different axis

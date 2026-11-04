@@ -326,6 +326,7 @@ test('an expert reads their own profile, availability and services', async () =>
   assert.equal(me.json().availability, 'AVAILABLE');
   assert.ok(Array.isArray(me.json().services) && me.json().services.length > 0);
 
+
   const notExpert = await app.inject({ method: 'GET', url: '/v1/me/expert', headers: auth(customer.token) });
   assert.equal(notExpert.statusCode, 403);
   assert.equal(notExpert.json().error.code, 'EXPERT_ROLE_REQUIRED');
@@ -373,4 +374,9 @@ test('a service image is stored as a key and returned with a public URL', async 
     `SELECT image_key FROM kg_membership.expert_services WHERE id=$1`, [created.json().id],
   )).rows[0];
   assert.equal(stored.image_key, 'services/abc.jpg');
+
+  // 목록 항목도 상세와 같은 URL을 줘야 앱이 두 경로를 다르게 다루지 않는다.
+  const listed = await app.inject({ method: 'GET', url: '/v1/me/expert', headers: auth(expertA.token) });
+  const fromList = listed.json().services.find((s: { id: string }) => s.id === created.json().id);
+  assert.equal(fromList.imageUrl, created.json().imageUrl);
 });
