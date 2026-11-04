@@ -60,7 +60,8 @@
         { "status": 403, "code": "REVIEW_NOT_ELIGIBLE", "when": "no COMPLETED agreement exists for this ledger and pair" },
         { "status": 403, "code": "REVIEW_WINDOW_CLOSED", "when": "the latest COMPLETED agreement completed more than 30 days ago" },
         { "status": 404, "code": "LEDGER_NOT_FOUND", "when": "ledger does not exist" },
-        { "status": 409, "code": "REVIEW_EXISTS", "when": "the caller already reviewed this ledger" }
+        { "status": 409, "code": "REVIEW_EXISTS", "when": "the caller already reviewed this ledger" },
+        { "status": 409, "code": "LEDGER_CANCELLED", "when": "the ledger was cancelled (WS-71): a cancelled trade never accepts a review" }
       ]
     },
     {

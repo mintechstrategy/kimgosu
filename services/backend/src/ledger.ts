@@ -10,6 +10,9 @@ const body = (properties: Record<string, unknown>, required = Object.keys(proper
 const string = (minLength: number, maxLength: number) => ({ type: 'string', minLength, maxLength });
 const idSchema = { type: 'string', format: 'uuid' };
 
+/** 거래 취소 사유. 서버가 허용 목록을 소유하고 앱은 이 코드만 고른다. */
+const CANCEL_REASON_CODES = ['SCHEDULE', 'PRICE', 'SCOPE_CHANGED', 'OTHER'] as const;
+
 /**
  * Review eligibility: a review may only be written for a pair that has a
  * COMPLETED bilateral agreement recorded in their shared ledger.
@@ -215,4 +218,86 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Sql, authenticate
       });
     });
   }
+
+  // ── 거래 취소 (WS-71) ──────────────────────────────────────────────────────
+  // 취소는 두 당사자의 합의로만 성립한다. 호출자가 요청자가 아니면 같은
+  // 엔드포인트가 곧 "수락"이 되며, 어느 쪽인지는 서버가 현재 상태로 판정한다.
+  // 클라이언트는 상태를 보내지 않고 사유 코드만 고른다.
+  const cancelParams = { type: 'object', required: ['id'], additionalProperties: false, properties: { id: idSchema } };
+  // $2 = 호출자 member id. requestedByMe는 표시용 파생값이다.
+  const cancelProjection = `status, (cancel_requested_by = $2) AS "requestedByMe",
+      cancel_requested_at AS "requestedAt", cancel_reason_code AS "reasonCode",
+      cancel_reason_detail AS "detail", cancelled_at AS "cancelledAt"`;
+  // 비당사자에게는 원장의 존재 자체를 알리지 않는다(채팅·메모와 같은 규칙).
+  const participant = `(expert_member_id = $2 OR customer_member_id = $2)`;
+
+  app.get<{ Params: { id: string } }>('/v1/ledgers/:id/cancel', {
+    schema: { params: cancelParams },
+  }, async (request, reply) => {
+    const auth = await requireMember(request, reply); if (!auth) return;
+    const row = (await db.query(
+      `SELECT ${cancelProjection} FROM kg_membership.ledgers WHERE id=$1 AND ${participant}`,
+      [request.params.id, auth.memberId],
+    )).rows[0];
+    if (!row) return fail(reply, 404, 'LEDGER_NOT_FOUND');
+    return row;
+  });
+
+  app.post<{ Params: { id: string }; Body: { reasonCode?: string; detail?: string } }>('/v1/ledgers/:id/cancel', {
+    schema: {
+      params: cancelParams,
+      // reasonCode는 요청을 만들 때만 필요하다(수락 호출은 사유를 다시 보내지 않는다).
+      body: {
+        type: 'object', additionalProperties: false,
+        properties: { reasonCode: { type: 'string', enum: [...CANCEL_REASON_CODES] }, detail: string(1, 500) },
+      },
+    },
+  }, async (request, reply) => {
+    const auth = await requireMember(request, reply); if (!auth) return;
+    return db.transaction(async sql => {
+      const current = (await sql.query(
+        `SELECT ${cancelProjection} FROM kg_membership.ledgers WHERE id=$1 AND ${participant} FOR UPDATE`,
+        [request.params.id, auth.memberId],
+      )).rows[0];
+      if (!current) throw new ApiError(404, 'LEDGER_NOT_FOUND');
+
+      if (current.status === 'CANCELLED') throw new ApiError(409, 'ALREADY_CANCELLED');
+
+      if (current.status === 'CANCEL_REQUESTED') {
+        if (current.requestedByMe === true) throw new ApiError(409, 'CANCEL_ALREADY_REQUESTED');
+        const cancelled = (await sql.query(
+          `UPDATE kg_membership.ledgers
+              SET status='CANCELLED', cancelled_at=now(), updated_at=now()
+            WHERE id=$1 AND status='CANCEL_REQUESTED'
+            RETURNING ${cancelProjection}`,
+          [request.params.id, auth.memberId],
+        )).rows[0];
+        if (!cancelled) throw new ApiError(409, 'INVALID_TRANSITION');
+        await audit(sql, auth.memberId, 'LEDGER_CANCELLED', 'ledger', String(request.params.id),
+          String(current.reasonCode), { accepted: true });
+        return cancelled;
+      }
+
+      // 완료된 거래는 취소할 수 없다. 완료 판정은 agreements가 유일한 근거다.
+      const completed = (await sql.query(
+        `SELECT 1 FROM kg_membership.agreements WHERE ledger_id=$1 AND status='COMPLETED' LIMIT 1`,
+        [request.params.id],
+      )).rows[0];
+      if (completed) throw new ApiError(409, 'LEDGER_COMPLETED');
+      if (!request.body.reasonCode) throw new ApiError(400, 'REASON_REQUIRED');
+
+      const requested = (await sql.query(
+        `UPDATE kg_membership.ledgers
+            SET status='CANCEL_REQUESTED', cancel_requested_by=$2, cancel_requested_at=now(),
+                cancel_reason_code=$3, cancel_reason_detail=$4, updated_at=now()
+          WHERE id=$1 AND status='ACTIVE'
+          RETURNING ${cancelProjection}`,
+        [request.params.id, auth.memberId, request.body.reasonCode, request.body.detail ?? null],
+      )).rows[0];
+      if (!requested) throw new ApiError(409, 'INVALID_TRANSITION');
+      await audit(sql, auth.memberId, 'LEDGER_CANCEL_REQUESTED', 'ledger', String(request.params.id),
+        request.body.reasonCode, { detail: request.body.detail ?? null });
+      return requested;
+    });
+  });
 }

@@ -671,6 +671,156 @@
       ]
     },
     {
+      "id": "ledgerCancelGet",
+      "method": "GET",
+      "path": "/v1/ledgers/:id/cancel",
+      "authentication": "session-active",
+      "source": "services/backend/src/ledger.ts",
+      "paramsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "$ref": "#/definitions/CancelState"
+        }
+      },
+      "errors": [
+        {
+          "status": 400,
+          "code": "INVALID_REQUEST",
+          "when": ":id is not a uuid"
+        },
+        {
+          "status": 401,
+          "code": "AUTH_REQUIRED",
+          "when": "missing or malformed Authorization header"
+        },
+        {
+          "status": 401,
+          "code": "SESSION_INVALID",
+          "when": "no live session"
+        },
+        {
+          "status": 403,
+          "code": "ACCOUNT_RESTRICTED",
+          "when": "member has an active restriction"
+        },
+        {
+          "status": 404,
+          "code": "LEDGER_NOT_FOUND",
+          "when": "ledger does not exist or the caller is not a participant"
+        }
+      ]
+    },
+    {
+      "id": "ledgerCancel",
+      "method": "POST",
+      "path": "/v1/ledgers/:id/cancel",
+      "authentication": "session-active",
+      "source": "services/backend/src/ledger.ts",
+      "paramsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "requestSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "reasonCode": {
+            "type": "string",
+            "enum": [
+              "SCHEDULE",
+              "PRICE",
+              "SCOPE_CHANGED",
+              "OTHER"
+            ]
+          },
+          "detail": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "$ref": "#/definitions/CancelState"
+        }
+      },
+      "behavior": "Two-party consent. The first call from an ACTIVE ledger creates CANCEL_REQUESTED with the caller's reasonCode; the counterpart's call cancels the ledger (CANCELLED). The server picks the branch from the stored state, so a client never sends a status. A COMPLETED agreement makes the ledger non-cancellable (409 LEDGER_COMPLETED).",
+      "errors": [
+        {
+          "status": 400,
+          "code": "INVALID_REQUEST",
+          "when": ":id is not a uuid or the body has unknown properties"
+        },
+        {
+          "status": 400,
+          "code": "REASON_REQUIRED",
+          "when": "reasonCode is missing while creating a cancel request"
+        },
+        {
+          "status": 401,
+          "code": "AUTH_REQUIRED",
+          "when": "missing or malformed Authorization header"
+        },
+        {
+          "status": 401,
+          "code": "SESSION_INVALID",
+          "when": "no live session"
+        },
+        {
+          "status": 403,
+          "code": "ACCOUNT_RESTRICTED",
+          "when": "member has an active restriction"
+        },
+        {
+          "status": 404,
+          "code": "LEDGER_NOT_FOUND",
+          "when": "ledger does not exist or the caller is not a participant"
+        },
+        {
+          "status": 409,
+          "code": "LEDGER_COMPLETED",
+          "when": "the ledger already has a COMPLETED agreement"
+        },
+        {
+          "status": 409,
+          "code": "CANCEL_ALREADY_REQUESTED",
+          "when": "the caller already requested the cancellation"
+        },
+        {
+          "status": 409,
+          "code": "ALREADY_CANCELLED",
+          "when": "the ledger is already CANCELLED"
+        },
+        {
+          "status": 409,
+          "code": "INVALID_TRANSITION",
+          "when": "the row changed between read and update"
+        }
+      ]
+    },
+    {
       "id": "quotePropose",
       "method": "POST",
       "path": "/v1/ledgers/:id/quotes",
@@ -1145,6 +1295,52 @@
         "COMPLETED",
         "CANCELLED"
       ]
+    },
+    "CancelState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "requestedByMe",
+        "requestedAt",
+        "reasonCode",
+        "detail",
+        "cancelledAt"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "ACTIVE",
+            "CANCEL_REQUESTED",
+            "CANCELLED"
+          ]
+        },
+        "requestedByMe": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "requestedAt": {
+          "$ref": "#/definitions/NullableTimestamp"
+        },
+        "reasonCode": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "detail": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "cancelledAt": {
+          "$ref": "#/definitions/NullableTimestamp"
+        }
+      }
     },
     "LedgerSummary": {
       "type": "object",

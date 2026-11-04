@@ -22,11 +22,44 @@ struct KGCustomerQuote: Identifiable, Equatable {
     let createdAt: String
 }
 
+/// WS-71 거래 취소 상태. 서버가 유일한 근거이며 화면은 그대로 표시만 한다.
+struct KGCustomerCancellation: Equatable {
+    let status: String
+    let requestedByMe: Bool?
+    let reasonCode: String?
+    let detail: String?
+    let requestedAt: String?
+    let cancelledAt: String?
+
+    static func decode(_ json: [String: Any]) -> KGCustomerCancellation {
+        KGCustomerCancellation(
+            status: json["status"] as? String ?? "ACTIVE",
+            requestedByMe: json["requestedByMe"] as? Bool,
+            reasonCode: json["reasonCode"] as? String,
+            detail: json["detail"] as? String,
+            requestedAt: json["requestedAt"] as? String,
+            cancelledAt: json["cancelledAt"] as? String)
+    }
+}
+
+/// 서버가 허용하는 사유 코드(ledger.ts CANCEL_REASON_CODES)와 화면 문구.
+let kgCancelReasons: [(code: String, label: String)] = [
+    ("SCHEDULE", "일정이 맞지 않음"),
+    ("PRICE", "금액·조건이 맞지 않음"),
+    ("SCOPE_CHANGED", "작업 범위가 바뀜"),
+    ("OTHER", "기타"),
+]
+
+func kgCancelReasonLabel(_ code: String?) -> String {
+    kgCancelReasons.first { $0.code == code }?.label ?? "사유 미기록"
+}
+
 enum KGCustomerChatState: Equatable {
     case loading
-    case empty(ownId: String)
+    case empty(ownId: String, cancellation: KGCustomerCancellation)
     case failed(network: Bool, code: String)
-    case ready(ownId: String, messages: [KGCustomerMessage], quotes: [KGCustomerQuote])
+    case ready(ownId: String, messages: [KGCustomerMessage], quotes: [KGCustomerQuote],
+               cancellation: KGCustomerCancellation)
 }
 
 @MainActor final class KGCustomerChatModel: ObservableObject {
@@ -57,13 +90,15 @@ enum KGCustomerChatState: Equatable {
                 let me = try await self.transport.request("GET", "/v1/me", token: token, body: nil)
                 let messages = try await self.transport.request("GET", "/v1/ledgers/" + ledgerId + "/messages?limit=50", token: token, body: nil)
                 let quotes = try await self.transport.request("GET", "/v1/ledgers/" + ledgerId + "/quotes", token: token, body: nil)
+                let cancel = try await self.transport.request("GET", "/v1/ledgers/" + ledgerId + "/cancel", token: token, body: nil)
                 if Task.isCancelled { return }
                 let ownId = me["id"] as? String ?? ""
                 let list = Self.decodeMessages(messages)
                 let quoteList = Self.decodeQuotes(quotes)
-                self.state = (list.isEmpty && quoteList.isEmpty)
-                    ? .empty(ownId: ownId)
-                    : .ready(ownId: ownId, messages: list, quotes: quoteList)
+                let cancellation = KGCustomerCancellation.decode(cancel)
+                self.state = (list.isEmpty && quoteList.isEmpty && cancellation.status == "ACTIVE")
+                    ? .empty(ownId: ownId, cancellation: cancellation)
+                    : .ready(ownId: ownId, messages: list, quotes: quoteList, cancellation: cancellation)
             } catch {
                 if Task.isCancelled { return }
                 if KGNetworkFailure.isNetwork(error) {
@@ -108,6 +143,19 @@ enum KGCustomerChatState: Equatable {
 
     func confirmComplete(ledgerId: String, quote: KGCustomerQuote) {
         mutate(ledgerId: ledgerId, path: "/v1/quotes/" + quote.id + "/complete", body: ["expectedVersion": quote.version])
+    }
+
+    /// 취소 요청과 수락은 같은 엔드포인트다. 이미 요청이 있으면 서버가 이 호출을
+    /// 상대의 수락으로 처리하므로 클라이언트는 상태를 보내지 않는다.
+    func requestCancel(ledgerId: String, reasonCode: String, detail: String) {
+        var body: [String: Any] = ["reasonCode": reasonCode]
+        let trimmed = detail.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty { body["detail"] = trimmed }
+        mutate(ledgerId: ledgerId, path: "/v1/ledgers/" + ledgerId + "/cancel", body: body)
+    }
+
+    func acceptCancel(ledgerId: String) {
+        mutate(ledgerId: ledgerId, path: "/v1/ledgers/" + ledgerId + "/cancel", body: [:])
     }
 
     /// 사진은 presign → R2 PUT → imageKey 전송까지 KGChatApi가 처리한다.
@@ -178,6 +226,11 @@ enum KGCustomerChatState: Equatable {
                     case "ALREADY_CONFIRMED": self.actionError = "이미 완료 확인을 했습니다. 상대 확인을 기다리는 중입니다."
                     case "VERSION_CONFLICT": self.actionError = "다른 변경이 먼저 반영되었습니다. 새로고침 후 다시 시도해주세요."
                     case "QUOTE_EXPIRED": self.actionError = "견적 유효기간이 지났습니다."
+                    case "LEDGER_COMPLETED": self.actionError = "완료된 거래는 취소할 수 없습니다."
+                    case "CANCEL_ALREADY_REQUESTED": self.actionError = "이미 취소를 요청했습니다. 상대 수락을 기다리는 중입니다."
+                    case "ALREADY_CANCELLED": self.actionError = "이미 취소된 거래입니다."
+                    case "LEDGER_CANCELLED": self.actionError = "취소된 거래에는 후기를 작성할 수 없습니다."
+                    case "REASON_REQUIRED": self.actionError = "취소 사유를 선택해주세요."
                     default: self.actionError = api.status == 401 ? "세션이 만료되었습니다. 다시 로그인해주세요." : "요청을 처리하지 못했습니다. (\(api.code))"
                     }
                 } else {
@@ -248,6 +301,9 @@ struct KGCustomerChatView: View {
     @StateObject private var model = KGCustomerChatModel()
     @State private var draft = ""
     @State private var pickedPhoto: PhotosPickerItem?
+    @State private var cancelSheet = false
+    @State private var cancelReason = kgCancelReasons[0].code
+    @State private var cancelDetail = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -263,6 +319,7 @@ struct KGCustomerChatView: View {
         }
         .background(Color.white)
         .task(id: ledgerId) { model.refresh(ledgerId: ledgerId) }
+        .sheet(isPresented: $cancelSheet) { cancelRequestSheet }
     }
 
     @ViewBuilder private var content: some View {
@@ -275,12 +332,14 @@ struct KGCustomerChatView: View {
             }.padding(20).accessibilityIdentifier("customer-chat-loading")
         case .failed(let network, let code):
             customerFailure(network: network, code: code, retry: { model.refresh(ledgerId: ledgerId) })
-        case .empty(let ownId):
+        case .empty(let ownId, let cancellation):
+            cancelCard(cancellation)
             messageList(ownId: ownId, messages: [])
             composer
-        case .ready(let ownId, let messages, let quotes):
+        case .ready(let ownId, let messages, let quotes, let cancellation):
+            cancelCard(cancellation)
             if let quote = KGCustomerChatModel.activeQuote(quotes) {
-                quoteCard(quote)
+                quoteCard(quote, cancelled: cancellation.status == "CANCELLED")
             }
             if let error = model.actionError {
                 customerCopy(error, size: 13).padding(.horizontal, 20).padding(.top, 6)
@@ -289,6 +348,82 @@ struct KGCustomerChatView: View {
             messageList(ownId: ownId, messages: messages)
             composer
         }
+    }
+
+    /// 취소 카드. 상태 4종(요청 가능·요청됨·상대 요청·취소됨)을 서버 값으로만 그린다.
+    @ViewBuilder private func cancelCard(_ cancellation: KGCustomerCancellation) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            switch cancellation.status {
+            case "CANCELLED":
+                customerCopy("취소된 거래입니다", size: 15, bold: true)
+                customerCopy("사유: " + kgCancelReasonLabel(cancellation.reasonCode), size: 13, color: DesignTokens.muted)
+                if let detail = cancellation.detail, !detail.isEmpty {
+                    customerCopy(detail, size: 13, color: DesignTokens.muted)
+                }
+            case "CANCEL_REQUESTED":
+                let mine = cancellation.requestedByMe == true
+                customerCopy(mine ? "취소를 요청했습니다" : "상대가 취소를 요청했습니다", size: 15, bold: true)
+                customerCopy("사유: " + kgCancelReasonLabel(cancellation.reasonCode), size: 13, color: DesignTokens.muted)
+                if let detail = cancellation.detail, !detail.isEmpty {
+                    customerCopy(detail, size: 13, color: DesignTokens.muted)
+                }
+                if mine {
+                    customerCopy("상대 수락을 기다리는 중입니다.", size: 13, color: DesignTokens.muted)
+                        .padding(.top, 4).accessibilityIdentifier("customer-cancel-waiting")
+                } else {
+                    primaryButton(model.actionBusy ? "처리 중…" : "취소 수락", id: "customer-cancel-accept") {
+                        model.acceptCancel(ledgerId: ledgerId)
+                    }.disabled(model.actionBusy)
+                }
+            default:
+                Button {
+                    cancelReason = kgCancelReasons[0].code
+                    cancelDetail = ""
+                    cancelSheet = true
+                } label: {
+                    customerCopy("거래 취소", color: DesignTokens.navy, semibold: true).frame(minHeight: 44)
+                }.buttonStyle(.plain).disabled(model.actionBusy)
+                    .accessibilityIdentifier("customer-cancel-open")
+            }
+        }.padding(14).frame(maxWidth: .infinity, alignment: .leading)
+            .overlay(RoundedRectangle(cornerRadius: 6).stroke(DesignTokens.border))
+            .padding(.horizontal, 20).padding(.top, 8)
+            .accessibilityIdentifier("customer-cancel")
+    }
+
+    /// 사유 선택. 서버가 허용한 코드만 보내고 직접 입력한 사유는 detail로만 전달한다.
+    private var cancelRequestSheet: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            customerCopy("거래 취소 요청", size: 19, bold: true)
+            customerCopy("사유를 선택해주세요.", size: 13, color: DesignTokens.muted)
+            ForEach(kgCancelReasons, id: \.code) { reason in
+                Button {
+                    cancelReason = reason.code
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: cancelReason == reason.code ? "largecircle.fill.circle" : "circle")
+                            .foregroundStyle(cancelReason == reason.code ? DesignTokens.navy : DesignTokens.muted)
+                        customerCopy(reason.label, size: 14)
+                        Spacer()
+                    }.frame(minHeight: 44).contentShape(Rectangle())
+                }.buttonStyle(.plain).accessibilityIdentifier("customer-cancel-reason-\(reason.code)")
+            }
+            TextField("상세 사유 (선택)", text: $cancelDetail, axis: .vertical)
+                .font(.custom("Pretendard-Regular", size: 13, relativeTo: .body))
+                .lineLimit(1...3)
+                .padding(10).overlay(RoundedRectangle(cornerRadius: 6).stroke(DesignTokens.border))
+                .accessibilityIdentifier("customer-cancel-detail")
+            HStack(spacing: 12) {
+                Button("닫기") { cancelSheet = false }.frame(minHeight: 44)
+                Spacer()
+                primaryButton("취소 요청", id: "customer-cancel-submit") {
+                    cancelSheet = false
+                    model.requestCancel(ledgerId: ledgerId, reasonCode: cancelReason, detail: cancelDetail)
+                }.disabled(model.actionBusy)
+                    .frame(width: 160)
+            }
+        }.padding(20)
+            .presentationDetents([.medium])
     }
 
     @ViewBuilder private func messageList(ownId: String, messages: [KGCustomerMessage]) -> some View {
@@ -372,7 +507,7 @@ struct KGCustomerChatView: View {
         }.padding(12)
     }
 
-    private func quoteCard(_ quote: KGCustomerQuote) -> some View {
+    private func quoteCard(_ quote: KGCustomerQuote, cancelled: Bool) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             customerCopy("견적", size: 12, color: DesignTokens.muted)
             HStack {
@@ -381,7 +516,12 @@ struct KGCustomerChatView: View {
                 customerCopy(customerQuoteStatusLabel(quote), size: 12, semibold: true)
             }
             if !quote.message.isEmpty { customerCopy(quote.message, size: 13, color: DesignTokens.muted) }
-            quoteAction(quote)
+            if cancelled {
+                customerCopy("취소된 거래입니다. 견적을 더 진행할 수 없습니다.", size: 13, color: DesignTokens.muted)
+                    .padding(.top, 4).accessibilityIdentifier("customer-quote-cancelled")
+            } else {
+                quoteAction(quote)
+            }
         }.padding(14).frame(maxWidth: .infinity, alignment: .leading)
             .overlay(RoundedRectangle(cornerRadius: 6).stroke(DesignTokens.border))
             .padding(.horizontal, 20).padding(.top, 8)
