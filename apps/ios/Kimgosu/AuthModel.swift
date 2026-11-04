@@ -1,5 +1,27 @@
 import Foundation
 import Combine
+import UIKit
+import AuthenticationServices
+
+/// ASWebAuthenticationSession은 kimgosu:// 콜백을 직접 가로채므로 Safari로 나가지 않는다.
+@MainActor private final class KGGoogleAuthSession: NSObject, ASWebAuthenticationPresentationContextProviding {
+    private var session: ASWebAuthenticationSession?
+    func start(_ url: URL, completion: @escaping (Result<URL, Error>) -> Void) {
+        session?.cancel()
+        let session = ASWebAuthenticationSession(url: url, callbackURLScheme: "kimgosu") { callback, error in
+            if let callback { completion(.success(callback)) }
+            else { completion(.failure(error ?? KGAuthAPIError(status: 0, code: "OAUTH_SESSION_FAILED"))) }
+        }
+        session.presentationContextProvider = self
+        self.session = session
+        _ = session.start()
+    }
+    func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        return scenes.first { $0.activationState == .foregroundActive }?.keyWindow
+            ?? scenes.flatMap(\.windows).first { $0.isKeyWindow } ?? UIWindow()
+    }
+}
 
 struct KGReturnTarget {
     var screenId = "A1"
@@ -16,6 +38,8 @@ struct KGReturnTarget {
     private(set) var returnTarget = KGReturnTarget()
     private let repository: KGAuthRepository
     private let sessions: KGSessionStorage
+    private let webAuth = KGGoogleAuthSession()
+    private var oauthPending = false
     private var token: String?
     private var task: Task<Void, Never>?
     private var automation: Task<Void, Never>?
@@ -307,6 +331,41 @@ struct KGReturnTarget {
         state.marketingConsented = marketing
         let notifications = try await repository.notifications(token); try Task.checkCancellation(); try preferences(notifications)
     }
+    /// 외부 브라우저(ASWebAuthenticationSession)로 구글 동의 화면을 연다.
+    private func startGoogleLogin() {
+        guard !state.busy else { return }
+        execute {
+            do {
+                let result = try await self.repository.oauthStart("google"); try Task.checkCancellation()
+                guard let raw = result["authorizationUrl"] as? String, let url = URL(string: raw),
+                      url.scheme == "https", url.host == "accounts.google.com" else { throw KGAuthAPIError(status: 0, code: "INVALID_API_RESPONSE") }
+                self.oauthPending = true
+                self.webAuth.start(url) { [weak self] result in self?.finishGoogleLogin(result) }
+            } catch let error as KGAuthAPIError {
+                if error.code == "PROVIDER_NOT_CONFIGURED" { self.openFailure("구글 로그인이 아직 연결되지 않았습니다.") }
+                else { throw error }
+            }
+        }
+    }
+    private func finishGoogleLogin(_ result: Result<URL, Error>) {
+        guard oauthPending else { return }
+        switch result {
+        case .success(let url): handleOAuthCallback(url)
+        case .failure: oauthPending = false; state.error = "로그인을 취소하셨습니다."
+        }
+    }
+    /// kimgosu://auth/callback?token=… 또는 ?error=…. 토큰은 /v1/me 검증을 통과해야만 저장된다.
+    func handleOAuthCallback(_ url: URL) {
+        guard url.scheme == "kimgosu", url.host == "auth", url.path == "/callback" else { return }
+        oauthPending = false
+        let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        if let token = items.first(where: { $0.name == "token" })?.value, !token.isEmpty { establishVerifiedSession(token); return }
+        state.error = items.first(where: { $0.name == "error" })?.value == "CANCELLED"
+            ? "로그인을 취소하셨습니다." : "로그인을 완료하지 못했습니다. 다시 시도해주세요."
+    }
+    private func openFailure(_ message: String) {
+        stack.append(.LOGIN_FAILURE); show(.LOGIN_FAILURE); state.detail = message
+    }
     // Only an approved provider callback may call this. No debug login or synthetic success is exposed.
     func establishVerifiedSession(_ bearer: String) {
         execute {
@@ -439,12 +498,12 @@ struct KGReturnTarget {
         case .RETRY_DOCUMENT: if let kind = KGAuthDocumentKind(rawValue: event.key) { document(kind, retry: true) }
         case .OTHER_LOGIN: cancelRequest(); stack = [.E1]; show(.E1)
         case .START_SOCIAL:
-            execute {
+            if event.key == "google" { startGoogleLogin() } else { execute {
                 let config = try await self.loadConfig()
                 let provider = (config["providers"] as? [[String: Any]])?.first { $0["id"] as? String == event.key }
                 self.stack.append(.LOGIN_FAILURE); self.state.screen = .LOGIN_FAILURE
                 self.state.detail = provider?["enabled"] as? Bool != true ? "선택한 소셜 로그인 제공자의 실제 연결이 준비되지 않았습니다. 로그인·가입은 완료되지 않았습니다." : "제공자 인증 경로의 계약·앱 연결이 아직 준비되지 않았습니다. 인증 성공으로 처리하지 않습니다."
-            }
+            } }
         case .CHANGE_INPUT:
             guard !state.busy else { return }
             let value: String

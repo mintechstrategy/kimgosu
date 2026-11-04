@@ -116,6 +116,11 @@ class AuthRepository(val transport: AuthTransport = MembershipHttp()) {
     }
     suspend fun health() = request(AuthRequestContext.PUBLIC, "GET", "/health")
     suspend fun config() = request(AuthRequestContext.PUBLIC, "GET", "/v1/auth/config?metadata=policy-v0.3")
+    /** 서버가 state를 저장하고 인가 URL을 발급한다. 토큰 교환은 콜백 페이지가 서버에 맡긴다. */
+    suspend fun oauthStart(provider: String): JSONObject {
+        require(provider == "google")
+        return request(AuthRequestContext.PUBLIC, "POST", "/v1/auth/oauth/$provider/start")
+    }
     suspend fun policies() = request(AuthRequestContext.PUBLIC, "GET", "/v1/policies?metadata=policy-v0.3")
     suspend fun policy(kind: String, version: String? = null): JSONObject {
         require(kind in listOf("TERMS", "PRIVACY_CONSENT", "PRIVACY_POLICY", "MARKETING", "OPERATIONS"))
