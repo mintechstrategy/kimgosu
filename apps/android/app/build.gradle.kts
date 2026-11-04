@@ -10,8 +10,8 @@ android {
         applicationId = "ai.mintech.kimgosu"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 7
+        versionName = "0.1.6"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     // Development and production are separate installable apps with separate
