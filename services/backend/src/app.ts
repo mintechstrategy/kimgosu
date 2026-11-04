@@ -11,6 +11,7 @@ import { registerAdminPolicyRoutes } from './admin-policy.ts';
 import { registerLedgerRoutes } from './ledger.ts';
 import { registerExpertRoutes } from './experts.ts';
 import { registerQuoteRoutes } from './quotes.ts';
+import { registerUploadRoutes } from './uploads.ts';
 import { registerChatRoutes } from './chat.ts';
 import { registerReviewRoutes } from './reviews.ts';
 import { registerDevLoginRoutes } from './dev-login.ts';
@@ -214,6 +215,7 @@ export function buildApp(db: Sql, release: string, options: AuthOptions = {}) {
   registerLedgerRoutes(app, db, authenticate);
   registerExpertRoutes(app, db, authenticate);
   registerQuoteRoutes(app, db, authenticate);
+  registerUploadRoutes(app, db, authenticate);
   registerChatRoutes(app, db, authenticate);
   registerReviewRoutes(app, db, authenticate);
   // Operator console: session exchange must be registered before the admin

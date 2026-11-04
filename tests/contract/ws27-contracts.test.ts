@@ -180,6 +180,7 @@ test('5개 계약은 서로 겹치지 않고, 계약에 없는 라우트는 문�
     'GET /v1/experts/:id',
     'GET /v1/me/expert',
     'PATCH /v1/me/expert/availability',
+    'POST /v1/uploads',
     'POST /v1/auth/oauth/apple/callback',
   ];
   const unclaimed = inventory.filter(route => !covered.has(route));
