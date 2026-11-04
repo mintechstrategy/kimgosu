@@ -69,7 +69,12 @@ test('WS23 tester login returns the real server session token only', async () =>
   const missing = client(() => respond(404, { error: { code: 'DEV_ACCOUNT_NOT_FOUND' } }));
   await assert.rejects(() => missing.api.devLogin(9), (e: unknown) => e instanceof AdminApiError && e.code === 'DEV_ACCOUNT_NOT_FOUND');
 
+  const admin = client(() => respond(200, { session: { accessToken: MEMBER_TOKEN } }));
+  assert.equal(await admin.api.devLogin(21), MEMBER_TOKEN);
+  assert.deepEqual(JSON.parse(String(admin.calls[0]!.init.body)), { slot: 21 }, 'the seeded ADMIN slot 21 must be selectable');
+
   const outOfRange = client(() => respond(200, {}));
   await assert.rejects(() => outOfRange.api.devLogin(0), (e: unknown) => e instanceof AdminApiError && e.code === 'INVALID_REQUEST');
+  await assert.rejects(() => outOfRange.api.devLogin(31), (e: unknown) => e instanceof AdminApiError && e.code === 'INVALID_REQUEST');
   assert.equal(outOfRange.calls.length, 0, 'an out-of-range slot is refused before any request');
 });

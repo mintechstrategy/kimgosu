@@ -21,6 +21,8 @@ const detailLoading = ref(false);
 const detailError = ref('');
 const actionMessage = ref('');
 const signingOut = ref(false);
+/** 403 on any operator route: the session is valid but carries no ADMIN grant. */
+const forbidden = ref(false);
 
 const dialog = ref<HTMLDialogElement>();
 const dialogType = ref<'restrict' | 'release'>('restrict');
@@ -67,7 +69,20 @@ function messageFor(e: unknown): string {
   }
 }
 
-/** Session gone (expired, revoked, or the ADMIN grant withdrawn): back to login. */
+/** 403 from an operator route: keep the session, show the no-permission panel. */
+function isForbidden(e: unknown) {
+  return e instanceof AdminApiError && (e.code === 'ADMIN_REQUIRED' || e.code === 'ADMIN_SESSION_REQUIRED');
+}
+
+function denyAccess() {
+  forbidden.value = true;
+  dialog.value?.close();
+  reviewDialog.value?.close();
+  actionError.value = '';
+  reviewActionError.value = '';
+}
+
+/** Session gone (expired or revoked): back to login. A 403 never gets here. */
 function endSession(e: unknown) {
   api.clearSession();
   rows.value = []; listLoaded.value = false; detail.value = undefined; selectedId.value = null;
@@ -84,9 +99,11 @@ async function loadList(target = page.value) {
     totalPages.value = result.totalPages;
     total.value = result.total;
     listLoaded.value = true;
+    forbidden.value = false;
   } catch (e) {
     listLoaded.value = false; rows.value = [];
-    if (e instanceof AdminApiError && ['AUTH_REQUIRED', 'SESSION_INVALID', 'ADMIN_SESSION_REQUIRED', 'ADMIN_REQUIRED'].includes(e.code)) { endSession(e); return; }
+    if (isForbidden(e)) { denyAccess(); return; }
+    if (e instanceof AdminApiError && ['AUTH_REQUIRED', 'SESSION_INVALID'].includes(e.code)) { endSession(e); return; }
     listError.value = messageFor(e);
   } finally { listLoading.value = false; }
 }
@@ -99,7 +116,8 @@ async function loadDetail(id: string, keepMessage = false) {
   try {
     detail.value = await api.member(id);
   } catch (e) {
-    if (e instanceof AdminApiError && ['AUTH_REQUIRED', 'SESSION_INVALID', 'ADMIN_SESSION_REQUIRED', 'ADMIN_REQUIRED'].includes(e.code)) { endSession(e); return; }
+    if (isForbidden(e)) { denyAccess(); return; }
+    if (e instanceof AdminApiError && ['AUTH_REQUIRED', 'SESSION_INVALID'].includes(e.code)) { endSession(e); return; }
     detailError.value = messageFor(e);
   } finally { detailLoading.value = false; }
 }
@@ -137,7 +155,8 @@ async function submitAction() {
     // The confirmation message survives this refresh (keepMessage).
     await Promise.all([loadDetail(id, true), loadList(page.value)]);
   } catch (e) {
-    if (e instanceof AdminApiError && ['AUTH_REQUIRED', 'SESSION_INVALID', 'ADMIN_SESSION_REQUIRED', 'ADMIN_REQUIRED'].includes(e.code)) { endSession(e); return; }
+    if (isForbidden(e)) { denyAccess(); return; }
+    if (e instanceof AdminApiError && ['AUTH_REQUIRED', 'SESSION_INVALID'].includes(e.code)) { endSession(e); return; }
     actionError.value = messageFor(e);
   } finally { submitting.value = false; }
 }
@@ -179,8 +198,10 @@ async function loadReviews(target = reviewPage.value) {
     reviewTotal.value = result.total;
     reviewPage.value = target;
     reviewLoaded.value = true;
+    forbidden.value = false;
   } catch (e) {
     reviewLoaded.value = false; reviews.value = [];
+    if (isForbidden(e)) { denyAccess(); return; }
     if (e instanceof AdminApiError && ['AUTH_REQUIRED', 'SESSION_INVALID'].includes(e.code)) { endSession(e); return; }
     reviewError.value = reviewMessageFor(e);
   } finally { reviewLoading.value = false; }
@@ -218,6 +239,7 @@ async function submitReviewAction() {
       : '숨김을 해제했습니다. 공개 목록에 다시 노출됩니다.';
     await loadReviews(reviewPage.value);
   } catch (e) {
+    if (isForbidden(e)) { denyAccess(); return; }
     if (e instanceof AdminApiError && ['AUTH_REQUIRED', 'SESSION_INVALID'].includes(e.code)) { endSession(e); return; }
     reviewActionError.value = reviewMessageFor(e);
   } finally { reviewSubmitting.value = false; }
@@ -240,6 +262,13 @@ const statusLabel = (value: MemberStatus) => value === 'ACTIVE' ? '이용 가능
     <button class="text" type="button" :disabled="signingOut" @click="signOut">{{ signingOut ? '로그아웃 중…' : '로그아웃' }}</button>
   </header>
 
+  <section v-if="forbidden" class="forbidden" role="alert">
+    <h2>권한이 없습니다</h2>
+    <p>이 계정에는 유효한 관리자(ADMIN) 역할이 없습니다. 운영 콘솔은 ADMIN만 사용할 수 있습니다. 다시 조회해도 결과가 달라지지 않으므로 다른 계정으로 로그인해주세요.</p>
+    <button class="secondary" type="button" @click="signOut">로그인 화면으로</button>
+  </section>
+
+  <template v-else>
   <nav class="tabs" aria-label="운영 콘솔 화면">
     <button type="button" :class="{ active: tab === 'members' }" :aria-current="tab === 'members' ? 'page' : undefined" @click="tab = 'members'">회원 관리</button>
     <button type="button" :class="{ active: tab === 'reviews' }" :aria-current="tab === 'reviews' ? 'page' : undefined" @click="showReviews">리뷰 관리</button>
@@ -392,6 +421,7 @@ const statusLabel = (value: MemberStatus) => value === 'ACTIVE' ? '이용 가능
       <p class="meta">숨김 사유는 감사 로그(audit_log)에 운영자와 함께 기록되며 리뷰 본문은 기록하지 않습니다.</p>
     </template>
   </main>
+  </template>
 
   <dialog ref="dialog" aria-labelledby="dialog-title" @close="actionError = ''">
     <form method="dialog" class="stack" @submit.prevent="submitAction">
@@ -437,6 +467,9 @@ const statusLabel = (value: MemberStatus) => value === 'ACTIVE' ? '이용 가능
 .console-header .meta { color: #9fb0c9; margin: 0; }
 .console-header .who { margin: 0 0 0 auto; font-size: 14px; color: #cfe0ff; }
 .console { max-width: 1120px; margin: 0 auto; padding: 24px 32px 96px; }
+.forbidden { max-width: 1120px; margin: 24px auto 0; padding: 24px; background: #fff; border: 1px solid #f2c6c1; border-left: 6px solid #b42318; border-radius: 14px; box-sizing: border-box; }
+.forbidden h2 { margin: 0 0 8px; font-size: 18px; color: #8f1d14; }
+.forbidden p { margin: 0 0 16px; }
 .tabs { display: flex; gap: 8px; max-width: 1120px; margin: 0 auto; padding: 16px 32px 0; }
 .tabs button { background: #fff; border-color: #d8e0e8; color: #44556d; }
 .tabs button.active { background: #1b53c8; border-color: #1b53c8; color: #fff; }
