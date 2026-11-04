@@ -16,7 +16,11 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -38,7 +42,10 @@ import kotlinx.coroutines.launch
 import org.json.JSONObject
 import java.io.IOException
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 
 /**
  * 고수 홈. 활동 상태는 서버(전문가 프로필)가 유일한 저장소이며, 토글은 즉시
@@ -61,6 +68,14 @@ data class ExpertRequest(
     val vatIncluded: Boolean,
 )
 
+/** 기간 지정 휴가. 날짜 단위이며 종료일을 포함한다. */
+data class ExpertAvailabilityPeriod(
+    val id: String,
+    val startsAt: String,
+    val endsAt: String,
+    val reason: String?,
+)
+
 sealed interface ExpertHomeState {
     data object Loading : ExpertHomeState
     data object Empty : ExpertHomeState
@@ -81,6 +96,9 @@ class ExpertHomeModel @JvmOverloads constructor(
     var state by mutableStateOf<ExpertHomeState>(ExpertHomeState.Loading); private set
     var toggleBusy by mutableStateOf(false); private set
     var toggleError by mutableStateOf<String?>(null); private set
+    var periods by mutableStateOf<List<ExpertAvailabilityPeriod>>(emptyList()); private set
+    var periodsBusy by mutableStateOf(false); private set
+    var periodsError by mutableStateOf<String?>(null); private set
 
     // Debug-only QA switches, assigned from intent extras in MainActivity under BuildConfig.DEBUG.
     @Volatile var qaLoadingHoldMillis: Long = 0
@@ -101,6 +119,8 @@ class ExpertHomeModel @JvmOverloads constructor(
                 val expert = transport.request("GET", "/v1/me/expert", token)
                 val quotes = transport.request("GET", "/v1/me/quotes?limit=100", token)
                 state = decode(expert, quotes)
+                periods = decodePeriods(transport.request("GET", PERIODS_PATH, token))
+                periodsError = null
             } catch (e: CancellationException) {
                 throw e
             } catch (e: AuthFailure) {
@@ -147,7 +167,74 @@ class ExpertHomeModel @JvmOverloads constructor(
         }
     }
 
+    /** 휴가 기간 등록. 서버가 기간을 저장하고, 성공한 응답만 목록에 반영한다. */
+    fun addPeriod(startsAt: String, endsAt: String) {
+        if (periodsBusy) return
+        if (endsAt < startsAt) { periodsError = "종료일이 시작일보다 빠릅니다."; return }
+        val token = runCatching { sessions.read() }.getOrNull()
+        if (token == null) { periodsError = "세션이 만료되었습니다. 다시 로그인해주세요."; return }
+        periodsBusy = true
+        periodsError = null
+        viewModelScope.launch {
+            try {
+                val saved = transport.request("POST", PERIODS_PATH, token,
+                    JSONObject().put("startsAt", startsAt).put("endsAt", endsAt))
+                periods = (periods + decodePeriod(saved)).sortedByDescending { it.startsAt }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: AuthFailure) {
+                periodsError = if (e.status == 401) "세션이 만료되었습니다. 다시 로그인해주세요."
+                    else "휴가 기간을 저장하지 못했습니다. (${e.code})"
+            } catch (_: IOException) {
+                periodsError = "네트워크에 연결할 수 없어 저장하지 못했습니다."
+            } catch (_: Exception) {
+                periodsError = "휴가 기간을 저장하지 못했습니다. (INVALID_API_RESPONSE)"
+            } finally {
+                periodsBusy = false
+            }
+        }
+    }
+
+    fun deletePeriod(id: String) {
+        if (periodsBusy) return
+        val token = runCatching { sessions.read() }.getOrNull()
+        if (token == null) { periodsError = "세션이 만료되었습니다. 다시 로그인해주세요."; return }
+        periodsBusy = true
+        periodsError = null
+        viewModelScope.launch {
+            try {
+                transport.request("DELETE", "$PERIODS_PATH/$id", token)
+                periods = periods.filterNot { it.id == id }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: AuthFailure) {
+                periodsError = if (e.status == 401) "세션이 만료되었습니다. 다시 로그인해주세요."
+                    else "휴가 기간을 삭제하지 못했습니다. (${e.code})"
+            } catch (_: IOException) {
+                periodsError = "네트워크에 연결할 수 없어 삭제하지 못했습니다."
+            } catch (_: Exception) {
+                periodsError = "휴가 기간을 삭제하지 못했습니다. (INVALID_API_RESPONSE)"
+            } finally {
+                periodsBusy = false
+            }
+        }
+    }
+
     companion object {
+        const val PERIODS_PATH = "/v1/me/expert/availability/periods"
+
+        fun decodePeriod(row: JSONObject): ExpertAvailabilityPeriod = ExpertAvailabilityPeriod(
+            id = row.getString("id"),
+            startsAt = row.getString("startsAt"),
+            endsAt = row.getString("endsAt"),
+            reason = if (row.isNull("reason")) null else row.optString("reason").ifBlank { null },
+        )
+
+        fun decodePeriods(envelope: JSONObject): List<ExpertAvailabilityPeriod> {
+            val array = envelope.getJSONArray("periods")
+            return List(array.length()) { index -> decodePeriod(array.getJSONObject(index)) }
+        }
+
         /** 이번 달 요약은 서버가 준 견적 목록에서 계산한다. 월 경계는 기기 시간대 기준. */
         fun decode(expert: JSONObject, quotesEnvelope: JSONObject, now: Instant = Instant.now(),
                    zone: ZoneId = ZoneId.systemDefault()): ExpertHomeState.Ready {
@@ -182,7 +269,9 @@ fun ExpertHomeScreen(nickname: String, onBack: () -> Unit, onOpenQuotes: () -> U
     val model = remember { ViewModelProvider(activity)[ExpertHomeModel::class.java] }
     LaunchedEffect(Unit) { model.refresh() }
     ExpertHomeContent(model.state, nickname, model.toggleBusy, model.toggleError,
-        model::setAvailability, model::refresh, onBack, onOpenQuotes)
+        model::setAvailability, model::refresh, onBack, onOpenQuotes,
+        periods = model.periods, periodsBusy = model.periodsBusy, periodsError = model.periodsError,
+        onAddPeriod = model::addPeriod, onDeletePeriod = model::deletePeriod)
 }
 
 @Composable
@@ -195,6 +284,11 @@ fun ExpertHomeContent(
     onRetry: () -> Unit,
     onBack: () -> Unit,
     onOpenQuotes: () -> Unit,
+    periods: List<ExpertAvailabilityPeriod> = emptyList(),
+    periodsBusy: Boolean = false,
+    periodsError: String? = null,
+    onAddPeriod: (String, String) -> Unit = { _, _ -> },
+    onDeletePeriod: (String) -> Unit = {},
 ) {
     Column(Modifier.fillMaxSize().background(Color.White).safeDrawingPadding().testTag("expert-home")) {
         Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -252,6 +346,8 @@ fun ExpertHomeContent(
                 }
                 toggleError?.let { Copy(it, Modifier.padding(top = 8.dp).testTag("availability-error"), 12, color = DesignTokens.navy) }
 
+                VacationPeriodsSection(periods, periodsBusy, periodsError, onAddPeriod, onDeletePeriod)
+
                 Copy("이번 달", Modifier.padding(top = 24.dp).semantics { heading() }, 19, true)
                 Row(Modifier.padding(top = 10.dp).fillMaxWidth().border(1.dp, DesignTokens.border, RoundedCornerShape(6.dp)).padding(vertical = 14.dp)) {
                     Stat("받은 견적", state.receivedThisMonth, "summary-received", Modifier.weight(1f))
@@ -273,6 +369,98 @@ fun ExpertHomeContent(
             }
         }
     }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable private fun VacationPeriodsSection(
+    periods: List<ExpertAvailabilityPeriod>,
+    busy: Boolean,
+    error: String?,
+    onAdd: (String, String) -> Unit,
+    onDelete: (String) -> Unit,
+) {
+    var startsAt by remember { mutableStateOf(LocalDate.now()) }
+    var endsAt by remember { mutableStateOf(LocalDate.now()) }
+    var picking by remember { mutableStateOf<String?>(null) }
+
+    Column(Modifier.fillMaxWidth()) {
+        Copy("휴가 기간", Modifier.padding(top = 24.dp).semantics { heading() }, 19, true)
+        Copy("기간 중에는 고객 검색에 휴가 중으로 표시됩니다.", Modifier.padding(top = 4.dp), 12, color = DesignTokens.muted)
+        Row(Modifier.padding(top = 10.dp).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            PeriodDateField("시작일", startsAt, "period-start", Modifier.weight(1f), enabled = !busy) { picking = "start" }
+            PeriodDateField("종료일", endsAt, "period-end", Modifier.weight(1f), enabled = !busy) { picking = "end" }
+        }
+        TextButton(onClick = { onAdd(startsAt.toString(), endsAt.toString()) }, enabled = !busy,
+            modifier = Modifier.padding(top = 4.dp).heightIn(min = 48.dp).testTag("period-add")) {
+            Copy("휴가 기간 추가", weight = FontWeight.SemiBold)
+        }
+        if (busy) Row(Modifier.padding(top = 4.dp).testTag("period-saving"), verticalAlignment = Alignment.CenterVertically) {
+            CircularProgressIndicator(Modifier.size(14.dp), color = DesignTokens.navy, strokeWidth = 2.dp)
+            Copy("저장 중…", Modifier.padding(start = 8.dp), 12, color = DesignTokens.muted)
+        }
+        error?.let { Copy(it, Modifier.padding(top = 8.dp).testTag("period-error"), 12, color = DesignTokens.navy) }
+        if (periods.isEmpty()) {
+            Copy("등록된 휴가 기간이 없습니다.", Modifier.padding(top = 10.dp).fillMaxWidth()
+                .border(1.dp, DesignTokens.border, RoundedCornerShape(6.dp)).padding(16.dp).testTag("period-empty"),
+                13, color = DesignTokens.muted)
+        } else {
+            periods.forEach { period -> PeriodRow(period, enabled = !busy, onDelete = onDelete) }
+        }
+    }
+
+    picking?.let { target ->
+        val initial = (if (target == "start") startsAt else endsAt)
+        val picker = rememberDatePickerState(
+            initialSelectedDateMillis = initial.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli(),
+        )
+        DatePickerDialog(
+            onDismissRequest = { picking = null },
+            confirmButton = {
+                TextButton(onClick = {
+                    picker.selectedDateMillis?.let { millis ->
+                        val picked = Instant.ofEpochMilli(millis).atZone(ZoneOffset.UTC).toLocalDate()
+                        if (target == "start") startsAt = picked else endsAt = picked
+                    }
+                    picking = null
+                }) { Copy("확인", weight = FontWeight.SemiBold) }
+            },
+            dismissButton = { TextButton(onClick = { picking = null }) { Copy("취소") } },
+        ) { DatePicker(state = picker) }
+    }
+}
+
+@Composable private fun PeriodDateField(
+    label: String, date: LocalDate, tag: String, modifier: Modifier, enabled: Boolean, onClick: () -> Unit,
+) {
+    Column(modifier.heightIn(min = 56.dp)
+        .background(Color.White, RoundedCornerShape(6.dp))
+        .border(1.dp, DesignTokens.border, RoundedCornerShape(6.dp))
+        .clickable(enabled = enabled, onClick = onClick).padding(horizontal = 12.dp, vertical = 10.dp).testTag(tag)) {
+        Copy(label, size = 11, color = DesignTokens.muted)
+        Copy(date.format(DateTimeFormatter.ofPattern("yyyy.MM.dd")), Modifier.padding(top = 2.dp), 14, weight = FontWeight.SemiBold)
+    }
+}
+
+@Composable private fun PeriodRow(period: ExpertAvailabilityPeriod, enabled: Boolean, onDelete: (String) -> Unit) {
+    Row(Modifier.padding(top = 10.dp).fillMaxWidth().heightIn(min = 56.dp)
+        .border(1.dp, DesignTokens.border, RoundedCornerShape(6.dp)).padding(start = 14.dp, end = 4.dp)
+        .testTag("period-${period.id}"), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Copy(periodRange(period), size = 15, weight = FontWeight.SemiBold)
+            period.reason?.let { Copy(it, Modifier.padding(top = 2.dp), 12, color = DesignTokens.muted) }
+        }
+        TextButton(onClick = { onDelete(period.id) }, enabled = enabled,
+            modifier = Modifier.heightIn(min = 48.dp).testTag("period-delete-${period.id}")) {
+            Copy("삭제", size = 13, color = DesignTokens.muted)
+        }
+    }
+}
+
+private fun periodRange(period: ExpertAvailabilityPeriod): String {
+    val format = DateTimeFormatter.ofPattern("yyyy.MM.dd")
+    val start = LocalDate.parse(period.startsAt).format(format)
+    val end = LocalDate.parse(period.endsAt).format(format)
+    return if (start == end) start else "$start – $end"
 }
 
 @Composable private fun AvailabilityBadge(availability: ExpertAvailability) {

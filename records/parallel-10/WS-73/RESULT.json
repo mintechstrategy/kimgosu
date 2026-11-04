@@ -1,0 +1,117 @@
+{
+  "ws": "WS-73",
+  "task": "고수 일정·휴가 기간 — 백엔드 + AOS + iOS",
+  "status": "DONE",
+  "worktree": "/Users/mintech-mac/hermes/dev-profile/shared/projects/wt-WS-73",
+  "baseCommit": "5bd1dc9",
+  "finishedAt": "2026-11-04 22:05 KST",
+  "summary": "expert_availability_periods(024)와 GET/POST/DELETE /v1/me/expert/availability/periods를 추가하고, 오늘(Asia/Seoul)이 기간 안이면 /v1/experts 검색 결과에 onVacation=true를 실어 노출은 유지한 채 '휴가 중'을 표시하게 했으며, AOS 고수 홈과 iOS 고수 홈에 시작일·종료일 선택(DatePicker)·목록·삭제를, 양 앱 검색 결과에 '휴가 중' 배지를 넣고 실 PostgreSQL 통합 테스트 18건과 계약 68건, 양 앱 빌드까지 통과했다.",
+  "changedFiles": [
+    "services/backend/migrations/024_expert_availability_periods.sql",
+    "services/backend/src/experts.ts",
+    "services/backend/tests/experts.integration.test.ts",
+    "tests/contract/ws27-contracts.test.ts",
+    "apps/android/app/src/main/java/ai/mintech/kimgosu/ExpertHomeScreen.kt",
+    "apps/android/app/src/main/java/ai/mintech/kimgosu/customer/CustomerSearchScreen.kt",
+    "apps/ios/Kimgosu/ExpertHomeView.swift",
+    "apps/ios/Kimgosu/CustomerSearchView.swift",
+    "records/parallel-10/WS-73/RESULT.json"
+  ],
+  "implementation": {
+    "migration": "024_expert_availability_periods: kg_membership.expert_availability_periods(id uuid PK, member_id uuid FK members ON DELETE CASCADE, starts_at date, ends_at date, reason text NULL CHECK 1~100자, created_at timestamptz). CHECK ends_at >= starts_at, index (member_id, starts_at), kg_dev_runtime SELECT/INSERT/UPDATE/DELETE GRANT. 날짜 단위(종료일 포함)로 정한 이유: 요구가 시작일/종료일이고, 타임스탬프는 제품이 정하지 않은 시간대 결정을 강제한다. 기존 테이블·컬럼 변경 없음(추가 전용).",
+    "backend": "requireExpert(세션→ACTIVE→expert_active) 뒤에 3개 라우트. GET은 starts_at DESC 목록, POST {startsAt,endsAt,reason?}는 201로 생성 행 반환, DELETE는 소유자 조건(id AND member_id)으로 삭제 후 200 {id}. 종료일<시작일 또는 존재하지 않는 달력일(2026-02-30)은 400 INVALID_PERIOD이고 아무 것도 저장하지 않는다. 남의 기간 삭제는 404 PERIOD_NOT_FOUND(존재 비노출). 생성·삭제는 audit_log에 남긴다. 날짜는 to_char로 'YYYY-MM-DD' 문자열로 직렬화해 클라이언트 시간대 해석 차이를 없앴다. 검색(/v1/experts)은 그룹 조회에 p.availability를 추가하고, 페이지 회원 id에 대해 (now() AT TIME ZONE 'Asia/Seoul')::date BETWEEN starts_at AND ends_at EXISTS를 한 번에 조회해 onVacation을 계산한다(휴가여도 필터에서 빼지 않는다). 204 대신 200+JSON을 쓴 이유: AOS MembershipHttp·iOS KGMembershipHTTP 모두 모든 응답을 JSON으로 파싱하므로 빈 본문은 INVALID_API_RESPONSE가 된다.",
+    "android": "ExpertHomeScreen.kt: ExpertAvailabilityPeriod(id,startsAt,endsAt,reason)와 모델 상태 periods/periodsBusy/periodsError 추가. refresh()가 GET periods를 함께 읽고, addPeriod는 종료일<시작일을 로컬에서 먼저 400 상당 오류로 막고 서버 성공 응답만 목록에 반영(내림차순 정렬), deletePeriod는 DELETE 후 해당 id만 제거. 화면은 활동 상태 아래 '휴가 기간' 섹션으로 시작일·종료일 DatePickerDialog(material3), '휴가 기간 추가', 저장 중 표시, 오류 문구, 빈 목록 '등록된 휴가 기간이 없습니다.', 기간 행(yyyy.MM.dd 또는 yyyy.MM.dd – yyyy.MM.dd, 사유, 삭제)을 디자인 토큰만으로 그린다. CustomerSearchScreen.kt: 카드에 onVacation을 디코드하고 이름 옆에 '휴가 중' 배지(DesignTokens.lime).",
+    "ios": "ExpertHomeView.swift: KGExpertAvailabilityPeriod와 @Published periods/periodBusy/periodError, decodePeriods, dayString(yyyy-MM-dd, Gregorian/en_US_POSIX), addPeriod/deletePeriod. load()가 GET periods를 함께 조회. 화면은 '휴가 기간' 섹션에 compact DatePicker 2개(ko_KR), '휴가 기간 추가', 저장 중/오류/빈 목록, 기간 행과 '삭제' 버튼. CustomerSearchView.swift: KGCustomerExpertCard.onVacation과 검색 카드의 '휴가 중' 배지(DesignTokens.lime, accessibilityIdentifier expert-vacation-<id>)."
+  },
+  "acceptance": [
+    {
+      "criterion": "기간을 등록하면 그 기간에 휴가로 표시된다(API 실측)",
+      "result": "PASS",
+      "evidence": "실 PostgreSQL 18에 001–024를 적용한 뒤 app.inject로 POST(오늘~오늘) 201 → DB 행 starts_at/ends_at 확인 → GET /v1/experts?limit=50 에서 해당 고수가 목록에 남아 있고 onVacation=true → DELETE 200 → onVacation=false, 목록 빈 배열. 오늘에서 3일 전 기간은 onVacation=false."
+    },
+    {
+      "criterion": "종료일이 시작일보다 빠르면 400",
+      "result": "PASS",
+      "evidence": "POST {startsAt:'2026-03-05', endsAt:'2026-03-04'} → 400 INVALID_PERIOD, 저장 행 수 변화 없음. 존재하지 않는 날짜 2026-02-30도 400."
+    },
+    {
+      "criterion": "두 앱 빌드 성공",
+      "result": "PASS",
+      "evidence": "AOS :app:assembleDevDebug BUILD SUCCESSFUL in 45s / iOS xcodebuild iphonesimulator CODE_SIGNING_ALLOWED=NO ** BUILD SUCCEEDED **"
+    }
+  ],
+  "verification": [
+    {
+      "check": "TypeScript 타입체크",
+      "command": "cd services/backend && npm run check",
+      "result": "PASS",
+      "evidence": "tsc --noEmit, 출력 없음, exit 0 (node v24.22.2)"
+    },
+    {
+      "check": "백엔드 유닛 스위트",
+      "command": "cd services/backend && npm test",
+      "result": "PASS",
+      "evidence": "tests 28 / pass 28 / fail 0"
+    },
+    {
+      "check": "고수 통합 테스트 (실 PostgreSQL 18, 127.0.0.1:55433/kgtest, 마이그레이션 001–024 적용)",
+      "command": "KG_TEST_DATABASE_URL=postgres://postgres@127.0.0.1:55433/kgtest node --test tests/experts.integration.test.ts",
+      "result": "PASS",
+      "evidence": "tests 18 / pass 18 / fail 0. 신규 4건: 휴가 기간 등록→검색 onVacation=true(노출 유지)→삭제→false 및 목록 반환, 오늘 밖 기간은 false, 역순/없는 날짜 400이며 저장 0건, 타인 기간 삭제 404 PERIOD_NOT_FOUND이며 행 유지. 기존 검색·이미지·활용도 테스트 회귀 없음."
+    },
+    {
+      "check": "통합 스위트 전체 회귀 (CI와 동일 명령)",
+      "command": "cd services/backend && KG_TEST_DATABASE_URL=postgres://postgres@127.0.0.1:55433/kgtest npm run test:integration",
+      "result": "PASS",
+      "evidence": "13개 파일 164 tests / 164 pass / 0 fail (ledger 8, experts 18, local-db 33, quotes 8, chat 15, reviews 21, oauth 14, apple 17, register 9, quote-terms 8, admin 6, phone-masked 4, policy-v02 3)"
+    },
+    {
+      "check": "계약 회귀 (라우트 인벤토리 포함)",
+      "command": "node --test tests/contract/contract.test.ts tests/contract/oauth.test.ts tests/contract/ws27-contracts.test.ts tests/policy/metadata.test.ts",
+      "result": "PASS",
+      "evidence": "tests 68 / pass 68 / fail 0. 새 3개 라우트는 계약 미작성 목록(documentedGaps)에 등재해 인벤토리 검사를 통과시켰다(전문가 도메인 계약 부재는 기존 상태)."
+    },
+    {
+      "check": "024 마이그레이션 재적용(멱등)과 런타임 권한",
+      "command": "psql -v ON_ERROR_STOP=1 -f migrations/024_expert_availability_periods.sql (2회) / information_schema.role_table_grants",
+      "result": "PASS",
+      "evidence": "2회차 'already exists, skipping' NOTICE 후 exit 0. kg_dev_runtime 권한 SELECT/INSERT/UPDATE/DELETE 확인."
+    },
+    {
+      "check": "AOS 빌드 (dev flavor)",
+      "command": "JAVA_HOME=.local-toolchains/jdk17/jdk-17.0.21+9/Contents/Home ANDROID_HOME=.local-toolchains/android-sdk GRADLE_USER_HOME=.local-toolchains/gradle-user-home python3 apps/android/build.py :app:assembleDevDebug",
+      "result": "PASS",
+      "evidence": "BUILD SUCCESSFUL in 45s, 38 actionable tasks executed, Kotlin 컴파일 오류 0"
+    },
+    {
+      "check": "iOS 빌드 (시뮬레이터 SDK, 서명 없음)",
+      "command": "xcodebuild -project apps/ios/Kimgosu.xcodeproj -scheme Kimgosu -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO -derivedDataPath <scratch>/dd-ws73 build",
+      "result": "PASS",
+      "evidence": "** BUILD SUCCEEDED ** (Xcode 27.0)"
+    }
+  ],
+  "notRun": [
+    {
+      "item": "시뮬레이터/에뮬레이터 실행 및 AOS 계측·iOS UI 테스트",
+      "result": "NOT_RUN (시뮬레이터 정책)",
+      "reason": "WAVE10 공통 규칙 2: 시뮬레이터·에뮬레이터 실행 금지. 빌드까지만 수행."
+    },
+    {
+      "item": "배포된 개발 API(https://api-dev-kimgosu.mintech.ai)에서의 휴가 기간 실거래",
+      "result": "NOT_RUN",
+      "reason": "원격 쓰기·커밋 금지로 024·엔드포인트를 배포하지 않았다. 배포 후 재검증 필요. 대신 로컬 실 PostgreSQL 18 + buildApp(app.inject)으로 API 동작을 실측했다."
+    },
+    {
+      "item": "양 앱 화면 육안 확인·AOS/iOS 동등성 QA",
+      "result": "NOT_RUN (시뮬레이터 정책)",
+      "reason": "별도 uiux QA 대상. 이 RESULT는 개발 자체 검증이다."
+    }
+  ],
+  "notes": [
+    "검색 응답에 availability와 onVacation 필드가 추가됐다. 기존 응답 필드는 그대로라 하위 호환.",
+    "DELETE는 200 + {\"id\"} 를 반환한다(204는 두 앱의 JSON 파서가 거부).",
+    "기간 중에도 검색 노출은 유지되며 표시만 '휴가 중'으로 바뀐다.",
+    "상태 4종: 홈(loading/empty/failed/ready) 유지, 휴가 섹션은 저장 중·오류·빈 목록·목록 4표현을 가진다.",
+    "로컬 검증용 PostgreSQL 클러스터는 scratch(kg-03)에 두었고 종료했다. 스키마 001–024 적용 순서는 신규 클러스터에서 성공."
+  ]
+}
