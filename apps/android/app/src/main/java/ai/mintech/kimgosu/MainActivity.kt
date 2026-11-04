@@ -4,6 +4,8 @@ import android.app.Application
 import ai.mintech.kimgosu.auth.*
 import ai.mintech.kimgosu.auth.ui.*
 import ai.mintech.kimgosu.customer.*
+import ai.mintech.kimgosu.notifications.NotificationsModel
+import ai.mintech.kimgosu.notifications.NotificationsScreen
 import ai.mintech.kimgosu.ui.DesignTokens
 import android.graphics.BitmapFactory
 import android.os.Bundle
@@ -149,6 +151,7 @@ class MainActivity : ComponentActivity() {
         val auth = ViewModelProvider(this)[AuthModel::class.java]
         val profile = ViewModelProvider(this)[ProfileModel::class.java]
         val expert = ViewModelProvider(this)[ExpertHomeModel::class.java]
+        val inbox = ViewModelProvider(this)[NotificationsModel::class.java]
         val hold = BuildConfig.DEBUG && intent.getBooleanExtra("hold_splash", false)
         val verify = BuildConfig.DEBUG && intent.getBooleanExtra("verify_api", false)
         val offlineTransport = BuildConfig.DEBUG && intent.getBooleanExtra("offline_transport", false)
@@ -167,6 +170,7 @@ class MainActivity : ComponentActivity() {
             val storedSession = remember { runCatching { SecureSession(this@MainActivity).read() }.getOrNull() != null }
             var devReady by remember { mutableStateOf(!devLoginRequired || storedSession) }
             var expertHomeOpen by rememberSaveable { mutableStateOf(false) }
+            var inboxOpen by rememberSaveable { mutableStateOf(false) }
             var quotesPendingNotice by rememberSaveable { mutableStateOf(false) }
             var customerRoute by remember { mutableStateOf<CustomerRoute?>(null) }
             val fonts = remember { FontFamily(Font("regular.otf", assets), Font("semibold.otf", assets, FontWeight.SemiBold), Font("bold.otf", assets, FontWeight.Bold)) }
@@ -198,6 +202,7 @@ class MainActivity : ComponentActivity() {
                                 route is CustomerRoute.Chat -> customerRoute = CustomerRoute.Expert(route.expertId, route.nickname)
                                 route is CustomerRoute.Expert -> customerRoute = CustomerRoute.Search(null)
                                 route is CustomerRoute.Search -> customerRoute = null
+                                inboxOpen -> inboxOpen = false
                                 expertHomeOpen -> expertHomeOpen = false
                                 else -> moveTaskToBack(true)
                             }
@@ -224,7 +229,9 @@ class MainActivity : ComponentActivity() {
                                 expertNickname = route.nickname,
                                 onBack = { customerRoute = CustomerRoute.Chat(route.ledgerId, route.expertId, route.nickname) },
                                 onDone = { customerRoute = CustomerRoute.Expert(route.expertId, route.nickname) })
-                            null -> if (expertHomeOpen) {
+                            null -> if (inboxOpen) {
+                                NotificationsScreen(inbox, onBack = { inboxOpen = false })
+                            } else if (expertHomeOpen) {
                                 ExpertHomeScreen(
                                     nickname = (profile.state as? ProfileState.Ready)?.nickname.orEmpty(),
                                     onBack = { expertHomeOpen = false },
@@ -236,13 +243,15 @@ class MainActivity : ComponentActivity() {
                                     onProfileLogin = { devReady = false },
                                     onExpertHome = { expertHomeOpen = true },
                                     onCustomerSearch = { category -> customerRoute = CustomerRoute.Search(category) },
+                                    unreadCount = inbox.unreadCount,
+                                    onNotifications = { inboxOpen = true },
                                     onProtected = { auth.enter(ReturnTarget(screenId = "A1", targetId = it)) },
                                     onPolicy = { auth.handle(AuthEvent(AuthAction.OPEN_DOCUMENT, it)) })
                             }
                         }
                         LaunchedEffect(Unit) { model.event("main-visible") }
                     }
-                    LaunchedEffect(devReady) { if (devReady) profile.refresh() }
+                    LaunchedEffect(devReady) { if (devReady) { profile.refresh(); inbox.refresh() } }
                     // Returning to A1 from an auth screen (including logout) re-reads /v1/me,
                     // so a cleared session turns the card into Empty instead of stale data.
                     val returnedHome = auth.browsing && auth.stack.isEmpty()
@@ -277,13 +286,15 @@ class MainActivity : ComponentActivity() {
 @Composable private fun MainScreen(home: Home, apiStatus: String?, profile: ProfileState,
                                    onRetryProfile: () -> Unit, onProfileLogin: () -> Unit,
                                    onExpertHome: () -> Unit, onCustomerSearch: (String?) -> Unit,
+                                   unreadCount: Int?, onNotifications: () -> Unit,
                                    onProtected: (String) -> Unit, onPolicy: (String) -> Unit) {
     var notice by rememberSaveable { mutableStateOf<String?>(null) }
     var popular by rememberSaveable { mutableIntStateOf(0) }
     val open: (String) -> Unit = { title ->
         when {
             title == "검색" -> onCustomerSearch(null)
-            title in listOf("알림", "마이페이지", "마이", "내정보", "견적요청", "서비스등록", "채팅", "원장") || title.contains("요청") || title.contains("등록") -> onProtected(title)
+            title == "알림" -> onNotifications()
+            title in listOf("마이페이지", "마이", "내정보", "견적요청", "서비스등록", "채팅", "원장") || title.contains("요청") || title.contains("등록") -> onProtected(title)
             else -> notice = title
         }
     }
@@ -294,7 +305,20 @@ class MainActivity : ComponentActivity() {
                     Copy(home.text("brand"), size = 23, bold = true)
                     Box(Modifier.padding(top = 2.dp).size(26.dp, 3.dp).background(DesignTokens.lime, RoundedCornerShape(2.dp)))
                 }
-                IconButton(onClick = { open("알림") }, modifier = Modifier.size(48.dp)) { AssetImage("notification.png", "알림", Modifier.size(23.dp)) }
+                IconButton(onClick = { open("알림") }, modifier = Modifier.size(48.dp).testTag("main-inbox")) {
+                    Box(contentAlignment = Alignment.TopEnd) {
+                        AssetImage("notification.png", "알림", Modifier.size(23.dp))
+                        if (unreadCount != null && unreadCount > 0) {
+                            Box(Modifier.offset(x = 4.dp, y = (-4).dp).defaultMinSize(minWidth = 18.dp, minHeight = 18.dp)
+                                .background(DesignTokens.navy, RoundedCornerShape(percent = 50))
+                                .padding(horizontal = 5.dp).testTag("main-inbox-badge"),
+                                contentAlignment = Alignment.Center) {
+                                Copy(if (unreadCount > 99) "99+" else unreadCount.toString(), size = 10,
+                                    weight = FontWeight.SemiBold, color = Color.White)
+                            }
+                        }
+                    }
+                }
             }
             ProfileCard(profile, onRetryProfile, onProfileLogin, onExpertHome)
             Copy(home.text("introduction"), Modifier.fillMaxWidth().padding(top = 20.dp).testTag("main-introduction"), 20, true, align = TextAlign.Center)

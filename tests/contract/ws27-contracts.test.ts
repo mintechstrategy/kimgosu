@@ -185,6 +185,10 @@ test('5개 계약은 서로 겹치지 않고, 계약에 없는 라우트는 문�
     'DELETE /v1/me/expert/availability/periods/:id',
     'POST /v1/uploads',
     'POST /v1/auth/oauth/apple/callback',
+    // 알림함(WS-75)은 아직 어떤 계약 JSON에도 등재되지 않았다. 기존 동결 계약을
+    // 열지 않기 위해 여기에 노출하고 후속 계약 개정 카드에서 등재한다.
+    'GET /v1/notifications',
+    'POST /v1/notifications/read-all',
   ];
   const unclaimed = inventory.filter(route => !covered.has(route));
   sameSet(unclaimed, documentedGaps, 'unclaimed routes changed: a live route is missing from every contract');

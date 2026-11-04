@@ -121,6 +121,8 @@ enum KGCustomerRoute {
     @StateObject private var auth = KGAuthModel()
     @State private var expertHomeOpen = KGExpertHomeDebug.openOnLaunch
     @State private var customerRoute: KGCustomerRoute?
+    @State private var inboxOpen = false
+    @StateObject private var inbox = KGNotificationsModel()
     @State private var quotesPendingNotice = false
     private var expertNickname: String {
         if case .loaded(let member) = auth.state.member { return member.nickname }
@@ -149,6 +151,8 @@ enum KGCustomerRoute {
                 } else if let home = model.home {
                     if let route = customerRoute {
                         customerScreen(route)
+                    } else if inboxOpen {
+                        KGNotificationsView(model: inbox, onBack: { inboxOpen = false })
                     } else if expertHomeOpen {
                         ExpertHomeView(nickname: expertNickname,
                                        onBack: { expertHomeOpen = false },
@@ -163,7 +167,10 @@ enum KGCustomerRoute {
                                 onLogin: { auth.enter(KGReturnTarget()) },
                                 onRetryMember: { auth.retryMember() },
                                 onExpertHome: { expertHomeOpen = true },
-                                onCustomerSearch: { customerRoute = .search(category: $0) })
+                                onCustomerSearch: { customerRoute = .search(category: $0) },
+                                unreadCount: inbox.unreadCount,
+                                onNotifications: { inboxOpen = true },
+                                onRefreshInbox: { inbox.refresh() })
                         }
                             .onAppear { model.record("main-appeared") }
                     }
@@ -230,6 +237,9 @@ struct HomeView: View {
     let onRetryMember: () -> Void
     let onExpertHome: () -> Void
     let onCustomerSearch: (String?) -> Void
+    let unreadCount: Int?
+    let onNotifications: () -> Void
+    let onRefreshInbox: () -> Void
     @State private var notice: String?
     @State private var popular = 0
     var body: some View {
@@ -242,9 +252,20 @@ struct HomeView: View {
                             Capsule().fill(DesignTokens.lime).frame(width: 26, height: 3)
                         }
                         Spacer()
-                        Button { onProtected("알림") } label: {
-                            asset("notification.png", size: 23).frame(width: 44, height: 44)
-                        }.accessibilityLabel("알림")
+                        Button { onNotifications() } label: {
+                            asset("notification.png", size: 23)
+                                .frame(width: 44, height: 44)
+                                .overlay(alignment: .topTrailing) {
+                                    if let unreadCount, unreadCount > 0 {
+                                        Text(unreadCount > 99 ? "99+" : "\(unreadCount)")
+                                            .font(.custom("Pretendard-SemiBold", size: 10))
+                                            .foregroundStyle(.white)
+                                            .padding(.horizontal, 5).frame(minWidth: 18, minHeight: 18)
+                                            .background(DesignTokens.navy, in: Capsule())
+                                            .accessibilityIdentifier("main-inbox-badge")
+                                    }
+                                }
+                        }.accessibilityLabel("알림").accessibilityIdentifier("main-inbox")
                     }.padding(.top, 8)
                     copy(home.introduction, size: 20, bold: true).multilineTextAlignment(.center)
                         .frame(maxWidth: .infinity).padding(.top, 20).accessibilityIdentifier("main-introduction")
@@ -314,6 +335,7 @@ struct HomeView: View {
                 }
             }.padding(.vertical, 5)
         }.background(Color.white)
+            .task { onRefreshInbox() }
             .alert(notice ?? "", isPresented: Binding(get: { notice != nil }, set: { if !$0 { notice = nil } })) {
                 Button("확인", role: .cancel) { notice = nil }
             } message: { Text("이 기능은 다음 개발 단계에서 연결됩니다. 공개 탐색과 회원·정책 화면을 이용할 수 있습니다.") }

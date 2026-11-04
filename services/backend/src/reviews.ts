@@ -4,6 +4,7 @@ import type { Sql } from './app.ts';
 import type { Authenticate } from './auth.ts';
 import { ApiError } from './security.ts';
 import { audit, fail, requireActiveMember } from './kernel.ts';
+import { notify } from './notifications.ts';
 
 const idSchema = { type: 'string', format: 'uuid' };
 const params = { type: 'object', required: ['id'], additionalProperties: false, properties: { id: idSchema } };
@@ -99,6 +100,12 @@ export function registerReviewRoutes(app: FastifyInstance, db: Sql, authenticate
 
       await audit(sql, me, 'REVIEW_CREATED', 'review', String(review.id), undefined,
         { ledgerId: request.params.id, targetId, rating: request.body.rating });
+      await notify(sql, {
+        memberId: targetId, kind: 'REVIEW',
+        title: '새 후기가 등록되었습니다',
+        body: '받은 후기를 확인해보세요.',
+        ledgerId: request.params.id,
+      });
       return reply.code(201).send(review);
     });
   });
