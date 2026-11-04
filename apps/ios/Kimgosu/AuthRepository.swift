@@ -211,6 +211,10 @@ struct KGAuthRepository {
         let encoded = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id
         return try await request(.private, "PATCH", "/v1/expert/services/" + encoded, token: token, body: body)
     }
+    /// 업로드 슬롯만 서버에 요청하고 바이트는 앱이 R2로 직접 PUT한다.
+    func createUpload(_ token: String, contentType: String) async throws -> [String: Any] {
+        try await request(.private, "POST", "/v1/uploads", token: token, body: ["contentType": contentType, "kind": "service"])
+    }
     /// 개발 환경 전용 임시 로그인. 운영 빌드에서는 호출하지 않는다(KGEnvironment.isProduction 가드).
     /// 응답은 실제 서버가 발급한 세션이며 클라이언트가 토큰을 만들지 않는다.
     func devAccounts() async throws -> [String: Any] { try await request(.public, "GET", "/v1/auth/dev/accounts") }

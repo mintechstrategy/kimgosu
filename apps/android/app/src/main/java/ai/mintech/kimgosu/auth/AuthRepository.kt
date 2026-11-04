@@ -149,6 +149,10 @@ class AuthRepository(val transport: AuthTransport = MembershipHttp()) {
         request(AuthRequestContext.PRIVATE, "POST", "/v1/expert/services", token, body)
     suspend fun patchExpertService(token: String, id: String, body: JSONObject) =
         request(AuthRequestContext.PRIVATE, "PATCH", "/v1/expert/services/" + java.net.URLEncoder.encode(id, "UTF-8"), token, body)
+    // 업로드 슬롯만 서버에 요청하고 바이트는 앱이 R2로 직접 PUT한다.
+    suspend fun createUpload(token: String, contentType: String) =
+        request(AuthRequestContext.PRIVATE, "POST", "/v1/uploads", token,
+            JSONObject().put("contentType", contentType).put("kind", "service"))
     // Temporary tester login (dev deployment only). The server issues the session;
     // nothing about these calls creates a local-only identity.
     suspend fun devAccounts() = request(AuthRequestContext.PUBLIC, "GET", "/v1/auth/dev/accounts")

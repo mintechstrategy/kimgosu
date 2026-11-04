@@ -1,0 +1,87 @@
+{
+  "wsId": "WS-59",
+  "task": "포트폴리오 다중 이미지 UI 연결 (AOS · iOS)",
+  "status": "PARTIAL",
+  "worktree": "/Users/mintech-mac/hermes/dev-profile/shared/projects/wt-WS-59",
+  "baseCommit": "9eb3bc6",
+  "finishedAt": "2026-11-04 KST",
+  "summary": "고수 서비스 등록·수정 화면에서 사진을 여러 장 골라(장수 미제한) POST /v1/uploads → presigned PUT → key 저장까지 앱이 직접 수행하고, 순서(대표/사진 N)·삭제·업로드 상태를 표시하며 imageKeys 배열로 저장하도록 AOS·iOS를 함께 바꿨다. 5장 초과는 클라이언트가 자르지 않고 서버 400 TOO_MANY_IMAGES를 그대로 표시한다. 고객용 갤러리는 서버 sortOrder 순서로 좌우 스와이프하고 4:3 틀 안에서 원본 비율을 유지(Fit)하는 컴포넌트로 양쪽에 추가했다. AOS assembleDevDebug와 iOS xcodebuild build 모두 성공했고, 실제 API로 사진 3장 저장→images 3장(sortOrder 0,1,2, imageKey=첫 장)→고객 상세 재조회→6장 400 TOO_MANY_IMAGES→거절 후 3장 유지까지 스크립트로 실측해 8/8 PASS했다(WS-54 백엔드를 로컬 Postgres에 인프로세스로 띄워 측정, dev에는 WS-54 미배포라 dev 실행은 3건 BLOCKED). 다만 이 기준 커밋에는 고객 고수 상세 화면이 없어(WS-52 미병합) 갤러리는 아직 어떤 화면에도 배선되지 않았다.",
+  "changedFiles": [
+    "apps/android/app/src/main/java/ai/mintech/kimgosu/expert/ExpertServiceScreen.kt",
+    "apps/android/app/src/main/java/ai/mintech/kimgosu/expert/ServiceGallery.kt",
+    "apps/android/app/src/main/java/ai/mintech/kimgosu/auth/AuthRepository.kt",
+    "apps/ios/Kimgosu/ExpertServiceView.swift",
+    "apps/ios/Kimgosu/ServiceGalleryView.swift",
+    "apps/ios/Kimgosu/AuthRepository.swift",
+    "apps/ios/Kimgosu.xcodeproj/project.pbxproj",
+    "services/backend/scripts/verify-service-images.mjs",
+    "records/parallel-10/WS-59/RESULT.json"
+  ],
+  "implementation": {
+    "android": "ExpertServiceItem.images(List<ServiceImage>)·ServiceDraft.images 추가, 저장 본문을 imageKeys 배열로 전환(구서버 응답은 imageKey 1장 폴백). 등록·수정 폼에서 ActivityResultContracts.PickMultipleVisualMedia로 장수 제한 없이 선택 → ExpertServiceModel.uploadPhoto가 contentResolver로 바이트·contentType을 읽어 POST /v1/uploads 후 반환된 uploadUrl로 PUT(200~299 확인)하고 key/publicUrl 저장. 목록에 사진 N/5, '대표 사진'/'사진 N' 순서 표시, 삭제, '사진 업로드 중…', 업로드 실패 문구. ServiceGallery.kt의 ServiceImageGallery는 sortOrder 정렬 후 HorizontalPager로 스와이프, 4:3 + ContentScale.Fit(원본 비율 유지), 2장 이상이면 점 표시.",
+    "ios": "동일 모델·전송·폼 변경(SwiftUI): PhotosPicker(isPresented:selection:) 장수 미제한, ExpertServiceModel.uploadPhoto가 PhotosPickerItem → Data → POST /v1/uploads → URLSession PUT → ServiceImage 반환. 썸네일은 AsyncImage(ServicePhotoThumb). ServiceGalleryView.swift의 ServiceImageGallery는 TabView(.page)로 sortOrder 순 스와이프, aspectRatio 4:3 + scaledToFit, 로딩/실패 자리 표시. 새 파일은 pbxproj에 FA00… 대역 ID로 등록(F000…/F100… 미사용).",
+    "serverError": "저장 실패가 TOO_MANY_IMAGES면 양쪽 모두 '사진은 최대 5장까지 등록할 수 있습니다. (TOO_MANY_IMAGES)'로 서버 코드를 그대로 노출. 선택 단계에서 5장으로 자르지 않는다.",
+    "script": "services/backend/scripts/verify-service-images.mjs (신규 1개, 의존성 0, node 내장 fetch). 앱과 같은 순서로 presign→PUT→공개 URL 검증 후 기존 서비스가 있으면 PATCH, 없으면 POST로 imageKeys 3장 저장 → images 3장/순서/대표 이미지 확인 → GET /v1/me/expert·GET /v1/experts/:id 재조회 → 6장 PATCH가 400 TOO_MANY_IMAGES인지, 거절 후에도 3장이 남는지 확인. BLOCKED만 있으면 exit 2, 실패는 exit 1. 토큰은 출력하지 않는다(redact)."
+  },
+  "verification": [
+    {
+      "check": "AOS dev 빌드",
+      "command": "JAVA_HOME=.local-toolchains/jdk17/jdk-17.0.21+9/Contents/Home ANDROID_HOME=.local-toolchains/android-sdk GRADLE_USER_HOME=.local-toolchains/gradle-user-home python3 apps/android/build.py --offline :app:assembleDevDebug",
+      "result": "PASS",
+      "evidence": "BUILD SUCCESSFUL (최초 33s, 최종 10s / 38 actionable tasks). 산출물 app-dev-debug.apk 생성, 컴파일 결과에 ServiceGalleryKt.class 포함 확인."
+    },
+    {
+      "check": "iOS 빌드 (시뮬레이터 SDK, 서명 없음)",
+      "command": "xcodebuild -project apps/ios/Kimgosu.xcodeproj -scheme Kimgosu -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath <scratch>/dd-ws59 CODE_SIGNING_ALLOWED=NO build",
+      "result": "PASS",
+      "evidence": "** BUILD SUCCEEDED **. Objects-normal/{arm64,x86_64}/ServiceGalleryView.o, ExpertServiceView.o 생성 확인."
+    },
+    {
+      "check": "사진 3장 저장·순서·5장 초과 (WS-54 백엔드 로컬 실행 + 실제 PostgreSQL kgtest + 로컬 S3 대체)",
+      "command": "node --experimental-strip-types /Users/mintech-mac/.hermes/profiles/kg-04/cache/scratch/ws59-local-harness.mjs  (WS-54 buildApp을 kgtest에 인프로세스로 띄우고 verify-service-images.mjs --base-url http://127.0.0.1:<port> --slot 30 실행)",
+      "result": "PASS",
+      "evidence": "검사 8건 PASS 8 / FAIL 0: presign(POST /v1/uploads 201)→PUT 200→공개 URL 200 바이트 일치 3건, PATCH imageKeys 3장 후 images 3장·sortOrder 0,1,2·imageKey/imageUrl=첫 장, GET /v1/me/expert 재조회 동일, GET /v1/experts/:id(고객 상세) 동일, 6장 400 TOO_MANY_IMAGES, 거절 후 3장 유지. 하네스가 만든 member·service·세션·감사로그는 종료 시 삭제(잔여 0 확인)."
+    },
+    {
+      "check": "실 dev API 실행",
+      "command": "node scripts/verify-service-images.mjs --base-url https://api-dev-kimgosu.mintech.ai --slot 11",
+      "result": "PASS_WITH_BLOCKED",
+      "evidence": "검사 6건: PASS 3, BLOCKED 3, FAIL 0(exit 2). PASS = slot 11 로그인 + 사진 3장 presign 201 → R2 PUT 200 → 공개 URL media-dev-kimgosu.mintech.ai 200 + 바이트 일치. BLOCKED = POST/PATCH imageKeys가 HTTP 400 INVALID_REQUEST(WS-54 미배포)라 3장 저장·고객 상세 images·6장 거절을 dev에서 확인할 수 없다."
+    },
+    {
+      "check": "AOS 화면 실행 (사진 선택·업로드·삭제·스와이프 렌더)",
+      "command": "(실행하지 않음 — 에뮬레이터 금지)",
+      "result": "NOT_RUN",
+      "evidence": "NOT_RUN (시뮬레이터 정책: 07-24 금지). 빌드까지만 확인. 실제 사진 선택 동작·갤러리 스와이프·비율 렌더는 화면 실행이 필요하다."
+    },
+    {
+      "check": "iOS 화면 실행 (PhotosPicker·갤러리 스와이프 렌더)",
+      "command": "(실행하지 않음 — 시뮬레이터 금지)",
+      "result": "NOT_RUN",
+      "evidence": "NOT_RUN (시뮬레이터 정책: 07-24 금지). 빌드까지만 확인. PhotosPicker 표시·스와이프·비율 렌더는 실행 검증하지 않았다."
+    }
+  ],
+  "open": [
+    {
+      "item": "고객 고수 상세 화면에 갤러리 배선",
+      "reason": "이 기준 커밋(9eb3bc6)에는 고객용 고수 상세 화면이 없다. 그 화면은 WS-52(AOS)·WS-53(iOS) 레인 파일이라 이 워크트리에 존재하지 않는다.",
+      "state": "ServiceImageGallery(AOS: expert/ServiceGallery.kt, iOS: ServiceGalleryView.swift)는 컴포넌트로만 존재하며 현재 어떤 화면에서도 호출되지 않는다(미사용 상태).",
+      "unblock": "WS-52/WS-53 병합 후 상세 화면의 서비스 항목에서 AOS `ServiceImageGallery(item.images)`, iOS `ServiceImageGallery(images: service.images)` 한 줄로 호출하면 된다. images는 이미 상세 응답에서 디코드된다."
+    },
+    {
+      "item": "dev에서 images 3장 실측",
+      "reason": "WS-54 백엔드가 dev에 배포되지 않아 imageKeys가 400 INVALID_REQUEST다.",
+      "unblock": "WS-54 배포 후 같은 스크립트를 dev에 재실행하면 저장·고객 상세·6장 거절 검사가 BLOCKED에서 PASS로 바뀐다."
+    }
+  ],
+  "risks": [
+    "로컬 측정은 R2 대신 127.0.0.1 S3 대체 서버를 썼다(서명·PUT·공개 조회 경로는 실제 코드/HTTP). 실제 R2 업로드는 dev API로 presign→PUT→공개 URL 3건을 실측했다.",
+    "AOS는 이미지 로딩에 라이브러리를 추가하지 않고 HttpURLConnection+BitmapFactory를 쓴다(의존성 추가 금지). 큰 사진을 그대로 디코드하므로 서버가 허용하는 최대 크기에 따라 메모리 사용이 커질 수 있다.",
+    "TOO_MANY_IMAGES 문구는 저장 시점에만 나온다. 6장을 올려둔 상태에서 저장을 눌러야 서버 거절을 볼 수 있다(카드 요구대로 클라이언트가 미리 자르지 않음)."
+  ],
+  "nextActions": [
+    "WS-52/WS-53 병합 후 상세 화면에 갤러리 호출 1줄 추가 + 이 워크트리 변경분 통합",
+    "WS-54 dev 배포 후 scripts/verify-service-images.mjs 재실행",
+    "QA(00-07)에서 AOS/iOS 사진 3장 선택→저장→상세 스와이프 화면 캡처, 결과 동등성 비교"
+  ]
+}
