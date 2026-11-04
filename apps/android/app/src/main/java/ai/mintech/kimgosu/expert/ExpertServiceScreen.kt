@@ -2,15 +2,23 @@ package ai.mintech.kimgosu.expert
 
 import ai.mintech.kimgosu.ui.DesignTokens
 import android.app.Application
+import android.graphics.BitmapFactory
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -28,10 +36,14 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -45,11 +57,15 @@ import ai.mintech.kimgosu.auth.AuthRepository
 import ai.mintech.kimgosu.auth.MembershipHttp
 import ai.mintech.kimgosu.auth.SecureSession
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
+import java.net.HttpURLConnection
+import java.net.URL
 
 /**
  * 고수 서비스 목록·등록·수정 (WS-42).
@@ -60,6 +76,12 @@ import java.io.IOException
  * 유효하지 않은 조합(가격 없는 FIXED 등)은 클라이언트가 고치지 않고 서버 400을 표시한다.
  */
 
+data class ServiceImage(
+    val key: String,
+    val url: String?,
+    val sortOrder: Int,
+)
+
 data class ExpertServiceItem(
     val id: String,
     val category: String,
@@ -68,8 +90,7 @@ data class ExpertServiceItem(
     val priceType: String,
     val basePrice: Int?,
     val visibility: String,
-    val imageKey: String?,
-    val images: List<String>,
+    val images: List<ServiceImage>,
 )
 
 data class ServiceDraft(
@@ -79,7 +100,7 @@ data class ServiceDraft(
     val description: String,
     val priceType: String,
     val price: String,
-    val imageKeys: List<String>,
+    val images: List<ServiceImage>,
 )
 
 sealed interface ExpertServicesState {
@@ -162,7 +183,7 @@ class ExpertServiceModel @JvmOverloads constructor(
                 .put("description", draft.description)
                 .put("priceType", draft.priceType)
                 .put("basePrice", if (draft.priceType == "NEGOTIABLE" || draft.price.isBlank()) JSONObject.NULL else draft.price.toIntOrNull() ?: JSONObject.NULL)
-                .put("imageKeys", JSONArray(draft.imageKeys.map { it.trim() }.filter { it.isNotEmpty() }))
+                .put("imageKeys", JSONArray(draft.images.map { it.key }))
             try {
                 if (draft.id == null) repository.createExpertService(token, body)
                 else repository.patchExpertService(token, draft.id, body)
@@ -188,6 +209,40 @@ class ExpertServiceModel @JvmOverloads constructor(
 
     fun clearSave() { save = ServiceSaveState.Idle }
 
+    /**
+     * 사진은 앱이 R2로 직접 올리고 키만 서버에 넘긴다. 키는 업로드 응답이 발급한
+     * `service/<memberId>/…`여야 서버가 소유권을 인정한다.
+     */
+    suspend fun uploadPhoto(uri: Uri, sortOrder: Int): ServiceImage {
+        val token = runCatching { sessions.read() }.getOrNull() ?: throw AuthFailure(401, "SIGN_IN_REQUIRED")
+        val resolver = getApplication<Application>().contentResolver
+        val contentType = resolver.getType(uri) ?: throw AuthFailure(400, "UNSUPPORTED_IMAGE_TYPE")
+        val bytes = withContext(Dispatchers.IO) {
+            resolver.openInputStream(uri)?.use { it.readBytes() }
+        } ?: throw IOException("사진을 읽을 수 없습니다.")
+        val presigned = repository.createUpload(token, contentType)
+        val uploadUrl = presigned.optString("uploadUrl")
+        withContext(Dispatchers.IO) {
+            val connection = URL(uploadUrl).openConnection() as HttpURLConnection
+            try {
+                connection.requestMethod = "PUT"
+                connection.connectTimeout = 8000
+                connection.readTimeout = 8000
+                connection.setRequestProperty("Content-Type", contentType)
+                connection.doOutput = true
+                connection.outputStream.use { it.write(bytes) }
+                if (connection.responseCode !in 200..299) throw IOException("R2 upload rejected")
+            } finally {
+                connection.disconnect()
+            }
+        }
+        return ServiceImage(
+            key = presigned.optString("key"),
+            url = presigned.optString("publicUrl").ifBlank { null },
+            sortOrder = sortOrder,
+        )
+    }
+
     private suspend fun read(token: String): ExpertServicesState {
         val items = decodeServices(repository.expertSelf(token))
         return if (items.isEmpty()) ExpertServicesState.Empty else ExpertServicesState.Ready(items)
@@ -198,10 +253,7 @@ class ExpertServiceModel @JvmOverloads constructor(
             val array = json.optJSONArray("services") ?: return emptyList()
             return List(array.length()) { index ->
                 val item = array.getJSONObject(index)
-                val imageKey = if (item.isNull("imageKey")) null else item.optString("imageKey", "").takeIf { it.isNotEmpty() }
-                val images = item.optJSONArray("images")?.let { list ->
-                    List(list.length()) { position -> list.getJSONObject(position).optString("key", "") }.filter { it.isNotEmpty() }
-                }.orEmpty()
+                val imageKey = if (item.isNull("imageKey")) null else item.optString("imageKey", "")
                 ExpertServiceItem(
                     id = item.optString("id", ""),
                     category = item.optString("category", ""),
@@ -210,9 +262,19 @@ class ExpertServiceModel @JvmOverloads constructor(
                     priceType = item.optString("priceType", ""),
                     basePrice = if (item.isNull("basePrice")) null else item.optInt("basePrice"),
                     visibility = item.optString("visibility", ""),
-                    imageKey = imageKey,
-                    // 배포 전 서버는 images[]가 없고 imageKey만 준다. 그때도 한 장으로 보여준다.
-                    images = images.ifEmpty { listOfNotNull(imageKey) },
+                    // images[]가 없는 구서버 응답은 대표 이미지 한 장으로 본다.
+                    images = item.optJSONArray("images")?.let { rows ->
+                        List(rows.length()) { position ->
+                            val row = rows.getJSONObject(position)
+                            ServiceImage(
+                                key = row.optString("key", ""),
+                                url = if (row.isNull("url")) null else row.optString("url", ""),
+                                sortOrder = row.optInt("sortOrder", position),
+                            )
+                        }
+                    } ?: imageKey?.takeIf { it.isNotBlank() }?.let {
+                        listOf(ServiceImage(it, if (item.isNull("imageUrl")) null else item.optString("imageUrl"), 0))
+                    } ?: emptyList(),
                 )
             }
         }
@@ -227,7 +289,7 @@ fun ExpertServiceScreen(model: ExpertServiceModel) {
         // 저장이 끝나면 목록으로 돌아가 방금 등록·수정한 항목을 바로 보여준다.
         LaunchedEffect(model.save) { if (model.save is ServiceSaveState.Saved) draft = null }
         if (draft != null) {
-            ServiceForm(draft!!, model::save, model.save, onBack = { draft = null; model.clearSave() })
+            ServiceForm(draft!!, model::save, model.save, model::uploadPhoto, onBack = { draft = null; model.clearSave() })
             return@Column
         }
         Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 12.dp, top = 16.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -265,7 +327,6 @@ private fun ServiceRow(item: ExpertServiceItem, index: Int, onToggle: (Boolean) 
         Column(Modifier.weight(1f)) {
             ExpertCopy(item.title, size = 15, weight = FontWeight.SemiBold)
             ExpertCopy(item.category + " · " + priceLabel(item), Modifier.padding(top = 2.dp), 13, color = DesignTokens.muted)
-            if (item.images.isNotEmpty()) ExpertCopy("사진 " + item.images.size + "장", Modifier.padding(top = 2.dp), 13, color = DesignTokens.muted)
         }
         Switch(checked = item.visibility == "VISIBLE", onCheckedChange = onToggle,
             modifier = Modifier.testTag("service-visibility-$index"))
@@ -280,13 +341,50 @@ private fun priceLabel(item: ExpertServiceItem): String = when (item.priceType) 
 }
 
 @Composable
-private fun ServiceForm(draft: ServiceDraft, onSave: (ServiceDraft) -> Unit, save: ServiceSaveState, onBack: () -> Unit) {
+private fun ServiceForm(
+    draft: ServiceDraft,
+    onSave: (ServiceDraft) -> Unit,
+    save: ServiceSaveState,
+    uploadPhoto: suspend (Uri, Int) -> ServiceImage,
+    onBack: () -> Unit,
+) {
     var category by remember(draft.id) { mutableStateOf(draft.category) }
     var title by remember(draft.id) { mutableStateOf(draft.title) }
     var description by remember(draft.id) { mutableStateOf(draft.description) }
     var priceType by remember(draft.id) { mutableStateOf(draft.priceType) }
     var price by remember(draft.id) { mutableStateOf(draft.price) }
-    var imageKeys by remember(draft.id) { mutableStateOf(draft.imageKeys) }
+    var images by remember(draft.id) { mutableStateOf(draft.images) }
+    var uploading by remember(draft.id) { mutableStateOf(false) }
+    var photoError by remember(draft.id) { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    // 서버가 5장을 넘으면 400 TOO_MANY_IMAGES로 거절한다. 선택 단계에서 잘라내면
+    // 사용자는 왜 5장만 등록됐는지 알 수 없으므로 장수를 제한하지 않고 그대로 보낸다.
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia()) { picked ->
+        if (picked.isEmpty()) return@rememberLauncherForActivityResult
+        scope.launch {
+            uploading = true
+            photoError = null
+            val added = mutableListOf<ServiceImage>()
+            var failure: String? = null
+            for (uri in picked) {
+                try {
+                    added += uploadPhoto(uri, images.size + added.size)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: AuthFailure) {
+                    failure = if (e.status == 0) "네트워크에 연결할 수 없습니다. 사진을 올리지 못했습니다. (${e.code})"
+                    else "사진을 올리지 못했습니다. (${e.code})"
+                    break
+                } catch (_: IOException) {
+                    failure = "네트워크에 연결할 수 없습니다. 사진을 올리지 못했습니다."
+                    break
+                }
+            }
+            images = images + added
+            uploading = false
+            photoError = failure
+        }
+    }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp).testTag("service-form"),
         verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -319,23 +417,31 @@ private fun ServiceForm(draft: ServiceDraft, onSave: (ServiceDraft) -> Unit, sav
             textStyle = TextStyle(fontFamily = expertFont(), fontSize = 14.sp, color = DesignTokens.navy),
             shape = RoundedCornerShape(6.dp),
         )
-        ExpertCopy("사진 (최대 5장, 첫 장이 대표 이미지)", size = 13, color = DesignTokens.muted)
-        imageKeys.forEachIndexed { index, key ->
-            Column(Modifier.fillMaxWidth().testTag("service-image-$index")) {
-                ExpertField("이미지 키 ${index + 1}", key,
-                    { value -> imageKeys = imageKeys.toMutableList().also { it[index] = value } },
-                    "service-field-image-key-$index", 1, 300)
-                TextButton(onClick = { imageKeys = imageKeys.filterIndexed { i, _ -> i != index } },
-                    modifier = Modifier.testTag("service-image-remove-$index")) { ExpertCopy("사진 삭제") }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            ExpertCopy("사진 (" + images.size + "/5)", Modifier.weight(1f), 13, color = DesignTokens.muted)
+            TextButton(
+                onClick = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                enabled = !uploading,
+                modifier = Modifier.heightIn(min = 48.dp).testTag("service-photo-add"),
+            ) { ExpertCopy("+ 사진 추가", weight = FontWeight.SemiBold) }
+        }
+        images.forEachIndexed { index, image ->
+            Row(Modifier.fillMaxWidth().testTag("service-photo-$index"), verticalAlignment = Alignment.CenterVertically) {
+                ServicePhoto(image.url, Modifier.size(64.dp))
+                ExpertCopy(
+                    if (index == 0) "대표 사진" else "사진 " + (index + 1),
+                    Modifier.weight(1f).padding(start = 12.dp), 13, color = DesignTokens.muted,
+                )
+                TextButton(
+                    onClick = { images = images.filterIndexed { position, _ -> position != index } },
+                    modifier = Modifier.heightIn(min = 48.dp).testTag("service-photo-remove-$index"),
+                ) { ExpertCopy("삭제") }
             }
         }
-        if (imageKeys.size < 5) {
-            TextButton(onClick = { imageKeys = imageKeys + "" }, modifier = Modifier.testTag("service-image-add")) {
-                ExpertCopy("+ 사진 추가")
-            }
-        }
+        if (uploading) ExpertCopy("사진 업로드 중…", Modifier.testTag("service-photo-uploading"), 13, color = DesignTokens.muted)
+        photoError?.let { ExpertCopy(it, Modifier.testTag("service-photo-error"), 13, color = DesignTokens.muted) }
         Button(
-            onClick = { onSave(ServiceDraft(draft.id, category, title, description, priceType, price, imageKeys)) },
+            onClick = { onSave(ServiceDraft(draft.id, category, title, description, priceType, price, images)) },
             enabled = save != ServiceSaveState.Saving,
             colors = ButtonDefaults.buttonColors(containerColor = DesignTokens.navy, contentColor = Color.White),
             shape = RoundedCornerShape(6.dp),
@@ -344,9 +450,27 @@ private fun ServiceForm(draft: ServiceDraft, onSave: (ServiceDraft) -> Unit, sav
         (save as? ServiceSaveState.Failed)?.let {
             ExpertCopy(
                 if (it.network) "네트워크에 연결할 수 없습니다. 연결을 확인하고 다시 시도해주세요."
+                else if (it.code == "TOO_MANY_IMAGES") "사진은 최대 5장까지 등록할 수 있습니다. (TOO_MANY_IMAGES)"
                 else "저장하지 못했습니다. (${it.code})",
                 Modifier.testTag(if (it.network) "service-save-network" else "service-save-error"), 13,
             )
         }
+    }
+}
+
+/**
+ * 서버가 준 공개 URL 한 장. 로드 전·실패에는 회색 자리만 남겨 레이아웃이 흔들리지 않게 한다.
+ * contentScale은 썸네일이면 Crop, 갤러리면 Fit을 쓴다.
+ */
+@Composable
+internal fun ServicePhoto(url: String?, modifier: Modifier, contentScale: ContentScale = ContentScale.Crop) {
+    var bitmap by remember(url) { mutableStateOf<ImageBitmap?>(null) }
+    LaunchedEffect(url) {
+        bitmap = if (url == null) null else withContext(Dispatchers.IO) {
+            runCatching { URL(url).openStream().use { BitmapFactory.decodeStream(it) } }.getOrNull()?.asImageBitmap()
+        }
+    }
+    Box(modifier.background(Color(0xFFF4F4F4), RoundedCornerShape(6.dp)), contentAlignment = Alignment.Center) {
+        bitmap?.let { Image(it, null, Modifier.fillMaxSize(), contentScale = contentScale) }
     }
 }

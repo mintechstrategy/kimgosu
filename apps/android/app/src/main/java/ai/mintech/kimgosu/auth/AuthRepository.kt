@@ -154,6 +154,7 @@ class AuthRepository(val transport: AuthTransport = MembershipHttp()) {
         request(AuthRequestContext.PRIVATE, "POST", "/v1/expert/services", token, body)
     suspend fun patchExpertService(token: String, id: String, body: JSONObject) =
         request(AuthRequestContext.PRIVATE, "PATCH", "/v1/expert/services/" + java.net.URLEncoder.encode(id, "UTF-8"), token, body)
+<<<<<<< HEAD
     // 고객 거래 흐름. 상태·금액·완료 여부는 모두 서버가 판정하며 클라이언트는
     // 표시만 한다. 목록/상세는 공개, 원장·메시지·견적·후기 작성은 세션 필요.
     suspend fun searchExperts(category: String?, cursor: String? = null): JSONObject {
@@ -191,6 +192,12 @@ class AuthRepository(val transport: AuthTransport = MembershipHttp()) {
         request(AuthRequestContext.PRIVATE, "POST", ledgerPath(ledgerId) + "/reviews", token, payload)
     }
     private fun ledgerPath(id: String) = "/v1/ledgers/" + java.net.URLEncoder.encode(id, "UTF-8")
+=======
+    // 업로드 슬롯만 서버에 요청하고 바이트는 앱이 R2로 직접 PUT한다.
+    suspend fun createUpload(token: String, contentType: String) =
+        request(AuthRequestContext.PRIVATE, "POST", "/v1/uploads", token,
+            JSONObject().put("contentType", contentType).put("kind", "service"))
+>>>>>>> ws/WS-59
     // Temporary tester login (dev deployment only). The server issues the session;
     // nothing about these calls creates a local-only identity.
     suspend fun devAccounts() = request(AuthRequestContext.PUBLIC, "GET", "/v1/auth/dev/accounts")
