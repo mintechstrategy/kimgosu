@@ -47,6 +47,7 @@ import ai.mintech.kimgosu.auth.SecureSession
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
 
@@ -68,6 +69,7 @@ data class ExpertServiceItem(
     val basePrice: Int?,
     val visibility: String,
     val imageKey: String?,
+    val images: List<String>,
 )
 
 data class ServiceDraft(
@@ -77,7 +79,7 @@ data class ServiceDraft(
     val description: String,
     val priceType: String,
     val price: String,
-    val imageKey: String,
+    val imageKeys: List<String>,
 )
 
 sealed interface ExpertServicesState {
@@ -160,7 +162,7 @@ class ExpertServiceModel @JvmOverloads constructor(
                 .put("description", draft.description)
                 .put("priceType", draft.priceType)
                 .put("basePrice", if (draft.priceType == "NEGOTIABLE" || draft.price.isBlank()) JSONObject.NULL else draft.price.toIntOrNull() ?: JSONObject.NULL)
-                .put("imageKey", if (draft.imageKey.isBlank()) JSONObject.NULL else draft.imageKey)
+                .put("imageKeys", JSONArray(draft.imageKeys.map { it.trim() }.filter { it.isNotEmpty() }))
             try {
                 if (draft.id == null) repository.createExpertService(token, body)
                 else repository.patchExpertService(token, draft.id, body)
@@ -196,6 +198,10 @@ class ExpertServiceModel @JvmOverloads constructor(
             val array = json.optJSONArray("services") ?: return emptyList()
             return List(array.length()) { index ->
                 val item = array.getJSONObject(index)
+                val imageKey = if (item.isNull("imageKey")) null else item.optString("imageKey", "").takeIf { it.isNotEmpty() }
+                val images = item.optJSONArray("images")?.let { list ->
+                    List(list.length()) { position -> list.getJSONObject(position).optString("key", "") }.filter { it.isNotEmpty() }
+                }.orEmpty()
                 ExpertServiceItem(
                     id = item.optString("id", ""),
                     category = item.optString("category", ""),
@@ -204,7 +210,9 @@ class ExpertServiceModel @JvmOverloads constructor(
                     priceType = item.optString("priceType", ""),
                     basePrice = if (item.isNull("basePrice")) null else item.optInt("basePrice"),
                     visibility = item.optString("visibility", ""),
-                    imageKey = if (item.isNull("imageKey")) null else item.optString("imageKey", ""),
+                    imageKey = imageKey,
+                    // 배포 전 서버는 images[]가 없고 imageKey만 준다. 그때도 한 장으로 보여준다.
+                    images = images.ifEmpty { listOfNotNull(imageKey) },
                 )
             }
         }
@@ -226,7 +234,7 @@ fun ExpertServiceScreen(model: ExpertServiceModel) {
             ExpertCopy("서비스", Modifier.weight(1f), 20, bold = true)
             TextButton(onClick = {
                 model.clearSave()
-                draft = ServiceDraft(null, "", "", "", "FIXED", "", "")
+                draft = ServiceDraft(null, "", "", "", "FIXED", "", emptyList())
             }, modifier = Modifier.heightIn(min = 48.dp).testTag("service-add")) { ExpertCopy("+ 등록", weight = FontWeight.SemiBold) }
         }
         model.notice?.let { ExpertCopy(it, Modifier.padding(horizontal = 20.dp, vertical = 4.dp).testTag("service-notice"), 13, color = DesignTokens.muted) }
@@ -243,7 +251,7 @@ fun ExpertServiceScreen(model: ExpertServiceModel) {
                 state.items.forEachIndexed { index, item -> ServiceRow(item, index, onToggle = { model.setVisibility(item, it) }, onEdit = {
                     model.clearSave()
                     draft = ServiceDraft(item.id, item.category, item.title, item.description, item.priceType,
-                        item.basePrice?.toString() ?: "", item.imageKey ?: "")
+                        item.basePrice?.toString() ?: "", item.images)
                 }) }
             }
         }
@@ -257,6 +265,7 @@ private fun ServiceRow(item: ExpertServiceItem, index: Int, onToggle: (Boolean) 
         Column(Modifier.weight(1f)) {
             ExpertCopy(item.title, size = 15, weight = FontWeight.SemiBold)
             ExpertCopy(item.category + " · " + priceLabel(item), Modifier.padding(top = 2.dp), 13, color = DesignTokens.muted)
+            if (item.images.isNotEmpty()) ExpertCopy("사진 " + item.images.size + "장", Modifier.padding(top = 2.dp), 13, color = DesignTokens.muted)
         }
         Switch(checked = item.visibility == "VISIBLE", onCheckedChange = onToggle,
             modifier = Modifier.testTag("service-visibility-$index"))
@@ -277,7 +286,7 @@ private fun ServiceForm(draft: ServiceDraft, onSave: (ServiceDraft) -> Unit, sav
     var description by remember(draft.id) { mutableStateOf(draft.description) }
     var priceType by remember(draft.id) { mutableStateOf(draft.priceType) }
     var price by remember(draft.id) { mutableStateOf(draft.price) }
-    var imageKey by remember(draft.id) { mutableStateOf(draft.imageKey) }
+    var imageKeys by remember(draft.id) { mutableStateOf(draft.imageKeys) }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp).testTag("service-form"),
         verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -310,9 +319,23 @@ private fun ServiceForm(draft: ServiceDraft, onSave: (ServiceDraft) -> Unit, sav
             textStyle = TextStyle(fontFamily = expertFont(), fontSize = 14.sp, color = DesignTokens.navy),
             shape = RoundedCornerShape(6.dp),
         )
-        ExpertField("이미지 키 (선택)", imageKey, { imageKey = it }, "service-field-image-key", 1, 300)
+        ExpertCopy("사진 (최대 5장, 첫 장이 대표 이미지)", size = 13, color = DesignTokens.muted)
+        imageKeys.forEachIndexed { index, key ->
+            Column(Modifier.fillMaxWidth().testTag("service-image-$index")) {
+                ExpertField("이미지 키 ${index + 1}", key,
+                    { value -> imageKeys = imageKeys.toMutableList().also { it[index] = value } },
+                    "service-field-image-key-$index", 1, 300)
+                TextButton(onClick = { imageKeys = imageKeys.filterIndexed { i, _ -> i != index } },
+                    modifier = Modifier.testTag("service-image-remove-$index")) { ExpertCopy("사진 삭제") }
+            }
+        }
+        if (imageKeys.size < 5) {
+            TextButton(onClick = { imageKeys = imageKeys + "" }, modifier = Modifier.testTag("service-image-add")) {
+                ExpertCopy("+ 사진 추가")
+            }
+        }
         Button(
-            onClick = { onSave(ServiceDraft(draft.id, category, title, description, priceType, price, imageKey)) },
+            onClick = { onSave(ServiceDraft(draft.id, category, title, description, priceType, price, imageKeys)) },
             enabled = save != ServiceSaveState.Saving,
             colors = ButtonDefaults.buttonColors(containerColor = DesignTokens.navy, contentColor = Color.White),
             shape = RoundedCornerShape(6.dp),
