@@ -157,7 +157,12 @@ final class OfflineProtocol: URLProtocol {
                             .onAppear { model.record("main-appeared") }
                     }
                 }
-            }.frame(maxWidth: .infinity, maxHeight: .infinity).background(Color.white)
+            }
+            // 세션 복원과 개발 로그인은 인증 화면에 들어가야만 시작되면 안 된다.
+            // 고수 홈으로 바로 진입하는 경로(--open-expert-home)에서는 인증 화면을
+            // 거치지 않으므로, 시작을 앱 수준에서 한 번 보장한다. start()는 멱등이다.
+            .task { auth.start() }
+            .frame(maxWidth: .infinity, maxHeight: .infinity).background(Color.white)
                 .preferredColorScheme(.light).tint(DesignTokens.navy)
                 // 받은 견적 화면은 WS-43 몫이라 이 후보에는 없다. 탭이 죽은 채로 남지 않게 안내만 한다.
                 .alert("받은 견적", isPresented: $quotesPendingNotice) {
