@@ -40,6 +40,7 @@ data class CustomerExpertCard(
     val activityRegion: String,
     val serviceCount: Int,
     val fromPrice: Long?,
+    val onVacation: Boolean,
 )
 
 sealed interface CustomerSearchState {
@@ -85,6 +86,7 @@ class CustomerSearchModel(private val transport: AuthTransport = MembershipHttp(
                     activityRegion = row.optString("activityRegion"),
                     serviceCount = row.optInt("serviceCount"),
                     fromPrice = if (row.isNull("fromPrice")) null else row.optLong("fromPrice"),
+                    onVacation = row.optBoolean("onVacation"),
                 )
             }
             return if (experts.isEmpty()) CustomerSearchState.Empty else CustomerSearchState.Ready(experts)
@@ -165,11 +167,20 @@ private fun ExpertCard(expert: CustomerExpertCard, onOpen: (String, String) -> U
         .clickable { onOpen(expert.expertId, expert.nickname) }.padding(14.dp).testTag("expert-card-${expert.expertId}")) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             ExpertCopy(expert.nickname.ifBlank { "고수" }, Modifier.weight(1f), 16, bold = true)
-            expert.fromPrice?.let { ExpertCopy(won(it) + "부터", size = 13, weight = FontWeight.SemiBold) }
+            if (expert.onVacation) VacationBadge()
+            expert.fromPrice?.let { ExpertCopy(won(it) + "부터", Modifier.padding(start = 8.dp), size = 13, weight = FontWeight.SemiBold) }
         }
         val meta = listOf(expert.activityRegion, "서비스 ${expert.serviceCount}개").filter { it.isNotBlank() }
         if (meta.isNotEmpty()) ExpertCopy(meta.joinToString(" · "), Modifier.padding(top = 4.dp), 12, color = DesignTokens.muted)
         if (expert.introduction.isNotBlank()) ExpertCopy(expert.introduction, Modifier.padding(top = 6.dp), 13, color = DesignTokens.muted)
+    }
+}
+
+@Composable
+private fun VacationBadge() {
+    Box(Modifier.padding(start = 8.dp).background(DesignTokens.lime, RoundedCornerShape(4.dp))
+        .padding(horizontal = 7.dp, vertical = 3.dp).testTag("expert-vacation")) {
+        ExpertCopy("휴가 중", size = 11, weight = FontWeight.SemiBold)
     }
 }
 

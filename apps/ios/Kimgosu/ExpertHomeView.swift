@@ -20,6 +20,14 @@ struct KGExpertRequest: Identifiable, Equatable {
     let vatIncluded: Bool
 }
 
+/// 기간 지정 휴가. 날짜 단위(yyyy-MM-dd)이며 종료일을 포함한다.
+struct KGExpertAvailabilityPeriod: Identifiable, Equatable {
+    let id: String
+    let startsAt: String
+    let endsAt: String
+    let reason: String?
+}
+
 struct KGExpertHomeReady: Equatable {
     var availability: KGExpertAvailability
     let receivedThisMonth: Int
@@ -38,9 +46,14 @@ enum KGExpertHomeState: Equatable {
     @Published private(set) var state: KGExpertHomeState = .loading
     @Published private(set) var toggleBusy = false
     @Published private(set) var toggleError: String?
+    @Published private(set) var periods: [KGExpertAvailabilityPeriod] = []
+    @Published private(set) var periodBusy = false
+    @Published private(set) var periodError: String?
     private let transport: KGAuthTransport
     private let sessions: KGSessionStorage
     private var task: Task<Void, Never>?
+
+    static let periodsPath = "/v1/me/expert/availability/periods"
 
     init(transport: KGAuthTransport = KGMembershipHTTP(), sessions: KGSessionStorage = KGSecureSession()) {
         self.transport = transport
@@ -71,8 +84,11 @@ enum KGExpertHomeState: Equatable {
             do {
                 let expert = try await self.transport.request("GET", "/v1/me/expert", token: token, body: nil)
                 let quotes = try await self.transport.request("GET", "/v1/me/quotes?limit=100", token: token, body: nil)
+                let periods = try await self.transport.request("GET", Self.periodsPath, token: token, body: nil)
                 if Task.isCancelled { return }
                 self.state = Self.decode(expert: expert, quotes: quotes)
+                self.periods = Self.decodePeriods(periods)
+                self.periodError = nil
             } catch {
                 if Task.isCancelled { return }
                 if let api = error as? KGAuthAPIError, api.status == 404, api.code == "EXPERT_PROFILE_REQUIRED" {
@@ -144,6 +160,82 @@ enum KGExpertHomeState: Equatable {
             requests: Array(requests)))
     }
 
+    static func decodePeriods(_ json: [String: Any]) -> [KGExpertAvailabilityPeriod] {
+        (json["periods"] as? [[String: Any]] ?? []).compactMap { row in
+            guard let id = row["id"] as? String, let startsAt = row["startsAt"] as? String,
+                  let endsAt = row["endsAt"] as? String else { return nil }
+            let reason = (row["reason"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+            return KGExpertAvailabilityPeriod(id: id, startsAt: startsAt, endsAt: endsAt, reason: reason)
+        }
+    }
+
+    static func dayString(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .current
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: date)
+    }
+
+    /// 휴가 기간 등록. 서버가 저장한 응답만 목록에 반영한다.
+    func addPeriod(startsAt: Date, endsAt: Date) {
+        guard !periodBusy else { return }
+        let start = Self.dayString(startsAt)
+        let end = Self.dayString(endsAt)
+        guard end >= start else { periodError = "종료일이 시작일보다 빠릅니다."; return }
+        guard let token = try? sessions.read() else {
+            periodError = "세션이 만료되었습니다. 다시 로그인해주세요."
+            return
+        }
+        periodBusy = true
+        periodError = nil
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                let saved = try await self.transport.request("POST", Self.periodsPath, token: token,
+                                                             body: ["startsAt": start, "endsAt": end])
+                if let period = Self.decodePeriods(["periods": [saved]]).first,
+                   !self.periods.contains(where: { $0.id == period.id }) {
+                    self.periods = (self.periods + [period]).sorted { $0.startsAt > $1.startsAt }
+                }
+            } catch {
+                if let api = error as? KGAuthAPIError {
+                    self.periodError = api.status == 401 ? "세션이 만료되었습니다. 다시 로그인해주세요."
+                        : "휴가 기간을 저장하지 못했습니다. (\(api.code))"
+                } else {
+                    self.periodError = "네트워크에 연결할 수 없어 저장하지 못했습니다."
+                }
+            }
+            self.periodBusy = false
+        }
+    }
+
+    func deletePeriod(_ id: String) {
+        guard !periodBusy else { return }
+        guard let token = try? sessions.read() else {
+            periodError = "세션이 만료되었습니다. 다시 로그인해주세요."
+            return
+        }
+        periodBusy = true
+        periodError = nil
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                _ = try await self.transport.request("DELETE", Self.periodsPath + "/" + id, token: token, body: nil)
+                self.periods.removeAll { $0.id == id }
+            } catch {
+                if let api = error as? KGAuthAPIError {
+                    self.periodError = api.status == 401 ? "세션이 만료되었습니다. 다시 로그인해주세요."
+                        : "휴가 기간을 삭제하지 못했습니다. (\(api.code))"
+                } else {
+                    self.periodError = "네트워크에 연결할 수 없어 삭제하지 못했습니다."
+                }
+            }
+            self.periodBusy = false
+        }
+    }
+
     private static func timestamp(_ value: String) -> Date? {
         let plain = ISO8601DateFormatter()
         if let date = plain.date(from: value) { return date }
@@ -158,6 +250,8 @@ struct ExpertHomeView: View {
     let onBack: () -> Void
     let onOpenQuotes: () -> Void
     @StateObject private var model = KGExpertHomeModel()
+    @State private var periodStart = Date()
+    @State private var periodEnd = Date()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -259,6 +353,35 @@ struct ExpertHomeView: View {
                 kgText(error, size: 12).padding(.top, 8).accessibilityIdentifier("availability-error")
             }
 
+            kgText("휴가 기간", size: 19, bold: true).accessibilityAddTraits(.isHeader).padding(.top, 24)
+            kgText("기간 중에는 고객 검색에 휴가 중으로 표시됩니다.", size: 12, color: DesignTokens.muted).padding(.top, 4)
+            HStack(spacing: 8) {
+                dateField("시작일", selection: $periodStart, id: "period-start")
+                dateField("종료일", selection: $periodEnd, id: "period-end")
+            }.padding(.top, 10)
+            Button { model.addPeriod(startsAt: periodStart, endsAt: periodEnd) } label: {
+                kgText("휴가 기간 추가", size: 14, semibold: true)
+                    .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+            }
+            .buttonStyle(.plain).disabled(model.periodBusy).accessibilityIdentifier("period-add")
+            if model.periodBusy {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.mini)
+                    kgText("저장 중…", size: 12, color: DesignTokens.muted)
+                }.padding(.top, 4)
+            }
+            if let error = model.periodError {
+                kgText(error, size: 12).padding(.top, 8).accessibilityIdentifier("period-error")
+            }
+            if model.periods.isEmpty {
+                kgText("등록된 휴가 기간이 없습니다.", size: 13, color: DesignTokens.muted)
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(16)
+                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(DesignTokens.border))
+                    .padding(.top, 10).accessibilityIdentifier("period-empty")
+            } else {
+                ForEach(model.periods) { period in periodRow(period) }
+            }
+
             kgText("이번 달", size: 19, bold: true).accessibilityAddTraits(.isHeader).padding(.top, 24)
             HStack(spacing: 0) {
                 stat("받은 견적", value: ready.receivedThisMonth)
@@ -296,6 +419,52 @@ struct ExpertHomeView: View {
                 .frame(minHeight: 48).padding(.top, 6).padding(.bottom, 24)
                 .accessibilityIdentifier("open-quotes")
         }.padding(.horizontal, 20)
+    }
+
+    private func dateField(_ label: String, selection: Binding<Date>, id: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            kgText(label, size: 11, color: DesignTokens.muted)
+            DatePicker("", selection: selection, displayedComponents: .date)
+                .labelsHidden().datePickerStyle(.compact)
+                .environment(\.locale, Locale(identifier: "ko_KR"))
+                .frame(minHeight: 40, alignment: .leading)
+                .accessibilityIdentifier(id)
+        }
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
+        .overlay(RoundedRectangle(cornerRadius: 6).stroke(DesignTokens.border))
+        .disabled(model.periodBusy)
+    }
+
+    private func periodRow(_ period: KGExpertAvailabilityPeriod) -> some View {
+        HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                kgText(periodRange(period), size: 15, semibold: true)
+                if let reason = period.reason { kgText(reason, size: 12, color: DesignTokens.muted) }
+            }
+            Spacer(minLength: 0)
+            Button("삭제") { model.deletePeriod(period.id) }
+                .frame(minHeight: 48).disabled(model.periodBusy)
+                .accessibilityIdentifier("period-delete-\(period.id)")
+        }
+        .padding(.leading, 14).padding(.trailing, 4).padding(.vertical, 8)
+        .overlay(RoundedRectangle(cornerRadius: 6).stroke(DesignTokens.border))
+        .padding(.top, 10).accessibilityIdentifier("period-\(period.id)")
+    }
+
+    private func periodRange(_ period: KGExpertAvailabilityPeriod) -> String {
+        let input = DateFormatter()
+        input.locale = Locale(identifier: "en_US_POSIX")
+        input.dateFormat = "yyyy-MM-dd"
+        let output = DateFormatter()
+        output.locale = Locale(identifier: "en_US_POSIX")
+        output.dateFormat = "yyyy.MM.dd"
+        guard let start = input.date(from: period.startsAt), let end = input.date(from: period.endsAt) else {
+            return period.startsAt
+        }
+        let from = output.string(from: start)
+        let to = output.string(from: end)
+        return from == to ? from : "\(from) – \(to)"
     }
 
     private func stat(_ label: String, value: Int) -> some View {

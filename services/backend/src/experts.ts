@@ -21,6 +21,8 @@ const PAGE_MAX = 50;
 const SERVICES_PER_EXPERT = 5;
 const SERVICE_LIST_MAX = 50;
 const MAX_IMAGES = 5;
+const MAX_PERIODS = 50;
+const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 const body = (properties: Record<string, unknown>, required = Object.keys(properties)) =>
   ({ body: { type: 'object', additionalProperties: false, properties, required } });
@@ -107,6 +109,15 @@ function assertPrice(priceType: string, basePrice: unknown) {
   if (negotiable && basePrice !== null && basePrice !== undefined) throw new ApiError(400, 'INVALID_PRICE');
   if (!negotiable && (basePrice === null || basePrice === undefined)) throw new ApiError(400, 'INVALID_PRICE');
 }
+
+/** YYYY-MM-DD shape and a real calendar day. 2026-02-30 passes the regex only. */
+const isCalendarDay = (value: string) =>
+  DATE_PATTERN.test(value) && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;
+
+const assertPeriod = (startsAt: string, endsAt: string) => {
+  if (!isCalendarDay(startsAt) || !isCalendarDay(endsAt)) throw new ApiError(400, 'INVALID_PERIOD');
+  if (endsAt < startsAt) throw new ApiError(400, 'INVALID_PERIOD');
+};
 
 export function registerExpertRoutes(app: FastifyInstance, db: Sql, authenticate: Authenticate) {
   const requireMember = requireActiveMember(authenticate);
@@ -297,6 +308,61 @@ export function registerExpertRoutes(app: FastifyInstance, db: Sql, authenticate
     return updated;
   });
 
+  // ── Vacation periods ───────────────────────────────────────────────────────
+  // A period is a day range, not a status change. The search list keeps showing
+  // the expert and only marks 휴가 중 while today falls inside one of these rows.
+  const periodSelect = `id, to_char(starts_at,'YYYY-MM-DD') AS "startsAt",
+  to_char(ends_at,'YYYY-MM-DD') AS "endsAt", reason, created_at AS "createdAt"`;
+  const daySchema = { type: 'string', pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' };
+
+  app.get('/v1/me/expert/availability/periods', async (request, reply) => {
+    const auth = await requireExpert(request, reply); if (!auth) return;
+    const rows = (await db.query(
+      `SELECT ${periodSelect} FROM ${SCHEMA}.expert_availability_periods
+        WHERE member_id=$1 ORDER BY starts_at DESC, created_at DESC`, [auth.memberId],
+    )).rows;
+    return { periods: rows };
+  });
+
+  app.post<{ Body: { startsAt: string; endsAt: string; reason?: string | null } }>('/v1/me/expert/availability/periods', {
+    schema: body({ startsAt: daySchema, endsAt: daySchema, reason: { type: ['string', 'null'], maxLength: 100 } }, ['startsAt', 'endsAt']),
+  }, async (request, reply) => {
+    const auth = await requireExpert(request, reply); if (!auth) return;
+    assertPeriod(request.body.startsAt, request.body.endsAt);
+    const reason = request.body.reason?.trim() || null;
+    const id = randomUUID();
+    const period = await db.transaction(async sql => {
+      const created = (await sql.query(
+        `INSERT INTO ${SCHEMA}.expert_availability_periods(id,member_id,starts_at,ends_at,reason)
+         VALUES($1,$2,$3,$4,$5) RETURNING ${periodSelect}`,
+        [id, auth.memberId, request.body.startsAt, request.body.endsAt, reason],
+      )).rows[0];
+      await audit(sql, auth.memberId, 'EXPERT_AVAILABILITY_PERIOD_CREATED', 'expert_availability_period',
+        String(id), null, { startsAt: request.body.startsAt, endsAt: request.body.endsAt });
+      return created;
+    });
+    return reply.code(201).send(period);
+  });
+
+  app.delete<{ Params: { id: string } }>('/v1/me/expert/availability/periods/:id', {
+    schema: { params: { type: 'object', additionalProperties: false, required: ['id'], properties: { id: uuidSchema } } },
+  }, async (request, reply) => {
+    const auth = await requireExpert(request, reply); if (!auth) return;
+    const deleted = await db.transaction(async sql => {
+      const row = (await sql.query(
+        `DELETE FROM ${SCHEMA}.expert_availability_periods
+          WHERE id=$1 AND member_id=$2 RETURNING id`,
+        [request.params.id, auth.memberId],
+      )).rows[0];
+      if (!row) throw new ApiError(404, 'PERIOD_NOT_FOUND');
+      await audit(sql, auth.memberId, 'EXPERT_AVAILABILITY_PERIOD_DELETED', 'expert_availability_period',
+        String(request.params.id));
+      return row;
+    });
+    // 200 + JSON, not 204: both app clients parse every response as JSON.
+    return { id: String(deleted.id) };
+  });
+
   // ── Public search ──────────────────────────────────────────────────────────
   // Only visible services of an ACTIVE profile are searchable; order is fixed
   // newest-first and pagination is required (keyset cursor).
@@ -331,7 +397,7 @@ export function registerExpertRoutes(app: FastifyInstance, db: Sql, authenticate
 
     const grouped = (await db.query(
       `SELECT p.member_id AS "expertId", m.nickname, p.introduction, p.career,
-              p.activity_region AS "activityRegion",
+              p.activity_region AS "activityRegion", p.availability,
               count(*)::int AS "serviceCount",
               min(s.base_price) AS "fromPrice",
               max(s.created_at) AS "lastServiceAt"
@@ -339,7 +405,7 @@ export function registerExpertRoutes(app: FastifyInstance, db: Sql, authenticate
          JOIN ${SCHEMA}.expert_profiles p ON p.member_id=s.expert_member_id
          JOIN ${SCHEMA}.members m ON m.id=p.member_id
         WHERE ${filters.join(' AND ')}
-        GROUP BY p.member_id, m.nickname, p.introduction, p.career, p.activity_region
+        GROUP BY p.member_id, m.nickname, p.introduction, p.career, p.activity_region, p.availability
         ${having}
         ORDER BY max(s.created_at) DESC, p.member_id DESC
         LIMIT $${pageSize}`,
@@ -349,6 +415,16 @@ export function registerExpertRoutes(app: FastifyInstance, db: Sql, authenticate
     const hasMore = grouped.length > limit;
     const page = hasMore ? grouped.slice(0, limit) : grouped;
     if (page.length === 0) return { experts: [], nextCursor: null };
+
+    // 휴가 기간은 한국 시간 기준 오늘을 포함하는지로 판정한다. 서버 시간대에 따라
+    // 하루가 어긋나면 사용자가 보는 날짜와 표시가 달라진다.
+    const vacationNow = new Set((await db.query(
+      `SELECT DISTINCT member_id AS "memberId"
+         FROM ${SCHEMA}.expert_availability_periods
+        WHERE member_id = ANY($1::uuid[])
+          AND (now() AT TIME ZONE 'Asia/Seoul')::date BETWEEN starts_at AND ends_at`,
+      [page.map(row => String(row.expertId))],
+    )).rows.map(row => String(row.memberId)));
 
     const serviceValues: unknown[] = [page.map(row => String(row.expertId))];
     const serviceFilters = [`s.visibility='VISIBLE'`, `s.expert_member_id = ANY($1::uuid[])`];
@@ -372,6 +448,7 @@ export function registerExpertRoutes(app: FastifyInstance, db: Sql, authenticate
 
     const experts = page.map(row => ({
       ...row,
+      onVacation: row.availability === 'VACATION' || vacationNow.has(String(row.expertId)),
       services: services.filter(service => String(service.expertId) === String(row.expertId)),
     }));
     const last = page[page.length - 1];

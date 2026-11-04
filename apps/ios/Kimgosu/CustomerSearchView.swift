@@ -20,6 +20,7 @@ struct KGCustomerExpertCard: Identifiable, Equatable {
     let activityRegion: String
     let serviceCount: Int
     let fromPrice: Int?
+    let onVacation: Bool
 }
 
 enum KGCustomerSearchState: Equatable {
@@ -77,7 +78,8 @@ enum KGCustomerSearchState: Equatable {
                 introduction: row["introduction"] as? String ?? "",
                 activityRegion: row["activityRegion"] as? String ?? "",
                 serviceCount: row["serviceCount"] as? Int ?? 0,
-                fromPrice: row["fromPrice"] as? Int)
+                fromPrice: row["fromPrice"] as? Int,
+                onVacation: row["onVacation"] as? Bool ?? false)
         }
     }
 }
@@ -134,6 +136,13 @@ struct KGCustomerSearchView: View {
                             VStack(alignment: .leading, spacing: 4) {
                                 HStack {
                                     customerCopy(expert.nickname.isEmpty ? "고수" : expert.nickname, size: 16, bold: true)
+                                    if expert.onVacation {
+                                        customerCopy("휴가 중", size: 11, semibold: true)
+                                            .padding(.horizontal, 7).padding(.vertical, 3)
+                                            .background(DesignTokens.lime, in: RoundedRectangle(cornerRadius: 4))
+                                            .padding(.leading, 8)
+                                            .accessibilityIdentifier("expert-vacation-\(expert.id)")
+                                    }
                                     Spacer()
                                     if let price = expert.fromPrice { customerCopy(customerWon(price) + "부터", size: 13, semibold: true) }
                                 }
