@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { randomUUID } from 'node:crypto';
-import type { Sql } from './app.ts';
+import type { Row, Sql } from './app.ts';
 import type { Authenticate } from './auth.ts';
 import { ApiError } from './security.ts';
 import { audit, fail, requireActiveMember } from './kernel.ts';
@@ -20,6 +20,7 @@ const PAGE_DEFAULT = 20;
 const PAGE_MAX = 50;
 const SERVICES_PER_EXPERT = 5;
 const SERVICE_LIST_MAX = 50;
+const MAX_IMAGES = 5;
 
 const body = (properties: Record<string, unknown>, required = Object.keys(properties)) =>
   ({ body: { type: 'object', additionalProperties: false, properties, required } });
@@ -37,7 +38,54 @@ const serviceSelect = `s.id, s.category, s.title, s.description, s.price_type AS
 // 이미지 자체는 R2에 있고 DB에는 키만 둔다. 공개 도메인이 바뀌어도 마이그레이션이 필요 없다.
 const publicImageUrl = (key: unknown) =>
   typeof key === 'string' && key ? `${(process.env.R2_PUBLIC_BASE_URL ?? process.env.KG_R2_PUBLIC_BASE ?? '').replace(/\/+$/, '')}/${key}` : null;
-const withImageUrl = <T extends { imageKey?: unknown }>(row: T) => ({ ...row, imageUrl: publicImageUrl(row.imageKey) });
+
+// 업로드 키는 /v1/uploads가 `service/<memberId>/<uuid>.<ext>`로 발급한다. 남의
+// 키를 자기 서비스에 붙이면 그 사람의 사진이 내 공개 목록에 노출된다.
+const serviceImageKeys = (memberId: string, body: { imageKeys?: string[]; imageKey?: string | null }) => {
+  const keys = body.imageKeys ?? (body.imageKey ? [body.imageKey] : []);
+  if (keys.length > MAX_IMAGES) throw new ApiError(400, 'TOO_MANY_IMAGES');
+  const ownPrefix = `service/${memberId}/`;
+  if (keys.some(key => !key.startsWith(ownPrefix))) throw new ApiError(403, 'IMAGE_NOT_OWNED');
+  return keys;
+};
+
+async function writeImages(sql: Sql, serviceId: string, keys: string[]) {
+  await sql.query(`DELETE FROM ${SCHEMA}.expert_service_images WHERE service_id=$1`, [serviceId]);
+  if (keys.length === 0) return;
+  await sql.query(
+    `INSERT INTO ${SCHEMA}.expert_service_images(id,service_id,image_key,sort_order)
+     SELECT gen_random_uuid(), $1, image_key, sort_order - 1
+       FROM unnest($2::text[]) WITH ORDINALITY AS t(image_key, sort_order)`,
+    [serviceId, keys],
+  );
+}
+
+/**
+ * images[]를 sort_order 순으로 붙이고, imageKey/imageUrl은 첫 장으로 맞춘다.
+ * 서비스가 여러 개여도 조회는 한 번이다.
+ */
+async function withImages(sql: Sql, rows: Row[]) {
+  if (rows.length === 0) return rows;
+  const images = (await sql.query(
+    `SELECT service_id AS "serviceId", image_key AS "key", sort_order AS "sortOrder"
+       FROM ${SCHEMA}.expert_service_images
+      WHERE service_id = ANY($1::uuid[])
+      ORDER BY service_id, sort_order`,
+    [rows.map(row => String(row.id))],
+  )).rows;
+  const byService = new Map<string, { key: string; url: string | null; sortOrder: number }[]>();
+  for (const image of images) {
+    const serviceId = String(image.serviceId);
+    const list = byService.get(serviceId) ?? [];
+    list.push({ key: String(image.key), url: publicImageUrl(image.key), sortOrder: Number(image.sortOrder) });
+    byService.set(serviceId, list);
+  }
+  return rows.map(row => {
+    const list = byService.get(String(row.id)) ?? [];
+    const imageKey = list[0]?.key ?? (row.imageKey as string | null | undefined) ?? null;
+    return { ...row, imageKey, imageUrl: publicImageUrl(imageKey), images: list };
+  });
+}
 
 const encodeCursor = (at: unknown, expertId: unknown) =>
   Buffer.from(`${new Date(String(at)).toISOString()}|${String(expertId)}`, 'utf8').toString('base64url');
@@ -123,17 +171,19 @@ export function registerExpertRoutes(app: FastifyInstance, db: Sql, authenticate
   });
 
   // ── Services (owner) ───────────────────────────────────────────────────────
-  app.post<{ Body: { category: string; title: string; description: string; priceType: string; basePrice?: number | null; visibility?: string; imageKey?: string | null } }>('/v1/expert/services', {
+  app.post<{ Body: { category: string; title: string; description: string; priceType: string; basePrice?: number | null; visibility?: string; imageKey?: string | null; imageKeys?: string[] } }>('/v1/expert/services', {
     schema: body({
       category: string(1, 50), title: string(1, 100), description: string(1, 2000),
       priceType: { type: 'string', enum: ['FIXED', 'HOURLY', 'NEGOTIABLE'] },
       basePrice: { type: ['integer', 'null'], minimum: 0, maximum: 100000000 },
       visibility: { type: 'string', enum: ['VISIBLE', 'HIDDEN'] },
       imageKey: { type: ['string', 'null'], minLength: 1, maxLength: 300 },
+      imageKeys: { type: 'array', items: { type: 'string', minLength: 1, maxLength: 300 }, uniqueItems: true },
     }, ['category', 'title', 'description', 'priceType']),
   }, async (request, reply) => {
     const auth = await requireExpert(request, reply); if (!auth) return;
     assertPrice(request.body.priceType, request.body.basePrice ?? null);
+    const imageKeys = serviceImageKeys(String(auth.memberId), request.body);
     const service = await db.transaction(async sql => {
       const profile = (await sql.query(
         `SELECT 1 FROM ${SCHEMA}.expert_profiles WHERE member_id=$1`, [auth.memberId],
@@ -144,15 +194,16 @@ export function registerExpertRoutes(app: FastifyInstance, db: Sql, authenticate
          VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING ${serviceSelect.replace(/s\./g, '')}`,
         [randomUUID(), auth.memberId, request.body.category.trim(), request.body.title.trim(), request.body.description.trim(),
           request.body.priceType, request.body.basePrice ?? null, request.body.visibility ?? 'VISIBLE',
-          request.body.imageKey ?? null],
+          imageKeys[0] ?? null],
       )).rows[0];
+      await writeImages(sql, String(service.id), imageKeys);
       await audit(sql, auth.memberId, 'EXPERT_SERVICE_CREATED', 'expert_service', String(service.id), null, { visibility: service.visibility });
-      return withImageUrl(service);
+      return (await withImages(sql, [service]))[0];
     });
     return reply.code(201).send(service);
   });
 
-  app.patch<{ Params: { id: string }; Body: { category?: string; title?: string; description?: string; priceType?: string; basePrice?: number | null; visibility?: string; imageKey?: string | null } }>('/v1/expert/services/:id', {
+  app.patch<{ Params: { id: string }; Body: { category?: string; title?: string; description?: string; priceType?: string; basePrice?: number | null; visibility?: string; imageKey?: string | null; imageKeys?: string[] } }>('/v1/expert/services/:id', {
     schema: {
       params: { type: 'object', additionalProperties: false, required: ['id'], properties: { id: uuidSchema } },
       body: { type: 'object', additionalProperties: false, minProperties: 1, required: [],
@@ -160,10 +211,15 @@ export function registerExpertRoutes(app: FastifyInstance, db: Sql, authenticate
           priceType: { type: 'string', enum: ['FIXED', 'HOURLY', 'NEGOTIABLE'] },
           basePrice: { type: ['integer', 'null'], minimum: 0, maximum: 100000000 },
           visibility: { type: 'string', enum: ['VISIBLE', 'HIDDEN'] },
-          imageKey: { type: ['string', 'null'], minLength: 1, maxLength: 300 } } },
+          imageKey: { type: ['string', 'null'], minLength: 1, maxLength: 300 },
+          imageKeys: { type: 'array', items: { type: 'string', minLength: 1, maxLength: 300 }, uniqueItems: true } } },
     },
   }, async (request, reply) => {
     const auth = await requireExpert(request, reply); if (!auth) return;
+    // imageKeys가 없으면 사진은 건드리지 않는다. imageKey(단일)는 예전 계약 그대로
+    // 한 장짜리 imageKeys로 취급한다.
+    const replacesImages = request.body.imageKeys !== undefined || request.body.imageKey !== undefined;
+    const imageKeys = replacesImages ? serviceImageKeys(String(auth.memberId), request.body) : [];
     return db.transaction(async sql => {
       const current = (await sql.query(
         `SELECT id, price_type AS "priceType", base_price AS "basePrice"
@@ -177,7 +233,7 @@ export function registerExpertRoutes(app: FastifyInstance, db: Sql, authenticate
 
       const columns: Record<string, string> = {
         category: 'category', title: 'title', description: 'description',
-        priceType: 'price_type', basePrice: 'base_price', visibility: 'visibility', imageKey: 'image_key',
+        priceType: 'price_type', basePrice: 'base_price', visibility: 'visibility',
       };
       const values: unknown[] = [request.params.id, auth.memberId];
       const sets: string[] = [];
@@ -187,6 +243,10 @@ export function registerExpertRoutes(app: FastifyInstance, db: Sql, authenticate
         values.push(typeof value === 'string' && ['category', 'title', 'description'].includes(key) ? value.trim() : value);
         sets.push(`${column}=$${values.length}`);
       }
+      if (replacesImages) {
+        values.push(imageKeys[0] ?? null);
+        sets.push(`image_key=$${values.length}`);
+      }
       const updated = (await sql.query(
         `UPDATE ${SCHEMA}.expert_services s SET ${sets.join(',')}, updated_at=now()
           WHERE s.id=$1 AND s.expert_member_id=$2
@@ -194,8 +254,9 @@ export function registerExpertRoutes(app: FastifyInstance, db: Sql, authenticate
         values,
       )).rows[0];
       if (!updated) throw new ApiError(404, 'SERVICE_NOT_FOUND');
+      if (replacesImages) await writeImages(sql, String(updated.id), imageKeys);
       await audit(sql, auth.memberId, 'EXPERT_SERVICE_UPDATED', 'expert_service', String(request.params.id), null, { visibility: updated.visibility });
-      return updated;
+      return (await withImages(sql, [updated]))[0];
     });
   });
 
@@ -213,7 +274,7 @@ export function registerExpertRoutes(app: FastifyInstance, db: Sql, authenticate
       `SELECT ${serviceSelect} FROM ${SCHEMA}.expert_services s
         WHERE s.expert_member_id=$1 ORDER BY s.created_at DESC`, [auth.memberId],
     )).rows;
-    return { ...profile, services: services.map(withImageUrl) };
+    return { ...profile, services: await withImages(db, services) };
   });
 
   // 수신 중 / 일시중지 / 휴가. Operator visibility (status) is a different axis
@@ -297,7 +358,7 @@ export function registerExpertRoutes(app: FastifyInstance, db: Sql, authenticate
       serviceFilters.push(`(s.title ILIKE $${serviceValues.length} ESCAPE '\\' OR s.description ILIKE $${serviceValues.length} ESCAPE '\\')`);
     }
     serviceValues.push(SERVICES_PER_EXPERT);
-    const services = (await db.query(
+    const services = await withImages(db, (await db.query(
       `SELECT * FROM (
          SELECT ${serviceSelect}, s.expert_member_id AS "expertId",
                 row_number() OVER (PARTITION BY s.expert_member_id ORDER BY s.created_at DESC, s.id DESC) AS rn
@@ -307,7 +368,7 @@ export function registerExpertRoutes(app: FastifyInstance, db: Sql, authenticate
        WHERE rn <= $${serviceValues.length}
        ORDER BY "createdAt" DESC, id DESC`,
       serviceValues,
-    )).rows;
+    )).rows);
 
     const experts = page.map(row => ({
       ...row,
@@ -329,12 +390,12 @@ export function registerExpertRoutes(app: FastifyInstance, db: Sql, authenticate
     )).rows[0];
     // A hidden profile is indistinguishable from a missing one.
     if (!profile) return fail(reply, 404, 'EXPERT_NOT_FOUND');
-    const services = (await db.query(
+    const services = await withImages(db, (await db.query(
       `SELECT ${serviceSelect} FROM ${SCHEMA}.expert_services s
         WHERE s.expert_member_id=$1 AND s.visibility='VISIBLE'
         ORDER BY s.created_at DESC, s.id DESC LIMIT ${SERVICE_LIST_MAX}`,
       [request.params.id],
-    )).rows;
+    )).rows);
     return { expert: profile, services };
   });
 }

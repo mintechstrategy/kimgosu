@@ -16,6 +16,7 @@ struct ExpertServiceItem: Hashable {
     let basePrice: Int?
     let visibility: String
     let imageKey: String?
+    let images: [String]
 
     var visibilityValue: Bool { visibility == "VISIBLE" }
 }
@@ -27,7 +28,7 @@ struct ServiceDraft: Hashable {
     var description: String
     var priceType: String
     var price: String
-    var imageKey: String
+    var imageKeys: [String]
 }
 
 enum ExpertServicesState: Equatable {
@@ -81,7 +82,8 @@ enum ServiceSaveState: Equatable {
         let target = visible ? "VISIBLE" : "HIDDEN"
         notice = nil
         state = .ready(items.map { $0.id == item.id ? ExpertServiceItem(id: $0.id, category: $0.category, title: $0.title,
-            description: $0.description, priceType: $0.priceType, basePrice: $0.basePrice, visibility: target, imageKey: $0.imageKey) : $0 })
+            description: $0.description, priceType: $0.priceType, basePrice: $0.basePrice, visibility: target, imageKey: $0.imageKey,
+            images: $0.images) : $0 })
         Task { [weak self] in
             guard let self else { return }
             do {
@@ -109,7 +111,7 @@ enum ServiceSaveState: Equatable {
             "description": draft.description,
             "priceType": draft.priceType,
             "basePrice": draft.priceType == "NEGOTIABLE" || draft.price.isEmpty ? NSNull() : (Int(draft.price) ?? NSNull()),
-            "imageKey": draft.imageKey.isEmpty ? NSNull() : draft.imageKey,
+            "imageKeys": draft.imageKeys.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty },
         ]
         task = Task { [weak self] in
             guard let self else { return }
@@ -146,7 +148,9 @@ enum ServiceSaveState: Equatable {
     nonisolated static func decodeServices(_ json: [String: Any]) -> [ExpertServiceItem] {
         guard let rows = json["services"] as? [[String: Any]] else { return [] }
         return rows.map { row in
-            ExpertServiceItem(
+            let imageKey = row["imageKey"] as? String
+            let images = ((row["images"] as? [[String: Any]] ?? []).compactMap { $0["key"] as? String }).filter { !$0.isEmpty }
+            return ExpertServiceItem(
                 id: row["id"] as? String ?? "",
                 category: row["category"] as? String ?? "",
                 title: row["title"] as? String ?? "",
@@ -154,7 +158,9 @@ enum ServiceSaveState: Equatable {
                 priceType: row["priceType"] as? String ?? "",
                 basePrice: row["basePrice"] as? Int,
                 visibility: row["visibility"] as? String ?? "",
-                imageKey: row["imageKey"] as? String
+                imageKey: imageKey,
+                // 배포 전 서버는 images[]가 없고 imageKey만 준다. 그때도 한 장으로 보여준다.
+                images: images.isEmpty ? (imageKey.map { [$0] } ?? []) : images
             )
         }
     }
@@ -186,7 +192,7 @@ struct ExpertServiceView: View {
                     Button("+ 등록") {
                         model.clearSave()
                         draft = ServiceDraft(id: nil, category: "", title: "", description: "",
-                                             priceType: "FIXED", price: "", imageKey: "")
+                                             priceType: "FIXED", price: "", imageKeys: [])
                     }
                     .frame(minHeight: 48)
                     .accessibilityIdentifier("service-add")
@@ -216,7 +222,7 @@ struct ExpertServiceView: View {
                                     draft = ServiceDraft(id: item.id, category: item.category, title: item.title,
                                                          description: item.description, priceType: item.priceType,
                                                          price: item.basePrice.map(String.init) ?? "",
-                                                         imageKey: item.imageKey ?? "")
+                                                         imageKeys: item.images)
                                 },
                                 onToggle: { item, visible in model.setVisibility(item, visible: visible) })
                 }
@@ -264,6 +270,9 @@ private struct ServiceRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 expertCopy(item.title, size: 15, semibold: true)
                 expertCopy(item.category + " · " + priceLabel(item), size: 13, color: DesignTokens.muted)
+                if !item.images.isEmpty {
+                    expertCopy("사진 \(item.images.count)장", size: 13, color: DesignTokens.muted)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
@@ -289,7 +298,7 @@ struct ServiceForm: View {
     @State private var description: String
     @State private var priceType: String
     @State private var price: String
-    @State private var imageKey: String
+    @State private var imageKeys: [String]
 
     init(draft: ServiceDraft, save: ServiceSaveState, onSave: @escaping (ServiceDraft) -> Void, onCancel: @escaping () -> Void) {
         self.draft = draft
@@ -301,7 +310,7 @@ struct ServiceForm: View {
         _description = State(initialValue: draft.description)
         _priceType = State(initialValue: draft.priceType)
         _price = State(initialValue: draft.price)
-        _imageKey = State(initialValue: draft.imageKey)
+        _imageKeys = State(initialValue: draft.imageKeys)
     }
 
     var body: some View {
@@ -355,11 +364,26 @@ struct ServiceForm: View {
                         expertCopy("협의 유형은 가격을 입력하지 않습니다.", size: 12, color: DesignTokens.muted)
                     }
                 }
-                expertField("이미지 키 (선택)", text: $imageKey, lines: 1, limit: 300)
-                    .accessibilityIdentifier("service-field-image-key")
+                expertCopy("사진 (최대 5장, 첫 장이 대표 이미지)", size: 13, color: DesignTokens.muted)
+                ForEach(imageKeys.indices, id: \.self) { index in
+                    VStack(alignment: .leading, spacing: 4) {
+                        expertField("이미지 키 \(index + 1)",
+                                    text: Binding(get: { imageKeys[index] }, set: { imageKeys[index] = $0 }),
+                                    lines: 1, limit: 300)
+                            .accessibilityIdentifier("service-field-image-key-\(index)")
+                        Button("사진 삭제") { imageKeys.remove(at: index) }
+                            .frame(minHeight: 44)
+                            .accessibilityIdentifier("service-image-remove-\(index)")
+                    }
+                }
+                if imageKeys.count < 5 {
+                    Button("+ 사진 추가") { imageKeys.append("") }
+                        .frame(minHeight: 44)
+                        .accessibilityIdentifier("service-image-add")
+                }
                 Button {
                     onSave(ServiceDraft(id: draft.id, category: category, title: title, description: description,
-                                        priceType: priceType, price: price, imageKey: imageKey))
+                                        priceType: priceType, price: price, imageKeys: imageKeys))
                 } label: {
                     expertCopy(save == .saving ? "저장 중…" : "저장", size: 15, semibold: true, color: .white)
                         .frame(maxWidth: .infinity, minHeight: 48)
