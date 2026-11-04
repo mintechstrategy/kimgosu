@@ -1,0 +1,162 @@
+{
+  "ws": "WS-51",
+  "task": "채팅 이미지 첨부 — 계약·마이그레이션·API + AOS/iOS 클라이언트 계약 구현",
+  "status": "DONE",
+  "worktree": "/Users/mintech-mac/hermes/dev-profile/shared/projects/wt-WS-51",
+  "baseCommit": "9eb3bc6",
+  "summary": "chat.v0.1에 이미지 메시지를 추가했다. 마이그레이션 018로 chat_messages에 image_key/image_width/image_height를 더하고 body CHECK를 '텍스트 또는 이미지'로 바꿨으며(이미지 없이 빈 본문은 계속 거부), POST /v1/ledgers/:id/messages가 imageKey를 받아 소유권(chat/<memberId>/...)을 검증하고(403 IMAGE_NOT_OWNED) 목록·전송·삭제 응답에 imageUrl을 합성해 넣는다. /v1/uploads에 kind=chat을 추가했다. AOS는 chat/ChatApi.kt, iOS는 Kimgosu/ChatApi.swift로 같은 계약(list/sendText/sendPhoto=presign→R2 PUT→전송)을 구현했고 두 앱 빌드가 통과했다. tsc 0, 유닛 28/28, 계약 68/68, 통합 15/15 통과. 실 dev API 거래 검증과 실제 R2 PUT, 채팅 화면 런타임은 NOT_RUN(원격 쓰기·배포 금지, 화면은 WS-52/53 소관).",
+  "changedFiles": [
+    "services/backend/migrations/018_chat_images.sql",
+    "services/backend/src/chat.ts",
+    "services/backend/src/uploads.ts",
+    "services/backend/tests/chat.integration.test.ts",
+    "contracts/chat.v0.1.json",
+    "apps/android/app/src/main/java/ai/mintech/kimgosu/chat/ChatApi.kt",
+    "apps/ios/Kimgosu/ChatApi.swift",
+    "apps/ios/Kimgosu.xcodeproj/project.pbxproj",
+    "records/parallel-10/WS-51/RESULT.json"
+  ],
+  "implementation": {
+    "migration": {
+      "file": "migrations/018_chat_images.sql",
+      "changes": [
+        "image_key text (NULL 또는 1~300자), image_width/image_height integer (NULL 또는 1~20000) 추가 — 모두 IF NOT EXISTS",
+        "chat_messages_body_check 교체: length(trim(body)) 1..2000 OR (length(body)=0 AND image_key IS NOT NULL)",
+        "기존 행은 모두 본문이 비어 있지 않아 그대로 유효. 삭제·타입 변경·데이터 백필 없음(추가 전용)",
+        "재실행 안전: 018을 같은 DB에 두 번 적용해 NOTICE(skipping)만 나오고 성공하는 것을 확인"
+      ]
+    },
+    "api": {
+      "send": "POST /v1/ledgers/:id/messages — body 또는 imageKey 중 하나는 필수(anyOf). 둘 다 없으면 400 INVALID_REQUEST, 텍스트만 공백이고 이미지도 없으면 400 MESSAGE_BODY_INVALID. imageKey가 chat/<호출자 memberId>/로 시작하지 않으면 403 IMAGE_NOT_OWNED(저장 전 거부).",
+      "projection": "messageColumns에 imageKey/imageWidth/imageHeight 추가. 삭제된 행은 body와 마찬가지로 이미지 필드도 null(상대에게 사진 정보 노출 금지)",
+      "url": "imageUrl은 experts.ts와 같은 규칙으로 R2_PUBLIC_BASE_URL(없으면 KG_R2_PUBLIC_BASE) + '/' + key 를 읽기 시점에 합성. URL은 저장하지 않음",
+      "uploads": "POST /v1/uploads kind enum에 chat 추가 → 키가 chat/<memberId>/<uuid>.<ext>로 발급되어 위 소유권 검증과 맞물린다",
+      "contract": "contracts/chat.v0.1.json — requestSchema(anyOf/이미지 4필드), Message 정의(이미지 4필드 required/nullable), sharedBehaviors(이미지 규칙), errors(IMAGE_NOT_OWNED) 갱신. operation 수는 3개 그대로"
+    },
+    "android": {
+      "files": [
+        "chat/ChatApi.kt — ChatMessage/ChatPage/ChatApi(list, sendText, sendPhoto). sendPhoto는 POST /v1/uploads{kind:chat} → presigned PUT(HttpURLConnection) → 메시지 전송을 한 호출로 묶는다"
+      ],
+      "notes": "기존 AuthTransport(요청·오류 디코딩·Authorization)를 그대로 재사용했다. 새 의존성·새 토큰·새 그라들 설정 없음. Gradle 자동 컴파일 대상 경로(ai/mintech/kimgosu/chat)라 빌드 파일 수정 없음"
+    },
+    "ios": {
+      "files": [
+        "Kimgosu/ChatApi.swift — KGChatMessage/KGChatPage/KGChatApi(list, sendText, sendPhoto). uploadUrl은 https만 허용, 실패는 KGAuthAPIError(status, UPLOAD_FAILED)"
+      ],
+      "notes": "KGAuthTransport 재사용, AuthRepository.swift는 수정하지 않았다(WS-53과의 파일 충돌 회피). 신규 파일 1개만 pbxproj(F100..06/F000..06, 그룹·Sources phase)에 등록했다"
+    },
+    "scopeNotes": [
+      "PLAN WS-51의 범위는 백엔드이며, AOS/iOS는 화면이 아니라 같은 계약을 쓰는 클라이언트 전송 계층으로 구현했다. 채팅 화면 파일(apps/android/.../customer/, apps/ios/Kimgosu/Customer*.swift)은 WS-52/53 소관이라 건드리지 않았다.",
+      "디자인 토큰·폰트를 새로 만들지 않았다(UI 코드 없음). 업무 데이터 로컬 저장 없음 — 메시지·URL은 매 요청 응답만 사용."
+    ]
+  },
+  "verification": [
+    {
+      "check": "TypeScript 타입검사",
+      "command": "cd services/backend && npm run check  (tsc --noEmit)",
+      "result": "PASS",
+      "evidence": "오류 0. 최종 소스(chat.ts 주석 수정 후) 기준 재실행."
+    },
+    {
+      "check": "백엔드 유닛 테스트",
+      "command": "cd services/backend && npm test  (node --test src/*.test.ts)",
+      "result": "PASS",
+      "evidence": "tests 28 / pass 28 / fail 0. uploads presign 단위 테스트 포함."
+    },
+    {
+      "check": "계약 테스트 (operation 인벤토리·스키마 일치)",
+      "command": "node --test tests/contract/contract.test.ts tests/contract/oauth.test.ts tests/contract/ws27-contracts.test.ts tests/policy/metadata.test.ts",
+      "result": "PASS",
+      "evidence": "tests 68 / pass 68 / fail 0. ws27-contracts가 chat.v0.1의 requestSchema/paramsSchema를 핸들러가 Fastify에 넘긴 schema와 깊은 비교하므로, 계약과 구현이 어긋나면 여기서 실패한다. 30개 operation 인벤토리도 그대로 통과(신규 라우트 없음)."
+    },
+    {
+      "check": "마이그레이션 적용 (빈 DB, 001~018)",
+      "command": "createdb kgtest_ws51a && psql -v ON_ERROR_STOP=1 -f migrations/001..018 (순차)",
+      "result": "PASS",
+      "evidence": "18개 파일 모두 ok. pg_constraint 확인: chat_messages_body_check = 'length(trim(body)) 1..2000 OR (length(body)=0 AND image_key IS NOT NULL)', image_key/image_width/image_height CHECK 존재."
+    },
+    {
+      "check": "통합 테스트 — 채팅(신규 2건 + 기존 13건)",
+      "command": "KG_TEST_DATABASE_URL=postgres://postgres@127.0.0.1:55432/kgtest_ws51a node --test tests/chat.integration.test.ts",
+      "result": "PASS",
+      "evidence": "tests 15 / pass 15 / fail 0. 신규: '이미지만 / 텍스트+이미지 전송이 저장되고 조회 응답에 imageUrl이 실린다'(201·DB 저장·상대 조회 imageUrl·imageWidth 800/600·텍스트 전용 imageUrl null·본문+이미지 모두 없음 400·삭제 후 tombstone imageUrl null), '남의 키·chat/ 밖의 키는 403 IMAGE_NOT_OWNED로 거부되고 저장되지 않는다'(타 회원 키·service/ 키·접두어 유사 키 chat/<id>0/ 모두 403, 저장 0건, 비참여자 404). 기존 텍스트/페이지네이션/삭제 13건 회귀 없음. 같은 스위트를 기본 DB(kgtest_ws15, 018 적용 후)에서도 재실행해 15/15 확인."
+    },
+    {
+      "check": "통합 테스트 — 그 밖의 백엔드 스위트 회귀",
+      "command": "KG_TEST_DATABASE_URL=...kgtest_ws51a 로 ledger/experts/local-db/reviews/oauth/apple/register/quote-terms/admin/admin-session/phone-masked/policy-v02 순차 실행",
+      "result": "PASS",
+      "evidence": "ledger 8, experts 13, local-db 33, reviews 20, oauth 14, apple 17, register 9, quote-terms 8, admin 6, admin-session 8, phone-masked 4, policy-v02 3 — 전부 fail 0 (합계 143)."
+    },
+    {
+      "check": "통합 테스트 — quotes 스위트",
+      "command": "npm run test:integration 내 tests/quotes.integration.test.ts",
+      "result": "NOT_RUN",
+      "evidence": "이 스위트의 기본 접속은 127.0.0.1:55444인데 이 환경에는 55432 클러스터만 떠 있어 ECONNREFUSED 9건으로 즉시 실패한다. 이 WS 변경과 무관한 환경 제약이며, 임의로 포트/DB를 바꾸지 않았다(스위트 소스 주석이 전용 클러스터를 전제)."
+    },
+    {
+      "check": "AOS 빌드 (dev flavor)",
+      "command": "JAVA_HOME=.../jdk17/jdk-17.0.21+9/Contents/Home ANDROID_HOME=.../android-sdk GRADLE_USER_HOME=.../gradle-user-home python3 apps/android/build.py :app:assembleDevDebug",
+      "result": "PASS",
+      "evidence": "BUILD SUCCESSFUL in 32s, 38 tasks (compileDevDebugKotlin 포함). 산출물 app/build/outputs/apk/dev/debug/app-dev-debug.apk (15,182,353 bytes). 이번 APK에 신규 chat/ChatApi.kt가 포함되어 컴파일됨."
+    },
+    {
+      "check": "iOS 빌드 (시뮬레이터 SDK, 서명 없음)",
+      "command": "xcodebuild -project apps/ios/Kimgosu.xcodeproj -scheme Kimgosu -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build",
+      "result": "PASS",
+      "evidence": "** BUILD SUCCEEDED **. 신규 파일이 실제로 컴파일됐는지 오브젝트로 확인: Objects-normal/arm64/ChatApi.o, x86_64/ChatApi.o 생성됨."
+    },
+    {
+      "check": "실제 R2 presigned PUT (kind=chat)",
+      "command": "실행하지 않음",
+      "result": "NOT_RUN",
+      "evidence": "presign 경로는 R2 자격증명(R2_ENDPOINT/키/버킷)이 필요한데 이 WS는 원격 쓰기·버킷 접근 권한 범위가 아니다. /v1/uploads의 kind=chat enum 추가는 업로드 단위 테스트와 계약 테스트로만 확인했다."
+    },
+    {
+      "check": "실 dev API 거래 (GitHub–Railway–Cloudflare)",
+      "command": "실행하지 않음",
+      "result": "NOT_RUN",
+      "evidence": "PLAN 공통 규칙 1에 따라 commit/push를 하지 않았고, 마이그레이션 018도 Railway dev DB에 적용하지 않았다. 따라서 배포본에는 imageKey 컬럼·검증이 없어 이 트리의 SHA로 실제 이미지 전송을 호출할 수 없다."
+    },
+    {
+      "check": "AOS/iOS 채팅 화면에서의 사진 첨부 UI 런타임",
+      "command": "실행하지 않음",
+      "result": "NOT_RUN",
+      "evidence": "채팅 화면은 이 웨이브에서 WS-52(customer/)·WS-53(Customer*.swift)이 만든다. 이번 커밋에는 화면이 없어 화면 조작 증거를 만들 수 없다. 클라이언트는 ChatApi 계약 계층까지만 구현·빌드 검증했다."
+    }
+  ],
+  "acceptance": [
+    {
+      "criterion": "이미지 메시지 전송 → 조회 시 imageUrl이 나온다",
+      "status": "PASS",
+      "evidence": "통합 테스트: 201 응답과 이후 상대 참여자 GET 모두 imageUrl = R2_PUBLIC_BASE_URL + '/' + key, imageWidth/Height 800/600. DB에도 image_key가 저장됨."
+    },
+    {
+      "criterion": "남의 키로 전송하면 403",
+      "status": "PASS",
+      "evidence": "타 회원 키·chat/ 밖 키·접두어 유사 키 모두 403 IMAGE_NOT_OWNED, chat_messages 저장 0건."
+    },
+    {
+      "criterion": "기존 텍스트 메시지 계약이 깨지지 않는다(하위 호환)",
+      "status": "PASS",
+      "evidence": "텍스트 전용 요청/응답 동작 동일(2000자 허용, 2001자·공백만 400). 기존 채팅 통합 테스트 13건 전부 통과, 계약 인벤토리 30개 operation 유지. 응답에는 imageKey/imageUrl/imageWidth/imageHeight가 null로 추가될 뿐이다."
+    },
+    {
+      "criterion": "tsc 0, 유닛·계약·통합 전부 통과",
+      "status": "PASS(quotes 스위트만 NOT_RUN)",
+      "evidence": "tsc 0 / unit 28·28 / contract 68·68 / integration 158 pass(채팅 15 + 기타 143), fail 0. quotes 스위트는 55444 클러스터 부재로 NOT_RUN."
+    }
+  ],
+  "risks": [
+    "imageUrl은 R2_PUBLIC_BASE_URL(또는 KG_R2_PUBLIC_BASE)이 설정돼야 완전한 URL이 된다. 미설정이면 '/<key>' 형태가 된다. 배포 환경변수 확인 필요(기존 expert 서비스 이미지와 같은 전제).",
+    "apps/ios/Kimgosu.xcodeproj/project.pbxproj는 WS-53도 수정하는 공유 파일이다. 이 WS는 F10000000000000000000006/F00000000000000000000006 고유 ID로 4줄만 추가했으나, 두 트리를 합칠 때 이 파일에서 병합 충돌이 날 수 있다.",
+    "AOS ChatApi.kt · iOS ChatApi.swift는 채팅 화면(WS-52/53)이 호출하기 전까지 앱 내 호출자가 없다. 컴파일·계약 정합까지만 검증됐고 실제 첨부 동작은 화면 통합 후 확인해야 한다.",
+    "마이그레이션 018은 기존 CHECK를 DROP/ADD로 교체한다(테이블 재작성 없음, lock_timeout 5s). 운영 DB에는 적용하지 않았고 dev DB에도 아직 미적용이다.",
+    "이미지 크기 검증은 클라이언트가 신고한 imageWidth/Height이며 서버는 객체를 열어보지 않는다. 악의적 값으로는 1~20000 범위 제한만 걸린다."
+  ],
+  "nextActions": [
+    "부모: 이 트리를 커밋/푸시한 뒤 Railway dev DB에 018_chat_images.sql 적용(개발계) → dev API 배포 후 실제 이미지 전송·재조회·403 거부를 Cloudflare 경유로 검증.",
+    "WS-52/WS-53은 ChatApi(sendPhoto/list)를 채팅 화면에 연결하고 상태 4종(로딩/빈/오류/네트워크)을 표시한다. 그때 AOS·iOS 각각 실제 첨부 거래와 화면 증거를 남긴다.",
+    "quotes 통합 스위트용 55444 클러스터를 띄우거나, 스위트를 55432로 통일할지 결정(이 WS 범위 밖)."
+  ],
+  "selfQa": "자체 검증이며 독립 QA가 아니다."
+}

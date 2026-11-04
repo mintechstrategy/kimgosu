@@ -1,0 +1,61 @@
+{
+  "ws": "WS-60",
+  "web": "http://127.0.0.1:4178",
+  "api": "http://127.0.0.1:4610",
+  "browser": "Chrome (playwright channel=chrome, headless)",
+  "steps": [
+    {
+      "step": "login screen lists the ADMIN tester slot 21",
+      "status": "PASS",
+      "detail": "21 accounts"
+    },
+    {
+      "step": "slot 21 logs in and the console renders the member list",
+      "status": "PASS",
+      "detail": "20 member rows, operator 표시"
+    },
+    {
+      "step": "member detail opens from the list",
+      "status": "PASS",
+      "detail": "detail + back"
+    },
+    {
+      "step": "member search with no match shows the empty state",
+      "status": "PASS",
+      "detail": "empty notice"
+    },
+    {
+      "step": "review loading state, error state, then list on retry",
+      "status": "PASS",
+      "detail": "loading → error → 2 reviews on retry"
+    },
+    {
+      "step": "hide without a reason shows the server 400 and keeps the row public",
+      "status": "PASS",
+      "detail": "400 INVALID_REQUEST shown, dialog open, row still 공개"
+    },
+    {
+      "step": "hide with a reason hides the row and the public API loses it",
+      "status": "PASS",
+      "detail": "row 숨김 + 사유 표시, public API에서 사라짐"
+    },
+    {
+      "step": "unhide without a reason is rejected, then restores the row",
+      "status": "PASS",
+      "detail": "400 then 공개"
+    },
+    {
+      "step": "revoked ADMIN grant shows the no-permission state",
+      "status": "PASS",
+      "detail": "forbidden panel"
+    },
+    {
+      "step": "permission panel returns to the login screen",
+      "status": "PASS",
+      "detail": "back to /admin/login"
+    }
+  ],
+  "pageErrors": [],
+  "passed": 10,
+  "total": 10
+}

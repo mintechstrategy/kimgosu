@@ -65,11 +65,12 @@ export function registerUploadRoutes(app: FastifyInstance, db: Sql, authenticate
 
   // The client asks for a slot, uploads the bytes itself, then stores the key on
   // a service. The key is scoped to the caller so nobody can overwrite another
-  // member's object.
-  app.post<{ Body: { contentType: ContentType; kind?: 'service' | 'avatar' } }>('/v1/uploads', {
+  // member's object. `chat` is the only kind the chat route accepts, because it
+  // verifies the key against `chat/<sender member id>/`.
+  app.post<{ Body: { contentType: ContentType; kind?: 'service' | 'avatar' | 'chat' } }>('/v1/uploads', {
     schema: body({
       contentType: { type: 'string', enum: Object.keys(ALLOWED) },
-      kind: { type: 'string', enum: ['service', 'avatar'] },
+      kind: { type: 'string', enum: ['service', 'avatar', 'chat'] },
     }, ['contentType']),
   }, async (request, reply) => {
     const auth = await requireMember(request, reply);

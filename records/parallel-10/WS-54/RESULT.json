@@ -1,0 +1,103 @@
+{
+  "ws": "WS-54",
+  "task": "서비스 다중 이미지(포트폴리오) — 백엔드 + AOS + iOS",
+  "status": "DONE",
+  "worktree": "/Users/mintech-mac/hermes/dev-profile/shared/projects/wt-WS-54",
+  "baseCommit": "9eb3bc6",
+  "finishedAt": "2026-11-04 17:04 KST",
+  "summary": "expert_service_images(019)와 /v1/expert/services POST·PATCH의 imageKeys(0~5)를 구현하고 목록·상세·검색·self 응답에 images[{key,url,sortOrder}]를 추가했으며 imageKey/imageUrl은 첫 장으로 유지했다. 남의 키 403 IMAGE_NOT_OWNED, 6장 400 TOO_MANY_IMAGES, 단일 imageKey 하위 호환을 실 PostgreSQL 통합 테스트로 확인했고, AOS ExpertServiceScreen과 iOS ExpertServiceView를 다중 사진 폼·사진 장수 표시로 함께 수정해 양쪽 빌드에 성공했다.",
+  "changedFiles": [
+    "services/backend/migrations/019_expert_service_images.sql",
+    "services/backend/src/experts.ts",
+    "services/backend/tests/experts.integration.test.ts",
+    "apps/android/app/src/main/java/ai/mintech/kimgosu/expert/ExpertServiceScreen.kt",
+    "apps/ios/Kimgosu/ExpertServiceView.swift",
+    "records/parallel-10/WS-54/RESULT.json"
+  ],
+  "implementation": {
+    "migration": "kg_membership.expert_service_images(id, service_id, image_key, sort_order, created_at), UNIQUE(service_id,sort_order), UNIQUE(service_id,image_key), CHECK sort_order 0..4, FK ON DELETE CASCADE. 기존 expert_services.image_key를 sort_order 0으로 백필(ON CONFLICT DO NOTHING). kg_dev_runtime에 SELECT/INSERT/UPDATE/DELETE GRANT. expert_services.image_key는 대표 이미지로 유지.",
+    "backend": "POST/PATCH 스키마에 imageKeys 배열(항목 1~300자, uniqueItems) 추가. imageKeys가 있으면 우선하고, 단일 imageKey는 한 장짜리 portfolio로 해석. PATCH는 imageKeys/imageKey가 없으면 사진을 건드리지 않고, 빈 배열은 전부 삭제. 5장 초과 400 TOO_MANY_IMAGES, service/<memberId>/ 접두사가 아닌 키 403 IMAGE_NOT_OWNED. 쓰기는 DELETE+unnest INSERT 한 번, 읽기는 응답당 이미지 조회 1회(withImages)로 images[]와 첫 장 imageKey/imageUrl을 함께 구성. /v1/me/expert, /v1/experts, /v1/experts/:id, 생성·수정 응답 모두 동일 형태.",
+    "android": "ExpertServiceScreen: ExpertServiceItem.images(List<String>) 추가, ServiceDraft.imageKeys로 전환, 저장 시 imageKeys 배열 전송. 폼은 사진 키 입력 0~5개(추가/삭제, 첫 장 대표 안내), 목록 행은 '사진 N장' 표시. images[]가 없는 구서버 응답은 imageKey 한 장으로 폴백.",
+    "ios": "ExpertServiceView: 동일 모델·전송·폼·표시 변경(SwiftUI, service-image-add/remove-N, service-field-image-key-N). 구서버 응답 imageKey 폴백 포함. 새 파일·의존성 없음."
+  },
+  "verification": [
+    {
+      "check": "TypeScript 타입체크",
+      "command": "cd services/backend && npm run check",
+      "result": "PASS",
+      "evidence": "tsc --noEmit, 출력 없음, exit 0"
+    },
+    {
+      "check": "백엔드 유닛 스위트",
+      "command": "cd services/backend && npm test",
+      "result": "PASS",
+      "evidence": "tests 28 / pass 28 / fail 0"
+    },
+    {
+      "check": "계약 회귀 (라우트 인벤토리 포함)",
+      "command": "node --test tests/contract/contract.test.ts",
+      "result": "PASS",
+      "evidence": "tests 15 / pass 15 / fail 0 — 라우트 추가가 없어 21 operation 인벤토리 유지"
+    },
+    {
+      "check": "고수 서비스 통합 테스트 (실 PostgreSQL 18, 127.0.0.1:55432/kgtest)",
+      "command": "KG_TEST_DATABASE_URL=postgres://postgres@127.0.0.1:55432/kgtest node --test tests/experts.integration.test.ts",
+      "result": "PASS",
+      "evidence": "tests 14 / pass 14 / fail 0. 신규 테스트가 확인한 것: 3장 등록 시 images 순서 [b,a,c]와 sortOrder [0,1,2], 대표 imageKey=첫 장, 상세·self·검색 3경로 동일 순서, PATCH 교체 [c,a] 후 DB sort_order 일치, 5장 201, 6장 400 TOO_MANY_IMAGES이며 서비스 행 미생성, 남의 service/<expertB>/ 키 403 IMAGE_NOT_OWNED, imageKeys[]로 전부 삭제 시 images=[]·imageKey=null. 기존 단일 imageKey 테스트도 images 1장으로 통과."
+    },
+    {
+      "check": "통합 스위트 전체 회귀 (CI와 동일 명령)",
+      "command": "cd services/backend && KG_TEST_DATABASE_URL=postgres://postgres@127.0.0.1:55432/kgtest npm run test:integration",
+      "result": "PASS",
+      "evidence": "13개 파일 157 tests / 157 pass / 0 fail (ledger 8, experts 14, local-db 33, quotes 8, chat 13, reviews 20, oauth 14, apple 17, register 9, quote-terms 8, admin 6, phone-masked 4, policy-v02 3)"
+    },
+    {
+      "check": "019 마이그레이션 적용·재적용(멱등)과 런타임 권한",
+      "command": "psql $KG_TEST_DATABASE_URL -v ON_ERROR_STOP=1 -f migrations/019_expert_service_images.sql (2회) / information_schema.role_table_grants",
+      "result": "PASS",
+      "evidence": "1회차 CREATE TABLE/INDEX/INSERT 0/GRANT/COMMIT, 2회차 'already exists, skipping' NOTICE 후 exit 0. kg_dev_runtime 권한 SELECT/INSERT/UPDATE/DELETE 4종 확인"
+    },
+    {
+      "check": "AOS 빌드 (dev flavor)",
+      "command": "JAVA_HOME=.local-toolchains/jdk17/jdk-17.0.21+9/Contents/Home ANDROID_HOME=.local-toolchains/android-sdk GRADLE_USER_HOME=.local-toolchains/gradle-user-home python3 apps/android/build.py --offline :app:assembleDevDebug",
+      "result": "PASS",
+      "evidence": "BUILD SUCCESSFUL in 36s, 38 actionable tasks, Kotlin 컴파일 오류 0"
+    },
+    {
+      "check": "iOS 빌드 (시뮬레이터 SDK, 서명 없음)",
+      "command": "xcodebuild -project apps/ios/Kimgosu.xcodeproj -scheme Kimgosu -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build",
+      "result": "PASS",
+      "evidence": "** BUILD SUCCEEDED **, ExpertServiceView.swift 컴파일 포함"
+    },
+    {
+      "check": "AOS 런타임 UI·계측 테스트",
+      "command": "(실행하지 않음 — 에뮬레이터 미사용, 서비스 화면 계측 테스트 없음)",
+      "result": "NOT_RUN",
+      "evidence": "빌드까지만 확인. 사진 추가/삭제·저장 UI의 실제 터치 동작은 검증하지 않았다."
+    },
+    {
+      "check": "iOS 런타임 UI/렌더",
+      "command": "(실행하지 않음)",
+      "result": "NOT_RUN",
+      "evidence": "빌드까지만 확인. 폼 렌더·입력·저장 화면의 실제 실행은 검증하지 않았다."
+    },
+    {
+      "check": "실 dev API 호출",
+      "command": "(실행하지 않음 — 원격 쓰기·배포 금지)",
+      "result": "NOT_RUN",
+      "evidence": "PLAN 공통 규칙 1에 따라 push/deploy/원격 API 쓰기를 하지 않았다. 019는 dev DB에 적용되지 않았고, 배포 전 실 API에는 images/imageKeys가 없다."
+    },
+    {
+      "check": "웹 앱",
+      "command": "(실행하지 않음 — 범위 밖)",
+      "result": "NOT_RUN",
+      "evidence": "이 WS는 백엔드·AOS·iOS만 대상. verify:web 미실행."
+    }
+  ],
+  "notes": [
+    "계약: contracts/*.json에는 고수 서비스 엔드포인트 계약이 없다(tests/contract/ws27-contracts.test.ts가 experts 도메인을 documentedGaps로 명시). 따라서 계약 파일 갱신 대신 실제 wire 형태(images[]·에러 코드·하위 호환)를 통합 테스트로 고정했고, 전역 라우트 인벤토리는 변하지 않았다.",
+    "키 소유권 접두사는 /v1/uploads가 실제로 발급하는 service/<memberId>/ 형식과 일치한다. 기존 통합 테스트의 고정 키 'services/abc.jpg'는 API가 만들 수 없는 값이어서 소유자 키로 교체했다.",
+    "마이그레이션 번호는 PLAN대로 019. 형제 워크트리에서 018_chat_images.sql(WS-51)이 이미 쓰이고 있어 번호 충돌이 없다.",
+    "PATCH에서 imageKeys 검증은 서비스 소유권 조회 전에 수행된다. 남의 서비스 id + 남의 키 조합은 404 대신 403 IMAGE_NOT_OWNED가 되지만 서비스 존재 여부는 드러나지 않는다."
+  ]
+}

@@ -12,6 +12,7 @@
     "Query values arrive as strings because the app runs with ajv coerceTypes:false; numeric bounds are enforced in the handler (limit > 100 => 400 INVALID_LIMIT).",
     "Deletion (WS-25): a member may delete only their own message. A deleted message disappears from the sender's own list, while the other participant keeps the row as a tombstone { deleted: true, body: null }. The body text is never returned to the other participant and the audit entry records ids only. Re-deleting an already deleted message is 409 MESSAGE_ALREADY_DELETED (deliberately not 404, so a retry is distinguishable from a wrong id).",
     "total counts the rows visible to the caller (own tombstones excluded), so it never disagrees with what paging can return.",
+    "Images (WS-51): a message may carry an R2 object key instead of, or along with, text. Only keys obtained from POST /v1/uploads with kind=chat are accepted, i.e. keys under chat/<sender member id>/; anything else is 403 IMAGE_NOT_OWNED and nothing is written. The URL is composed at read time from R2_PUBLIC_BASE_URL, so the bucket domain is configuration and never stored. imageWidth/imageHeight are the client-decoded pixel size and are optional; the server does not fetch or re-encode the object. A deleted image message returns imageKey/imageUrl/dimensions as null, exactly like body.",
     "All routes respond with Cache-Control: no-store and X-Server-Time."
   ],
   "operations": [
@@ -30,17 +31,24 @@
       "requestSchema": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["body"],
-        "properties": { "body": { "type": "string", "minLength": 1, "maxLength": 2000 } }
+        "required": [],
+        "anyOf": [{ "required": ["body"] }, { "required": ["imageKey"] }],
+        "properties": {
+          "body": { "type": "string", "minLength": 0, "maxLength": 2000 },
+          "imageKey": { "type": "string", "minLength": 1, "maxLength": 300 },
+          "imageWidth": { "type": "integer", "minimum": 1, "maximum": 20000 },
+          "imageHeight": { "type": "integer", "minimum": 1, "maximum": 20000 }
+        }
       },
       "responses": {
         "201": { "$ref": "#/definitions/Message" }
       },
       "errors": [
-        { "status": 400, "code": "INVALID_REQUEST", "when": "schema violation (missing/too long body, unknown property, bad uuid)" },
-        { "status": 400, "code": "MESSAGE_BODY_INVALID", "when": "body is only whitespace (passes minLength, violates the table trim CHECK)" },
+        { "status": 400, "code": "INVALID_REQUEST", "when": "schema violation (no body and no imageKey, too long body, unknown property, bad uuid)" },
+        { "status": 400, "code": "MESSAGE_BODY_INVALID", "when": "body is empty or only whitespace and no image accompanies it" },
         { "status": 401, "code": "AUTH_REQUIRED", "when": "missing or malformed Authorization header" },
         { "status": 403, "code": "ACCOUNT_RESTRICTED", "when": "member has an active restriction" },
+        { "status": 403, "code": "IMAGE_NOT_OWNED", "when": "imageKey does not start with chat/<caller member id>/" },
         { "status": 404, "code": "LEDGER_NOT_FOUND", "when": "ledger does not exist or caller is not a participant" }
       ]
     },
@@ -126,15 +134,19 @@
     "Timestamp": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?Z$" },
     "NullableTimestamp": { "type": ["string", "null"], "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?Z$" },
     "Message": {
-      "description": "Wire projection of messageColumns: deleted is derived from deleted_at, and body is null whenever the row is deleted so the text cannot leak through any read path.",
+      "description": "Wire projection of messageColumns: deleted is derived from deleted_at, and body, imageKey, imageWidth, imageHeight and imageUrl are null whenever the row is deleted so neither the text nor the photo can leak through any read path.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "ledgerId", "senderId", "body", "deleted", "createdAt", "readAt", "deletedAt"],
+      "required": ["id", "ledgerId", "senderId", "body", "imageKey", "imageUrl", "imageWidth", "imageHeight", "deleted", "createdAt", "readAt", "deletedAt"],
       "properties": {
         "id": { "$ref": "#/definitions/Uuid" },
         "ledgerId": { "$ref": "#/definitions/Uuid" },
         "senderId": { "$ref": "#/definitions/Uuid" },
         "body": { "type": ["string", "null"] },
+        "imageKey": { "type": ["string", "null"] },
+        "imageUrl": { "type": ["string", "null"] },
+        "imageWidth": { "type": ["integer", "null"] },
+        "imageHeight": { "type": ["integer", "null"] },
         "deleted": { "type": "boolean" },
         "createdAt": { "$ref": "#/definitions/Timestamp" },
         "readAt": { "$ref": "#/definitions/NullableTimestamp" },

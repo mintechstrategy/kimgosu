@@ -1,0 +1,729 @@
+{
+  "ws": "WS-60",
+  "base": "http://127.0.0.1:4610",
+  "database": "postgres://127.0.0.1:55432/kgtest_ws60",
+  "fixture": {
+    "ledgerId": "bbebf078-faf0-4d14-9605-801c62d7a318",
+    "reviewId": "6d8b9c9b-e532-4fb6-9e04-3a57d1a3700e",
+    "expertMemberId": "2b9a7708-85d8-4413-901a-2a55683fe23f",
+    "reviewerMemberId": "91d6064a-7393-4f1c-ae86-3d44decf3af9",
+    "adminMemberId": "f1dda108-5144-493a-bc3c-ffe4f86baeba"
+  },
+  "checks": [
+    {
+      "label": "admin tester login (slot 21)",
+      "method": "POST",
+      "path": "/v1/auth/dev/login",
+      "status": 200,
+      "body": {
+        "temporary": true,
+        "session": {
+          "accessToken": "C7qJU4R8wcKwanQia21MIzlE5902BZkUY4Xo6k6AX-8",
+          "refreshToken": "u3tgH-h8D_Z9Ruu_fyF9z-PwKTyWOXk2bRzp2NUigvE",
+          "tokenType": "Bearer",
+          "expiresInSeconds": 900
+        },
+        "member": {
+          "id": "f1dda108-5144-493a-bc3c-ffe4f86baeba",
+          "nickname": "테스트21",
+          "role": "ADMIN",
+          "expertActive": false
+        }
+      },
+      "expect": "HTTP 200",
+      "ok": true
+    },
+    {
+      "label": "reviewer tester login (slot 2)",
+      "method": "POST",
+      "path": "/v1/auth/dev/login",
+      "status": 200,
+      "body": {
+        "temporary": true,
+        "session": {
+          "accessToken": "57EgwO0jhbsncHRzaVfHmAXRCDzzbrdslyEQF1LVgcA",
+          "refreshToken": "DrBF9_SE-TB3jpZd34JNkkUhiCca1MHNNq1-517hH_E",
+          "tokenType": "Bearer",
+          "expiresInSeconds": 900
+        },
+        "member": {
+          "id": "91d6064a-7393-4f1c-ae86-3d44decf3af9",
+          "nickname": "테스트02",
+          "role": "USER",
+          "expertActive": false
+        }
+      },
+      "expect": "HTTP 200",
+      "ok": true
+    },
+    {
+      "label": "operator session exchange",
+      "method": "POST",
+      "path": "/v1/admin/session",
+      "status": 201,
+      "body": {
+        "adminToken": "adm_-Gxha-OCTRn6DqzRXa7I3-E4nQlnoMPfvNB1Yh68ilM",
+        "tokenType": "Bearer",
+        "expiresInSeconds": 7200,
+        "expiresAt": "2026-11-04T11:14:20.000Z",
+        "operator": {
+          "memberId": "f1dda108-5144-493a-bc3c-ffe4f86baeba",
+          "nickname": "테스트21",
+          "customerNumber": "3177"
+        }
+      },
+      "expect": "HTTP 201",
+      "ok": true
+    },
+    {
+      "label": "operator session probe",
+      "method": "GET",
+      "path": "/v1/admin/session",
+      "status": 200,
+      "body": {
+        "operator": {
+          "memberId": "f1dda108-5144-493a-bc3c-ffe4f86baeba",
+          "nickname": "테스트21",
+          "customerNumber": "3177"
+        },
+        "expiresAt": "2026-11-04T11:14:20.000Z"
+      },
+      "expect": "HTTP 200",
+      "ok": true
+    },
+    {
+      "label": "reviews list, no token",
+      "method": "GET",
+      "path": "/v1/admin/reviews",
+      "status": 401,
+      "body": {
+        "error": {
+          "code": "AUTH_REQUIRED"
+        }
+      },
+      "expect": "HTTP 401 AUTH_REQUIRED",
+      "ok": true
+    },
+    {
+      "label": "reviews list, member session",
+      "method": "GET",
+      "path": "/v1/admin/reviews",
+      "status": 403,
+      "body": {
+        "error": {
+          "code": "ADMIN_SESSION_REQUIRED"
+        }
+      },
+      "expect": "HTTP 403 ADMIN_SESSION_REQUIRED",
+      "ok": true
+    },
+    {
+      "label": "reviews list, operator",
+      "method": "GET",
+      "path": "/v1/admin/reviews?limit=100",
+      "status": 200,
+      "body": {
+        "reviews": [
+          {
+            "id": "6d8b9c9b-e532-4fb6-9e04-3a57d1a3700e",
+            "authorNickname": "테스트02",
+            "rating": 5,
+            "body": "WS-60 검증 리뷰 2026-11-04T09:14:20.537Z",
+            "createdAt": "2026-11-04T09:14:20.543Z",
+            "hiddenAt": null,
+            "hiddenReason": null
+          }
+        ],
+        "total": 1,
+        "limit": 100,
+        "offset": 0
+      },
+      "expect": "HTTP 200",
+      "ok": true
+    },
+    {
+      "label": "members list, operator",
+      "method": "GET",
+      "path": "/v1/admin/members?limit=100",
+      "status": 200,
+      "body": {
+        "page": 1,
+        "limit": 100,
+        "total": 21,
+        "totalPages": 1,
+        "members": [
+          {
+            "id": "f1dda108-5144-493a-bc3c-ffe4f86baeba",
+            "customerNumber": "3177",
+            "name": "관리자 01",
+            "nickname": "테스트21",
+            "emailMasked": "te****@dev.invalid",
+            "phoneMasked": null,
+            "status": "ACTIVE",
+            "expertActive": false,
+            "createdAt": "2026-11-04T09:13:03.618Z",
+            "withdrawnAt": null
+          },
+          {
+            "id": "9ed72635-30dc-42e6-b418-1ba0ff821079",
+            "customerNumber": "3176",
+            "name": "고수 10",
+            "nickname": "테스트20",
+            "emailMasked": "te****@dev.invalid",
+            "phoneMasked": null,
+            "status": "ACTIVE",
+            "expertActive": true,
+            "createdAt": "2026-11-04T09:13:03.617Z",
+            "withdrawnAt": null
+          },
+          {
+            "id": "8af8863a-469c-4848-8b2f-bc3dc3ff18e8",
+            "customerNumber": "3175",
+            "name": "고수 09",
+            "nickname": "테스트19",
+            "emailMasked": "te****@dev.invalid",
+            "phoneMasked": null,
+            "status": "ACTIVE",
+            "expertActive": true,
+            "createdAt": "2026-11-04T09:13:03.617Z",
+            "withdrawnAt": null
+          },
+          {
+            "id": "69e646e0-263b-4aea-8c71-aa684fdf38e3",
+            "customerNumber": "3174",
+            "name": "고수 08",
+            "nickname": "테스트18",
+            "emailMasked": "te****@dev.invalid",
+            "phoneMasked": null,
+            "status": "ACTIVE",
+            "expertActive": true,
+            "createdAt": "2026-11-04T09:13:03.616Z",
+            "withdrawnAt": null
+          },
+          {
+            "id": "0d11e7cd-7d05-477d-a4ed-1250160ce2ab",
+            "customerNumber": "3173",
+            "name": "고수 07",
+            "nickname": "테스트17",
+            "emailMasked": "te****@dev.invalid",
+            "phoneMasked": null,
+            "status": "ACTIVE",
+            "expertActive": true,
+            "createdAt": "2026-11-04T09:13:03.616Z",
+            "withdrawnAt": null
+          },
+          {
+            "id": "13da2585-27ca-46b4-adb1-a0df73c7972b",
+            "customerNumber": "3172",
+            "name": "고수 06",
+            "nickname": "테스트16",
+            "emailMasked": "te****@dev.invalid",
+            "phoneMasked": null,
+            "status": "ACTIVE",
+            "expertActive": true,
+            "createdAt": "2026-11-04T09:13:03.615Z",
+            "withdrawnAt": null
+          },
+          {
+            "id": "6bf2a08e-5ba2-4f6e-9773-6d4f88acaf53",
+            "customerNumber": "3171",
+            "name": "고수 05",
+            "nickname": "테스트15",
+            "emailMasked": "te****@dev.invalid",
+            "phoneMasked": null,
+            "status": "ACTIVE",
+            "expertActive": true,
+            "createdAt": "2026-11-04T09:13:03.614Z",
+            "withdrawnAt": null
+          },
+          {
+            "id": "c72489ac-6d40-45c0-a73c-1359325b1711",
+            "customerNumber": "3170",
+            "name": "고수 04",
+            "nickname": "테스트14",
+            "emailMasked": "te****@dev.invalid",
+            "phoneMasked": null,
+            "status": "ACTIVE",
+            "expertActive": true,
+            "createdAt": "2026-11-04T09:13:03.614Z",
+            "withdrawnAt": null
+          },
+          {
+            "id": "894ffa08-4d5c-4225-a3da-ecd72c48864f",
+            "customerNumber": "3169",
+            "name": "고수 03",
+            "nickname": "테스트13",
+            "emailMasked": "te****@dev.invalid",
+            "phoneMasked": null,
+            "status": "ACTIVE",
+            "expertActive": true,
+            "createdAt": "2026-11-04T09:13:03.613Z",
+            "withdrawnAt": null
+          },
+          {
+            "id": "833b1c7a-fe94-486c-9f92-c551e3e721ba",
+            "customerNumber": "3168",
+            "name": "고수 02",
+            "nickname": "테스트12",
+            "emailMasked": "te****@dev.invalid",
+            "phoneMasked": null,
+            "status": "ACTIVE",
+            "expertActive": true,
+            "createdAt": "2026-11-04T09:13:03.613Z",
+            "withdrawnAt": null
+          },
+          {
+            "id": "2b9a7708-85d8-4413-901a-2a55683fe23f",
+            "customerNumber": "3167",
+            "name": "고수 01",
+            "nickname": "테스트11",
+            "emailMasked": "te****@dev.invalid",
+            "phoneMasked": null,
+            "status": "ACTIVE",
+            "expertActive": true,
+            "createdAt": "2026-11-04T09:13:03.612Z",
+            "withdrawnAt": null
+          },
+          {
+            "id": "d2e16338-cdb2-4ec8-b8a6-bd2cb3b42319",
+            "customerNumber": "3166",
+            "name": "일반 사용자 10",
+            "nickname": "테스트10",
+            "emailMasked": "te****@dev.invalid",
+            "phoneMasked": null,
+            "status": "ACTIVE",
+            "expertActive": false,
+            "createdAt": "2026-11-04T09:13:03.612Z",
+            "withdrawnAt": null
+          },
+          {
+            "id": "671dedc5-a3a4-4e88-a173-c9c0ab2fe11e",
+            "customerNumber": "3165",
+            "name": "일반 사용자 09",
+            "nickname": "테스트09",
+            "emailMasked": "te****@dev.invalid",
+            "phoneMasked": null,
+            "status": "ACTIVE",
+            "expertActive": false,
+            "createdAt": "2026-11-04T09:13:03.611Z",
+            "withdrawnAt": null
+          },
+          {
+            "id": "46357372-d0c6-4a89-9a0a-334e076b128c",
+            "customerNumber": "3164",
+            "name": "일반 사용자 08",
+            "nickname": "테스트08",
+            "emailMasked": "te****@dev.invalid",
+            "phoneMasked": null,
+            "status": "ACTIVE",
+            "expertActive": false,
+            "createdAt": "2026-11-04T09:13:03.610Z",
+            "withdrawnAt": null
+          },
+          {
+            "id": "68baddca-7145-47e8-bf0c-849c0fbe94bd",
+            "customerNumber": "3163",
+            "name": "일반 사용자 07",
+            "nickname": "테스트07",
+            "emailMasked": "te****@dev.invalid",
+            "phoneMasked": null,
+            "status": "ACTIVE",
+            "expertActive": false,
+            "createdAt": "2026-11-04T09:13:03.609Z",
+            "withdrawnAt": null
+          },
+          {
+            "id": "36bbfd1d-774b-4693-9988-9b6ce82b0fb2",
+            "customerNumber": "3162",
+            "name": "일반 사용자 06",
+            "nickname": "테스트06",
+            "emailMasked": "te****@dev.invalid",
+            "phoneMasked": null,
+            "status": "ACTIVE",
+            "expertActive": false,
+            "createdAt": "2026-11-04T09:13:03.609Z",
+            "withdrawnAt": null
+          },
+          {
+            "id": "ce1b69f2-c331-4402-b932-60797586721f",
+            "customerNumber": "3161",
+            "name": "일반 사용자 05",
+            "nickname": "테스트05",
+            "emailMasked": "te****@dev.invalid",
+            "phoneMasked": null,
+            "status": "ACTIVE",
+            "expertActive": false,
+            "createdAt": "2026-11-04T09:13:03.608Z",
+            "withdrawnAt": null
+          },
+          {
+            "id": "6a9ba86a-ee9a-4958-b979-1a3a6dc97411",
+            "customerNumber": "3160",
+            "name": "일반 사용자 04",
+            "nickname": "테스트04",
+            "emailMasked": "te****@dev.invalid",
+            "phoneMasked": null,
+            "status": "ACTIVE",
+            "expertActive": false,
+            "createdAt": "2026-11-04T09:13:03.608Z",
+            "withdrawnAt": null
+          },
+          {
+            "id": "de7d16b8-89d1-4b86-88e2-4c7cf1b2963f",
+            "customerNumber": "3159",
+            "name": "일반 사용자 03",
+            "nickname": "테스트03",
+            "emailMasked": "te****@dev.invalid",
+            "phoneMasked": null,
+            "status": "ACTIVE",
+            "expertActive": false,
+            "createdAt": "2026-11-04T09:13:03.607Z",
+            "withdrawnAt": null
+          },
+          {
+            "id": "91d6064a-7393-4f1c-ae86-3d44decf3af9",
+            "customerNumber": "3158",
+            "name": "일반 사용자 02",
+            "nickname": "테스트02",
+            "emailMasked": "te****@dev.invalid",
+            "phoneMasked": null,
+            "status": "ACTIVE",
+            "expertActive": false,
+            "createdAt": "2026-11-04T09:13:03.606Z",
+            "withdrawnAt": null
+          },
+          {
+            "id": "5c1055f4-3725-44e1-a0c3-a7e929168b29",
+            "customerNumber": "3157",
+            "name": "일반 사용자 01",
+            "nickname": "테스트01",
+            "emailMasked": "te****@dev.invalid",
+            "phoneMasked": null,
+            "status": "ACTIVE",
+            "expertActive": false,
+            "createdAt": "2026-11-04T09:13:03.599Z",
+            "withdrawnAt": null
+          }
+        ]
+      },
+      "expect": "HTTP 200",
+      "ok": true
+    },
+    {
+      "label": "members list, member session",
+      "method": "GET",
+      "path": "/v1/admin/members",
+      "status": 403,
+      "body": {
+        "error": {
+          "code": "ADMIN_SESSION_REQUIRED"
+        }
+      },
+      "expect": "HTTP 403 ADMIN_SESSION_REQUIRED",
+      "ok": true
+    },
+    {
+      "label": "member detail, operator",
+      "method": "GET",
+      "path": "/v1/admin/members/2b9a7708-85d8-4413-901a-2a55683fe23f",
+      "status": 200,
+      "body": {
+        "member": {
+          "id": "2b9a7708-85d8-4413-901a-2a55683fe23f",
+          "customerNumber": "3167",
+          "name": "고수 01",
+          "nickname": "테스트11",
+          "email": "test11@dev.invalid",
+          "phoneMasked": null,
+          "status": "ACTIVE",
+          "expertActive": true,
+          "createdAt": "2026-11-04T09:13:03.612Z",
+          "withdrawnAt": null,
+          "rejoinAfter": null,
+          "retentionUntil": null,
+          "emailMasked": "te****@dev.invalid"
+        },
+        "restrictions": [],
+        "consents": [],
+        "ledgers": [
+          {
+            "id": "bbebf078-faf0-4d14-9605-801c62d7a318",
+            "displayName": null,
+            "createdAt": "2026-11-04T09:14:20.540Z",
+            "updatedAt": "2026-11-04T09:14:20.540Z",
+            "role": "EXPERT",
+            "counterpartId": "91d6064a-7393-4f1c-ae86-3d44decf3af9",
+            "counterpartNickname": "테스트02",
+            "counterpartNumber": "3158",
+            "agreementCount": 1,
+            "completedAgreements": 1
+          }
+        ],
+        "roles": []
+      },
+      "expect": "HTTP 200",
+      "ok": true
+    },
+    {
+      "label": "public reviews before hide",
+      "method": "GET",
+      "path": "/v1/experts/2b9a7708-85d8-4413-901a-2a55683fe23f/reviews?limit=50",
+      "status": 200,
+      "body": {
+        "reviews": [
+          {
+            "id": "6d8b9c9b-e532-4fb6-9e04-3a57d1a3700e",
+            "rating": 5,
+            "body": "WS-60 검증 리뷰 2026-11-04T09:14:20.537Z",
+            "createdAt": "2026-11-04T09:14:20.543Z",
+            "authorNickname": "테스트02"
+          }
+        ],
+        "summary": {
+          "count": 1,
+          "average": 5,
+          "distribution": {
+            "1": 0,
+            "2": 0,
+            "3": 0,
+            "4": 0,
+            "5": 1
+          }
+        },
+        "pagination": {
+          "limit": 50,
+          "offset": 0,
+          "total": 1
+        }
+      },
+      "expect": "HTTP 200",
+      "ok": true
+    },
+    {
+      "label": "hide with empty reason",
+      "method": "POST",
+      "path": "/v1/admin/reviews/6d8b9c9b-e532-4fb6-9e04-3a57d1a3700e/hide",
+      "status": 400,
+      "body": {
+        "error": {
+          "code": "INVALID_REQUEST"
+        }
+      },
+      "expect": "HTTP 400",
+      "ok": true
+    },
+    {
+      "label": "hide with 1-char reason",
+      "method": "POST",
+      "path": "/v1/admin/reviews/6d8b9c9b-e532-4fb6-9e04-3a57d1a3700e/hide",
+      "status": 400,
+      "body": {
+        "error": {
+          "code": "INVALID_REQUEST"
+        }
+      },
+      "expect": "HTTP 400",
+      "ok": true
+    },
+    {
+      "label": "hide with no body",
+      "method": "POST",
+      "path": "/v1/admin/reviews/6d8b9c9b-e532-4fb6-9e04-3a57d1a3700e/hide",
+      "status": 400,
+      "body": {
+        "error": {
+          "code": "INVALID_REQUEST"
+        }
+      },
+      "expect": "HTTP 400",
+      "ok": true
+    },
+    {
+      "label": "hide with member session",
+      "method": "POST",
+      "path": "/v1/admin/reviews/6d8b9c9b-e532-4fb6-9e04-3a57d1a3700e/hide",
+      "status": 403,
+      "body": {
+        "error": {
+          "code": "ADMIN_SESSION_REQUIRED"
+        }
+      },
+      "expect": "HTTP 403 ADMIN_SESSION_REQUIRED",
+      "ok": true
+    },
+    {
+      "label": "hide with reason",
+      "method": "POST",
+      "path": "/v1/admin/reviews/6d8b9c9b-e532-4fb6-9e04-3a57d1a3700e/hide",
+      "status": 200,
+      "body": {
+        "id": "6d8b9c9b-e532-4fb6-9e04-3a57d1a3700e",
+        "hiddenAt": "2026-11-04T09:14:20.631Z",
+        "hiddenReason": "정책 위반",
+        "hidden": true
+      },
+      "expect": "HTTP 200",
+      "ok": true
+    },
+    {
+      "label": "public reviews after hide",
+      "method": "GET",
+      "path": "/v1/experts/2b9a7708-85d8-4413-901a-2a55683fe23f/reviews?limit=50",
+      "status": 200,
+      "body": {
+        "reviews": [],
+        "summary": {
+          "count": 0,
+          "average": null,
+          "distribution": {
+            "1": 0,
+            "2": 0,
+            "3": 0,
+            "4": 0,
+            "5": 0
+          }
+        },
+        "pagination": {
+          "limit": 50,
+          "offset": 0,
+          "total": 0
+        }
+      },
+      "expect": "HTTP 200",
+      "ok": true
+    },
+    {
+      "label": "reviews list after hide",
+      "method": "GET",
+      "path": "/v1/admin/reviews?limit=100",
+      "status": 200,
+      "body": {
+        "reviews": [
+          {
+            "id": "6d8b9c9b-e532-4fb6-9e04-3a57d1a3700e",
+            "authorNickname": "테스트02",
+            "rating": 5,
+            "body": "WS-60 검증 리뷰 2026-11-04T09:14:20.537Z",
+            "createdAt": "2026-11-04T09:14:20.543Z",
+            "hiddenAt": "2026-11-04T09:14:20.631Z",
+            "hiddenReason": "정책 위반"
+          }
+        ],
+        "total": 1,
+        "limit": 100,
+        "offset": 0
+      },
+      "expect": "HTTP 200",
+      "ok": true
+    },
+    {
+      "label": "hide again (already hidden)",
+      "method": "POST",
+      "path": "/v1/admin/reviews/6d8b9c9b-e532-4fb6-9e04-3a57d1a3700e/hide",
+      "status": 409,
+      "body": {
+        "error": {
+          "code": "REVIEW_ALREADY_HIDDEN"
+        }
+      },
+      "expect": "HTTP 409 REVIEW_ALREADY_HIDDEN",
+      "ok": true
+    },
+    {
+      "label": "unhide with empty reason",
+      "method": "POST",
+      "path": "/v1/admin/reviews/6d8b9c9b-e532-4fb6-9e04-3a57d1a3700e/unhide",
+      "status": 400,
+      "body": {
+        "error": {
+          "code": "INVALID_REQUEST"
+        }
+      },
+      "expect": "HTTP 400",
+      "ok": true
+    },
+    {
+      "label": "unhide with reason",
+      "method": "POST",
+      "path": "/v1/admin/reviews/6d8b9c9b-e532-4fb6-9e04-3a57d1a3700e/unhide",
+      "status": 200,
+      "body": {
+        "id": "6d8b9c9b-e532-4fb6-9e04-3a57d1a3700e",
+        "hiddenAt": null,
+        "hiddenReason": null,
+        "hidden": false
+      },
+      "expect": "HTTP 200",
+      "ok": true
+    },
+    {
+      "label": "public reviews after unhide",
+      "method": "GET",
+      "path": "/v1/experts/2b9a7708-85d8-4413-901a-2a55683fe23f/reviews?limit=50",
+      "status": 200,
+      "body": {
+        "reviews": [
+          {
+            "id": "6d8b9c9b-e532-4fb6-9e04-3a57d1a3700e",
+            "rating": 5,
+            "body": "WS-60 검증 리뷰 2026-11-04T09:14:20.537Z",
+            "createdAt": "2026-11-04T09:14:20.543Z",
+            "authorNickname": "테스트02"
+          }
+        ],
+        "summary": {
+          "count": 1,
+          "average": 5,
+          "distribution": {
+            "1": 0,
+            "2": 0,
+            "3": 0,
+            "4": 0,
+            "5": 1
+          }
+        },
+        "pagination": {
+          "limit": 50,
+          "offset": 0,
+          "total": 1
+        }
+      },
+      "expect": "HTTP 200",
+      "ok": true
+    },
+    {
+      "label": "reviews list with offset past the end",
+      "method": "GET",
+      "path": "/v1/admin/reviews?limit=10&offset=100000",
+      "status": 200,
+      "body": {
+        "reviews": [],
+        "total": 1,
+        "limit": 10,
+        "offset": 100000
+      },
+      "expect": "HTTP 200",
+      "ok": true
+    }
+  ],
+  "audit": [
+    {
+      "action": "REVIEW_HIDDEN",
+      "target_type": "review",
+      "reason": "정책 위반",
+      "actorMatchesAdmin": true
+    },
+    {
+      "action": "REVIEW_UNHIDDEN",
+      "target_type": "review",
+      "reason": "소명 확인",
+      "actorMatchesAdmin": true
+    }
+  ],
+  "emptyListShape": {
+    "ok": true,
+    "total": 1,
+    "reviews": 0
+  },
+  "allChecksPassed": true
+}

@@ -84,7 +84,9 @@ export function createAdminLoginClient(baseUrl: string, transport: typeof fetch 
 
     /** Tester login: a real member session issued by the server for one seeded account. */
     async devLogin(slot: number): Promise<string> {
-      if (!Number.isSafeInteger(slot) || slot < 1 || slot > 20) throw new AdminApiError(400, 'INVALID_REQUEST');
+      // Slots run to 30 (migration 017); 21 is the seeded ADMIN account, the only
+      // slot that can open an operator session.
+      if (!Number.isSafeInteger(slot) || slot < 1 || slot > 30) throw new AdminApiError(400, 'INVALID_REQUEST');
       const { status, payload } = await send('/v1/auth/dev/login', 'POST', { slot });
       if (status !== 200) {
         const code = status === 429 ? 'AUTH_RATE_LIMITED' : status === 404 ? 'DEV_ACCOUNT_NOT_FOUND' : 'LOGIN_FAILED';

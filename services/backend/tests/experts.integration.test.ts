@@ -361,22 +361,101 @@ test('availability accepts the three states, persists, notifies nobody else and 
 });
 
 test('a service image is stored as a key and returned with a public URL', async () => {
+  const key = `service/${expertA.id}/abc.jpg`;
   const created = await app.inject({
     method: 'POST', url: '/v1/expert/services',
     headers: auth(expertA.token),
-    payload: { ...serviceBody(), title: '이미지 서비스', imageKey: 'services/abc.jpg' },
+    payload: { ...serviceBody(), title: '이미지 서비스', imageKey: key },
   });
   assert.equal(created.statusCode, 201, created.body);
-  assert.equal(created.json().imageKey, 'services/abc.jpg');
-  assert.match(String(created.json().imageUrl), /services\/abc\.jpg$/);
+  assert.equal(created.json().imageKey, key);
+  assert.match(String(created.json().imageUrl), /abc\.jpg$/);
+  assert.deepEqual(created.json().images.map((image: { key: string }) => image.key), [key],
+    'a legacy single imageKey is a one-photo portfolio');
 
   const stored = (await pool.query(
     `SELECT image_key FROM kg_membership.expert_services WHERE id=$1`, [created.json().id],
   )).rows[0];
-  assert.equal(stored.image_key, 'services/abc.jpg');
+  assert.equal(stored.image_key, key);
 
   // 목록 항목도 상세와 같은 URL을 줘야 앱이 두 경로를 다르게 다루지 않는다.
   const listed = await app.inject({ method: 'GET', url: '/v1/me/expert', headers: auth(expertA.token) });
   const fromList = listed.json().services.find((s: { id: string }) => s.id === created.json().id);
   assert.equal(fromList.imageUrl, created.json().imageUrl);
+  assert.deepEqual(fromList.images, created.json().images);
+});
+
+test('a service keeps up to five images in the given order and refuses more or foreign keys', async () => {
+  const own = (name: string) => `service/${expertA.id}/${name}.jpg`;
+  const keys = [own('b'), own('a'), own('c')];
+  const created = await app.inject({
+    method: 'POST', url: '/v1/expert/services', headers: auth(expertA.token),
+    payload: { ...serviceBody(), title: '포트폴리오', imageKeys: keys },
+  });
+  assert.equal(created.statusCode, 201, created.body);
+  const id = created.json().id;
+  assert.deepEqual(created.json().images.map((image: { key: string }) => image.key), keys);
+  assert.deepEqual(created.json().images.map((image: { sortOrder: number }) => image.sortOrder), [0, 1, 2]);
+  assert.equal(created.json().imageKey, own('b'));
+  assert.match(String(created.json().images[0].url), /b\.jpg$/);
+
+  // 저장된 순서가 조회 경로마다 같아야 한다.
+  const detail = await app.inject({ method: 'GET', url: `/v1/experts/${expertA.id}` });
+  assert.deepEqual(detail.json().services.find((s: { id: string }) => s.id === id).images.map((i: { key: string }) => i.key), keys);
+  const me = await app.inject({ method: 'GET', url: '/v1/me/expert', headers: auth(expertA.token) });
+  assert.deepEqual(me.json().services.find((s: { id: string }) => s.id === id).images.map((i: { key: string }) => i.key), keys);
+  const search = await app.inject({ method: 'GET', url: '/v1/experts?limit=50' });
+  const fromSearch = search.json().experts.find((e: { expertId: string }) => e.expertId === expertA.id)
+    .services.find((s: { id: string }) => s.id === id);
+  assert.deepEqual(fromSearch.images.map((i: { key: string }) => i.key), keys);
+
+  // PATCH는 사진 목록을 통째로 교체하고 대표 이미지를 첫 장으로 옮긴다.
+  const patched = await app.inject({
+    method: 'PATCH', url: `/v1/expert/services/${id}`, headers: auth(expertA.token),
+    payload: { imageKeys: [own('c'), own('a')] },
+  });
+  assert.equal(patched.statusCode, 200, patched.body);
+  assert.deepEqual(patched.json().images.map((image: { key: string }) => image.key), [own('c'), own('a')]);
+  assert.equal(patched.json().imageKey, own('c'));
+  const stored = (await pool.query(
+    `SELECT image_key FROM kg_membership.expert_service_images WHERE service_id=$1 ORDER BY sort_order`, [id],
+  )).rows.map(row => row.image_key);
+  assert.deepEqual(stored, [own('c'), own('a')]);
+
+  // 5장은 허용, 6장은 400이며 아무것도 저장하지 않는다.
+  const five = [own('1'), own('2'), own('3'), own('4'), own('5')];
+  const allowed = await app.inject({
+    method: 'POST', url: '/v1/expert/services', headers: auth(expertA.token),
+    payload: { ...serviceBody(), title: '다섯 장', imageKeys: five },
+  });
+  assert.equal(allowed.statusCode, 201, allowed.body);
+  assert.equal(allowed.json().images.length, 5);
+
+  const before = (await pool.query(`SELECT count(*)::int AS n FROM kg_membership.expert_services`)).rows[0].n;
+  const tooMany = await app.inject({
+    method: 'POST', url: '/v1/expert/services', headers: auth(expertA.token),
+    payload: { ...serviceBody(), title: '여섯 장', imageKeys: [...five, own('6')] },
+  });
+  assert.equal(tooMany.statusCode, 400);
+  assert.equal(tooMany.json().error.code, 'TOO_MANY_IMAGES');
+  const after = (await pool.query(`SELECT count(*)::int AS n FROM kg_membership.expert_services`)).rows[0].n;
+  assert.equal(after, before, 'a rejected payload must not persist a service');
+
+  // 남의 업로드 키는 자기 서비스에 붙일 수 없다.
+  const foreign = await app.inject({
+    method: 'POST', url: '/v1/expert/services', headers: auth(expertA.token),
+    payload: { ...serviceBody(), title: '남의 사진', imageKeys: [`service/${expertB.id}/x.jpg`] },
+  });
+  assert.equal(foreign.statusCode, 403);
+  assert.equal(foreign.json().error.code, 'IMAGE_NOT_OWNED');
+
+  // 빈 배열은 사진을 모두 지우고 대표 이미지도 비운다.
+  const cleared = await app.inject({
+    method: 'PATCH', url: `/v1/expert/services/${id}`, headers: auth(expertA.token),
+    payload: { imageKeys: [] },
+  });
+  assert.equal(cleared.statusCode, 200, cleared.body);
+  assert.deepEqual(cleared.json().images, []);
+  assert.equal(cleared.json().imageKey, null);
+  assert.equal(cleared.json().imageUrl, null);
 });

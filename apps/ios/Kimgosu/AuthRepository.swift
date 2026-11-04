@@ -211,8 +211,64 @@ struct KGAuthRepository {
         let encoded = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id
         return try await request(.private, "PATCH", "/v1/expert/services/" + encoded, token: token, body: body)
     }
+    // 고객 거래 흐름. 상태·금액·완료 여부는 모두 서버가 판정하며 클라이언트는 표시만 한다.
+    func searchExperts(category: String?, cursor: String? = nil) async throws -> [String: Any] {
+        var path = "/v1/experts?limit=20"
+        if let category, !category.isEmpty, let encoded = category.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) {
+            path += "&category=" + encoded
+        }
+        if let cursor, !cursor.isEmpty, let encoded = cursor.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) {
+            path += "&cursor=" + encoded
+        }
+        return try await request(.public, "GET", path)
+    }
+    func expertDetail(_ expertId: String) async throws -> [String: Any] {
+        try await request(.public, "GET", "/v1/experts/" + (expertId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? expertId))
+    }
+    func expertReviews(_ expertId: String, limit: Int = 20) async throws -> [String: Any] {
+        let id = expertId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? expertId
+        return try await request(.public, "GET", "/v1/experts/" + id + "/reviews?limit=\(limit)")
+    }
+    func createLedger(_ token: String, expertId: String) async throws -> [String: Any] {
+        try await request(.private, "POST", "/v1/ledgers", token: token, body: ["expertId": expertId])
+    }
+    func ledgerMessages(_ token: String, ledgerId: String) async throws -> [String: Any] {
+        try await request(.private, "GET", ledgerPath(ledgerId) + "/messages?limit=50", token: token)
+    }
+    func sendMessage(_ token: String, ledgerId: String, body: String) async throws -> [String: Any] {
+        try await request(.private, "POST", ledgerPath(ledgerId) + "/messages", token: token, body: ["body": body])
+    }
+    func ledgerQuotes(_ token: String, ledgerId: String) async throws -> [String: Any] {
+        try await request(.private, "GET", ledgerPath(ledgerId) + "/quotes", token: token)
+    }
+    func respondQuote(_ token: String, quoteId: String, action: String, expectedVersion: Int) async throws -> [String: Any] {
+        let id = quoteId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? quoteId
+        return try await request(.private, "POST", "/v1/quotes/" + id + "/respond", token: token,
+                                 body: ["action": action, "expectedVersion": expectedVersion])
+    }
+    func completeQuote(_ token: String, quoteId: String, expectedVersion: Int) async throws -> [String: Any] {
+        let id = quoteId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? quoteId
+        return try await request(.private, "POST", "/v1/quotes/" + id + "/complete", token: token,
+                                 body: ["expectedVersion": expectedVersion])
+    }
+    func createReview(_ token: String, ledgerId: String, rating: Int, body: String?) async throws -> [String: Any] {
+        var payload: [String: Any] = ["rating": rating]
+        if let body, !body.isEmpty { payload["body"] = body }
+        return try await request(.private, "POST", ledgerPath(ledgerId) + "/reviews", token: token, body: payload)
+    }
+    private func ledgerPath(_ id: String) -> String {
+        "/v1/ledgers/" + (id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id)
+    }
+    func createUpload(_ token: String, contentType: String) async throws -> [String: Any] {
+        try await request(.private, "POST", "/v1/uploads", token: token, body: ["contentType": contentType, "kind": "service"])
+    }
     /// 개발 환경 전용 임시 로그인. 운영 빌드에서는 호출하지 않는다(KGEnvironment.isProduction 가드).
     /// 응답은 실제 서버가 발급한 세션이며 클라이언트가 토큰을 만들지 않는다.
+    /// 서버가 state를 저장하고 인가 URL을 발급한다. 토큰 교환은 콜백 페이지가 서버에 맡긴다.
+    func oauthStart(_ provider: String) async throws -> [String: Any] {
+        guard provider == "google" else { throw KGAuthAPIError(status: 0, code: "INVALID_PROVIDER") }
+        return try await request(.public, "POST", "/v1/auth/oauth/\(provider)/start")
+    }
     func devAccounts() async throws -> [String: Any] { try await request(.public, "GET", "/v1/auth/dev/accounts") }
     func devLogin(slot: Int) async throws -> [String: Any] {
         guard (1...20).contains(slot) else { throw KGAuthAPIError(status: 0, code: "INVALID_DEV_SLOT") }

@@ -116,6 +116,11 @@ class AuthRepository(val transport: AuthTransport = MembershipHttp()) {
     }
     suspend fun health() = request(AuthRequestContext.PUBLIC, "GET", "/health")
     suspend fun config() = request(AuthRequestContext.PUBLIC, "GET", "/v1/auth/config?metadata=policy-v0.3")
+    /** 서버가 state를 저장하고 인가 URL을 발급한다. 토큰 교환은 콜백 페이지가 서버에 맡긴다. */
+    suspend fun oauthStart(provider: String): JSONObject {
+        require(provider == "google")
+        return request(AuthRequestContext.PUBLIC, "POST", "/v1/auth/oauth/$provider/start")
+    }
     suspend fun policies() = request(AuthRequestContext.PUBLIC, "GET", "/v1/policies?metadata=policy-v0.3")
     suspend fun policy(kind: String, version: String? = null): JSONObject {
         require(kind in listOf("TERMS", "PRIVACY_CONSENT", "PRIVACY_POLICY", "MARKETING", "OPERATIONS"))
@@ -149,6 +154,47 @@ class AuthRepository(val transport: AuthTransport = MembershipHttp()) {
         request(AuthRequestContext.PRIVATE, "POST", "/v1/expert/services", token, body)
     suspend fun patchExpertService(token: String, id: String, body: JSONObject) =
         request(AuthRequestContext.PRIVATE, "PATCH", "/v1/expert/services/" + java.net.URLEncoder.encode(id, "UTF-8"), token, body)
+    // 고객 거래 흐름. 상태·금액·완료 여부는 모두 서버가 판정하며 클라이언트는
+    // 표시만 한다. 목록/상세는 공개, 원장·메시지·견적·후기 작성은 세션 필요.
+    suspend fun searchExperts(category: String?, cursor: String? = null): JSONObject {
+        val query = buildString {
+            append("/v1/experts?limit=20")
+            if (!category.isNullOrBlank()) append("&category=" + java.net.URLEncoder.encode(category, "UTF-8"))
+            if (!cursor.isNullOrBlank()) append("&cursor=" + java.net.URLEncoder.encode(cursor, "UTF-8"))
+        }
+        return request(AuthRequestContext.PUBLIC, "GET", query)
+    }
+    suspend fun expertDetail(expertId: String) =
+        request(AuthRequestContext.PUBLIC, "GET", "/v1/experts/" + java.net.URLEncoder.encode(expertId, "UTF-8"))
+    suspend fun expertReviews(expertId: String, limit: Int = 20) =
+        request(AuthRequestContext.PUBLIC, "GET",
+            "/v1/experts/" + java.net.URLEncoder.encode(expertId, "UTF-8") + "/reviews?limit=$limit")
+    suspend fun createLedger(token: String, expertId: String) =
+        request(AuthRequestContext.PRIVATE, "POST", "/v1/ledgers", token, JSONObject().put("expertId", expertId))
+    suspend fun ledgerMessages(token: String, ledgerId: String) =
+        request(AuthRequestContext.PRIVATE, "GET", ledgerPath(ledgerId) + "/messages?limit=50", token)
+    suspend fun sendMessage(token: String, ledgerId: String, body: String) =
+        request(AuthRequestContext.PRIVATE, "POST", ledgerPath(ledgerId) + "/messages", token, JSONObject().put("body", body))
+    suspend fun ledgerQuotes(token: String, ledgerId: String) =
+        request(AuthRequestContext.PRIVATE, "GET", ledgerPath(ledgerId) + "/quotes", token)
+    suspend fun respondQuote(token: String, quoteId: String, action: String, expectedVersion: Int) =
+        request(AuthRequestContext.PRIVATE, "POST",
+            "/v1/quotes/" + java.net.URLEncoder.encode(quoteId, "UTF-8") + "/respond", token,
+            JSONObject().put("action", action).put("expectedVersion", expectedVersion))
+    suspend fun completeQuote(token: String, quoteId: String, expectedVersion: Int) =
+        request(AuthRequestContext.PRIVATE, "POST",
+            "/v1/quotes/" + java.net.URLEncoder.encode(quoteId, "UTF-8") + "/complete", token,
+            JSONObject().put("expectedVersion", expectedVersion))
+    suspend fun createReview(token: String, ledgerId: String, rating: Int, body: String?) {
+        val payload = JSONObject().put("rating", rating)
+        if (!body.isNullOrBlank()) payload.put("body", body)
+        request(AuthRequestContext.PRIVATE, "POST", ledgerPath(ledgerId) + "/reviews", token, payload)
+    }
+    private fun ledgerPath(id: String) = "/v1/ledgers/" + java.net.URLEncoder.encode(id, "UTF-8")
+    // 업로드 슬롯만 서버에 요청하고 바이트는 앱이 R2로 직접 PUT한다.
+    suspend fun createUpload(token: String, contentType: String) =
+        request(AuthRequestContext.PRIVATE, "POST", "/v1/uploads", token,
+            JSONObject().put("contentType", contentType).put("kind", "service"))
     // Temporary tester login (dev deployment only). The server issues the session;
     // nothing about these calls creates a local-only identity.
     suspend fun devAccounts() = request(AuthRequestContext.PUBLIC, "GET", "/v1/auth/dev/accounts")

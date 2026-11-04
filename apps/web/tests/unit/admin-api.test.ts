@@ -131,7 +131,55 @@ test('WS19 restriction writes send only the operator-supplied reason and period'
   assert.deepEqual(JSON.parse(String(calls[1]!.init.body)), { reason: '소명 확인' });
 });
 
-// ── WS-23: login flow instead of a pasted token ──────────────────────────────
+// ── WS-56: review moderation list and hide/unhide ────────────────────────────
+
+const REVIEW = {
+  id: '33333333-3333-4333-8333-333333333333', authorNickname: '고객A', rating: 4,
+  body: '친절했습니다', createdAt: '2026-11-03T00:00:00.000Z', hiddenAt: null, hiddenReason: null,
+};
+
+test('WS56 the moderation list reads every review and its hidden state', async () => {
+  const { api, calls } = client(() => respond(200, {
+    reviews: [REVIEW, { ...REVIEW, id: '44444444-4444-4444-8444-444444444444', hiddenAt: '2026-11-04T00:00:00.000Z', hiddenReason: '광고' }],
+    total: 2, limit: 50, offset: 0,
+  }));
+  api.setAdminSession(TOKEN);
+  const page = await api.reviews({ limit: 50, offset: 100 });
+  assert.equal(calls[0]!.url, 'http://127.0.0.1:55433/v1/admin/reviews?limit=50&offset=100');
+  assert.equal(page.total, 2);
+  assert.equal(page.reviews[0]!.hiddenAt, null);
+  assert.equal(page.reviews[1]!.hiddenReason, '광고');
+
+  const broken = client(() => respond(200, { reviews: [{ ...REVIEW, rating: 9 }], total: 1, limit: 50, offset: 0 }));
+  broken.api.setAdminSession(TOKEN);
+  await assert.rejects(() => broken.api.reviews(), (e: unknown) => e instanceof AdminApiError && e.code === 'INVALID_RESPONSE');
+});
+
+test('WS56 hide/unhide pass the reason through untouched and surface the server error', async () => {
+  const { api, calls } = client(call => call.url.endsWith('/unhide')
+    ? respond(200, { id: REVIEW.id, hiddenAt: null, hiddenReason: null, hidden: false })
+    : respond(200, { id: REVIEW.id, hiddenAt: '2026-11-04T00:00:00.000Z', hiddenReason: '정책 위반', hidden: true }));
+  api.setAdminSession(TOKEN);
+  await api.hideReview(REVIEW.id, '정책 위반');
+  await api.unhideReview(REVIEW.id, '소명 확인');
+  assert.equal(calls[0]!.url, `http://127.0.0.1:55433/v1/admin/reviews/${REVIEW.id}/hide`);
+  assert.deepEqual(JSON.parse(String(calls[0]!.init.body)), { reason: '정책 위반' });
+  assert.deepEqual(JSON.parse(String(calls[1]!.init.body)), { reason: '소명 확인' });
+
+  // An empty reason is never filled in by the client: the server's 400 must reach the screen.
+  const empty = client(() => respond(400, { error: { code: 'INVALID_REQUEST' } }));
+  empty.api.setAdminSession(TOKEN);
+  await empty.api.hideReview(REVIEW.id, '').then(
+    () => assert.fail('a rejected reason must not resolve'),
+    (e: unknown) => assert.equal((e as AdminApiError).status, 400),
+  );
+  assert.deepEqual(JSON.parse(String(empty.calls[0]!.init.body)), { reason: '' });
+
+  const denied = client(() => respond(403, { error: { code: 'ADMIN_REQUIRED' } }));
+  denied.api.setAdminSession(TOKEN);
+  await assert.rejects(() => denied.api.reviews(), (e: unknown) => e instanceof AdminApiError && e.status === 403 && e.code === 'ADMIN_REQUIRED');
+});
+
 
 const OPERATOR = { memberId: '22222222-2222-4222-8222-222222222222', nickname: '운영자A', customerNumber: '7' };
 const SESSION_ENVELOPE = { adminToken: TOKEN, tokenType: 'Bearer', expiresInSeconds: 7200, expiresAt: '2026-11-03T02:00:00.000Z', operator: OPERATOR };

@@ -1,3 +1,4 @@
+import PhotosUI
 import SwiftUI
 
 /// 고수 서비스 목록·등록·수정 (WS-42).
@@ -7,6 +8,12 @@ import SwiftUI
 /// 가격유형이 NEGOTIABLE이면 가격 입력을 비활성화하고 basePrice를 null로 보낸다.
 /// 유효하지 않은 조합(가격 없는 FIXED 등)은 클라이언트가 고치지 않고 서버 400을 표시한다.
 
+struct ServiceImage: Hashable {
+    let key: String
+    let url: String?
+    let sortOrder: Int
+}
+
 struct ExpertServiceItem: Hashable {
     let id: String
     let category: String
@@ -15,7 +22,7 @@ struct ExpertServiceItem: Hashable {
     let priceType: String
     let basePrice: Int?
     let visibility: String
-    let imageKey: String?
+    let images: [ServiceImage]
 
     var visibilityValue: Bool { visibility == "VISIBLE" }
 }
@@ -27,7 +34,7 @@ struct ServiceDraft: Hashable {
     var description: String
     var priceType: String
     var price: String
-    var imageKey: String
+    var images: [ServiceImage]
 }
 
 enum ExpertServicesState: Equatable {
@@ -81,7 +88,8 @@ enum ServiceSaveState: Equatable {
         let target = visible ? "VISIBLE" : "HIDDEN"
         notice = nil
         state = .ready(items.map { $0.id == item.id ? ExpertServiceItem(id: $0.id, category: $0.category, title: $0.title,
-            description: $0.description, priceType: $0.priceType, basePrice: $0.basePrice, visibility: target, imageKey: $0.imageKey) : $0 })
+            description: $0.description, priceType: $0.priceType, basePrice: $0.basePrice, visibility: target,
+            images: $0.images) : $0 })
         Task { [weak self] in
             guard let self else { return }
             do {
@@ -109,7 +117,7 @@ enum ServiceSaveState: Equatable {
             "description": draft.description,
             "priceType": draft.priceType,
             "basePrice": draft.priceType == "NEGOTIABLE" || draft.price.isEmpty ? NSNull() : (Int(draft.price) ?? NSNull()),
-            "imageKey": draft.imageKey.isEmpty ? NSNull() : draft.imageKey,
+            "imageKeys": draft.images.map(\.key),
         ]
         task = Task { [weak self] in
             guard let self else { return }
@@ -138,6 +146,33 @@ enum ServiceSaveState: Equatable {
 
     func clearSave() { save = .idle }
 
+    /// 사진은 앱이 R2로 직접 올리고 키만 서버에 넘긴다. 키는 업로드 응답이 발급한
+    /// `service/<memberId>/…`여야 서버가 소유권을 인정한다.
+    func uploadPhoto(_ item: PhotosPickerItem, sortOrder: Int) async throws -> ServiceImage {
+        guard let token = (try? sessions.read()) ?? nil else {
+            throw KGAuthAPIError(status: 401, code: "SIGN_IN_REQUIRED")
+        }
+        guard let data = try await item.loadTransferable(type: Data.self) else {
+            throw KGAuthAPIError(status: 400, code: "UNSUPPORTED_IMAGE_TYPE")
+        }
+        let contentType = item.supportedContentTypes.first(where: { $0.preferredMIMEType?.hasPrefix("image/") == true })?
+            .preferredMIMEType ?? "image/jpeg"
+        let presigned = try await repository.createUpload(token, contentType: contentType)
+        guard let uploadUrl = presigned["uploadUrl"] as? String, let key = presigned["key"] as? String,
+              let url = URL(string: uploadUrl) else {
+            throw KGAuthAPIError(status: 0, code: "INVALID_API_RESPONSE")
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "PUT"
+        request.timeoutInterval = 15
+        request.setValue(contentType, forHTTPHeaderField: "Content-Type")
+        let (_, response) = try await URLSession.shared.upload(for: request, from: data)
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+            throw URLError(.cannotParseResponse)
+        }
+        return ServiceImage(key: key, url: presigned["publicUrl"] as? String, sortOrder: sortOrder)
+    }
+
     private func read(_ token: String) async throws -> ExpertServicesState {
         let items = Self.decodeServices(try await repository.expertSelf(token))
         return items.isEmpty ? .empty : .ready(items)
@@ -146,7 +181,21 @@ enum ServiceSaveState: Equatable {
     nonisolated static func decodeServices(_ json: [String: Any]) -> [ExpertServiceItem] {
         guard let rows = json["services"] as? [[String: Any]] else { return [] }
         return rows.map { row in
-            ExpertServiceItem(
+            let imageKey = row["imageKey"] as? String
+            // images[]가 없는 구서버 응답은 대표 이미지 한 장으로 본다.
+            let images: [ServiceImage]
+            if let rows = row["images"] as? [[String: Any]] {
+                images = rows.enumerated().map { position, image in
+                    ServiceImage(key: image["key"] as? String ?? "",
+                                 url: image["url"] as? String,
+                                 sortOrder: image["sortOrder"] as? Int ?? position)
+                }
+            } else if let imageKey, !imageKey.isEmpty {
+                images = [ServiceImage(key: imageKey, url: row["imageUrl"] as? String, sortOrder: 0)]
+            } else {
+                images = []
+            }
+            return ExpertServiceItem(
                 id: row["id"] as? String ?? "",
                 category: row["category"] as? String ?? "",
                 title: row["title"] as? String ?? "",
@@ -154,7 +203,7 @@ enum ServiceSaveState: Equatable {
                 priceType: row["priceType"] as? String ?? "",
                 basePrice: row["basePrice"] as? Int,
                 visibility: row["visibility"] as? String ?? "",
-                imageKey: row["imageKey"] as? String
+                images: images
             )
         }
     }
@@ -177,6 +226,7 @@ struct ExpertServiceView: View {
         VStack(alignment: .leading, spacing: 0) {
             if let draft {
                 ServiceForm(draft: draft, save: model.save, onSave: model.save,
+                            onUpload: { item, order in try await model.uploadPhoto(item, sortOrder: order) },
                             onCancel: { self.draft = nil; model.clearSave() })
                     .id(draft)
             } else {
@@ -186,7 +236,7 @@ struct ExpertServiceView: View {
                     Button("+ 등록") {
                         model.clearSave()
                         draft = ServiceDraft(id: nil, category: "", title: "", description: "",
-                                             priceType: "FIXED", price: "", imageKey: "")
+                                             priceType: "FIXED", price: "", images: [])
                     }
                     .frame(minHeight: 48)
                     .accessibilityIdentifier("service-add")
@@ -216,7 +266,7 @@ struct ExpertServiceView: View {
                                     draft = ServiceDraft(id: item.id, category: item.category, title: item.title,
                                                          description: item.description, priceType: item.priceType,
                                                          price: item.basePrice.map(String.init) ?? "",
-                                                         imageKey: item.imageKey ?? "")
+                                                         images: item.images)
                                 },
                                 onToggle: { item, visible in model.setVisibility(item, visible: visible) })
                 }
@@ -283,25 +333,34 @@ struct ServiceForm: View {
     let draft: ServiceDraft
     let save: ServiceSaveState
     let onSave: (ServiceDraft) -> Void
+    let onUpload: (PhotosPickerItem, Int) async throws -> ServiceImage
     let onCancel: () -> Void
     @State private var category: String
     @State private var title: String
     @State private var description: String
     @State private var priceType: String
     @State private var price: String
-    @State private var imageKey: String
+    @State private var images: [ServiceImage]
+    @State private var pickingPhotos = false
+    @State private var selection: [PhotosPickerItem] = []
+    @State private var uploading = false
+    @State private var photoError: String?
 
-    init(draft: ServiceDraft, save: ServiceSaveState, onSave: @escaping (ServiceDraft) -> Void, onCancel: @escaping () -> Void) {
+    init(draft: ServiceDraft, save: ServiceSaveState,
+         onSave: @escaping (ServiceDraft) -> Void,
+         onUpload: @escaping (PhotosPickerItem, Int) async throws -> ServiceImage,
+         onCancel: @escaping () -> Void) {
         self.draft = draft
         self.save = save
         self.onSave = onSave
+        self.onUpload = onUpload
         self.onCancel = onCancel
         _category = State(initialValue: draft.category)
         _title = State(initialValue: draft.title)
         _description = State(initialValue: draft.description)
         _priceType = State(initialValue: draft.priceType)
         _price = State(initialValue: draft.price)
-        _imageKey = State(initialValue: draft.imageKey)
+        _images = State(initialValue: draft.images)
     }
 
     var body: some View {
@@ -355,11 +414,45 @@ struct ServiceForm: View {
                         expertCopy("협의 유형은 가격을 입력하지 않습니다.", size: 12, color: DesignTokens.muted)
                     }
                 }
-                expertField("이미지 키 (선택)", text: $imageKey, lines: 1, limit: 300)
-                    .accessibilityIdentifier("service-field-image-key")
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        expertCopy("사진 (\(images.count)/5)", size: 13, color: DesignTokens.muted)
+                        Spacer()
+                        Button("+ 사진 추가") { pickingPhotos = true }
+                            .frame(minHeight: 48)
+                            .disabled(uploading)
+                            .accessibilityIdentifier("service-photo-add")
+                    }
+                    ForEach(Array(images.enumerated()), id: \.element.key) { index, image in
+                        HStack(spacing: 12) {
+                            ServicePhotoThumb(url: image.url, size: 64)
+                            expertCopy(index == 0 ? "대표 사진" : "사진 \(index + 1)", size: 13, color: DesignTokens.muted)
+                            Spacer()
+                            Button("삭제") { images.remove(at: index) }
+                                .frame(minHeight: 48)
+                                .accessibilityIdentifier("service-photo-remove-\(index)")
+                        }
+                        .accessibilityIdentifier("service-photo-\(index)")
+                    }
+                    if uploading {
+                        expertCopy("사진 업로드 중…", size: 13, color: DesignTokens.muted)
+                            .accessibilityIdentifier("service-photo-uploading")
+                    }
+                    if let photoError {
+                        expertCopy(photoError, size: 13, color: DesignTokens.muted)
+                            .accessibilityIdentifier("service-photo-error")
+                    }
+                }
+                // 서버가 5장을 넘으면 400 TOO_MANY_IMAGES로 거절한다. 선택 단계에서
+                // 잘라내면 사용자는 왜 5장만 등록됐는지 알 수 없으므로 장수를 제한하지 않는다.
+                .photosPicker(isPresented: $pickingPhotos, selection: $selection, matching: .images)
+                .onChange(of: selection) { _, picked in
+                    guard !picked.isEmpty else { return }
+                    Task { await upload(picked) }
+                }
                 Button {
                     onSave(ServiceDraft(id: draft.id, category: category, title: title, description: description,
-                                        priceType: priceType, price: price, imageKey: imageKey))
+                                        priceType: priceType, price: price, images: images))
                 } label: {
                     expertCopy(save == .saving ? "저장 중…" : "저장", size: 15, semibold: true, color: .white)
                         .frame(maxWidth: .infinity, minHeight: 48)
@@ -373,6 +466,7 @@ struct ServiceForm: View {
                     EmptyView()
                 case .failed(let network, let code):
                     expertCopy(network ? "네트워크에 연결할 수 없습니다. 연결을 확인하고 다시 시도해주세요."
+                                       : code == "TOO_MANY_IMAGES" ? "사진은 최대 5장까지 등록할 수 있습니다. (TOO_MANY_IMAGES)"
                                        : "저장하지 못했습니다. (\(code))", size: 13)
                         .accessibilityIdentifier(network ? "service-save-network" : "service-save-error")
                 }
@@ -380,5 +474,50 @@ struct ServiceForm: View {
             .padding(.horizontal, 20).padding(.vertical, 8)
         }
         .accessibilityIdentifier("service-form")
+    }
+
+    @MainActor
+    private func upload(_ picked: [PhotosPickerItem]) async {
+        uploading = true
+        photoError = nil
+        var added: [ServiceImage] = []
+        var failure: String?
+        for item in picked {
+            do {
+                added.append(try await onUpload(item, images.count + added.count))
+            } catch let error as KGAuthAPIError {
+                failure = error.status == 0
+                    ? "네트워크에 연결할 수 없습니다. 사진을 올리지 못했습니다. (\(error.code))"
+                    : "사진을 올리지 못했습니다. (\(error.code))"
+                break
+            } catch {
+                failure = "네트워크에 연결할 수 없습니다. 사진을 올리지 못했습니다."
+                break
+            }
+        }
+        images.append(contentsOf: added)
+        uploading = false
+        photoError = failure
+        // 같은 선택으로 onChange가 다시 돌지 않게 비운다.
+        selection = []
+    }
+}
+
+/// 원격 사진 썸네일. 실패하면 회색 자리를 유지해 목록이 흔들리지 않게 한다.
+struct ServicePhotoThumb: View {
+    let url: String?
+    let size: CGFloat
+
+    var body: some View {
+        AsyncImage(url: url.flatMap(URL.init(string:))) { phase in
+            switch phase {
+            case .success(let image):
+                image.resizable().scaledToFill()
+            default:
+                Color(white: 0.96)
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(RoundedRectangle(cornerRadius: 6))
     }
 }

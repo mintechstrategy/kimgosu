@@ -1,0 +1,96 @@
+{
+  "ws": "WS-52",
+  "task": "고객 거래 흐름 — AOS + iOS (재개, 시뮬레이터 금지 정책)",
+  "status": "DONE",
+  "worktree": "/Users/mintech-mac/hermes/dev-profile/shared/projects/wt-WS-52",
+  "baseCommit": "ea0e6b4",
+  "branch": "ws/WS-52",
+  "policy": "시뮬레이터·에뮬레이터 실행 금지(07-24). 빌드까지만 검증. 실행이 필요한 검증은 NOT_RUN (시뮬레이터 정책). git commit/push 하지 않음. 새 의존성 추가 없음.",
+  "summary": "이전 WIP(ea0e6b4)에 이미 있던 고객 4화면(검색·고수 상세·채팅·후기)과 내비게이션은 재작성하지 않고 그대로 두고, 비어 있던 사진 첨부를 WS-51 결과(ChatApi + POST /v1/uploads kind=chat → presigned PUT → POST messages imageKey)로 AOS·iOS 양쪽에 연결했다. 갤러리 선택 사진은 양 플랫폼 모두 JPEG로 정규화하고 긴 변 1600px로 줄여 업로드하며, 수신 메시지의 imageUrl은 서버가 합성한 값으로만 표시한다(원본 비율 유지). hardcoded 회색 말풍선 색을 DesignTokens.track으로 교체해 디자인 토큰만 쓰도록 맞췄다. assembleDevDebug, assembleDevDebugAndroidTest, iOS 시뮬레이터 빌드, iOS build-for-testing 모두 성공. 앱 실행·화면 확인·이미지 API 실거래는 NOT_RUN(시뮬레이터 정책)이며, dev 배포본에 WS-51 이미지 API가 아직 없어 업로드 실호출도 불가함을 실측으로 확인했다.",
+  "changedFiles": [
+    "apps/android/app/src/main/java/ai/mintech/kimgosu/chat/ChatApi.kt (WS-51 산출물 복사, 계약 클라이언트)",
+    "apps/android/app/src/main/java/ai/mintech/kimgosu/customer/CustomerChatScreen.kt",
+    "apps/android/app/src/androidTest/java/ai/mintech/kimgosu/CustomerFlowTests.kt",
+    "apps/ios/Kimgosu/ChatApi.swift (WS-51 산출물 복사, 계약 클라이언트)",
+    "apps/ios/Kimgosu/CustomerChatView.swift",
+    "apps/ios/Kimgosu.xcodeproj/project.pbxproj",
+    "records/parallel-10/WS-52/RESULT.json"
+  ],
+  "notChanged": [
+    "CustomerSearchScreen.kt / CustomerExpertScreen.kt / CustomerReviewScreen.kt 및 대응 iOS 뷰 — WIP에 이미 존재하고 빌드되어 손대지 않았다",
+    "MainActivity.kt, KimgosuApp.swift 내비게이션 — WIP에서 이미 연결됨",
+    "services/backend, contracts/chat.v0.1.json — WS-51 소관이며 이 카드 범위가 아니다"
+  ],
+  "implementation": {
+    "screens": {
+      "search": "ai/mintech/kimgosu/customer/CustomerSearchScreen.kt ↔ Kimgosu/CustomerSearchView.swift — 카테고리/전체 검색, GET /v1/experts",
+      "expert": "CustomerExpertScreen.kt ↔ CustomerExpertView.swift — GET /v1/experts/:id + /reviews, POST /v1/ledgers(거래 시작)",
+      "chat": "CustomerChatScreen.kt ↔ CustomerChatView.swift — 메시지/견적 조회, 텍스트 전송, 사진 전송, 견적 수락, 완료 확인(양측 확인)",
+      "review": "CustomerReviewScreen.kt ↔ CustomerReviewView.swift — 별점·본문 후기 작성(POST /v1/ledgers/:id/reviews)"
+    },
+    "navigation": "AOS MainActivity의 CustomerRoute(Search→Expert→Chat→Review)와 iOS KGCustomerRoute로 연결. 뒤로가기는 한 단계씩 복귀.",
+    "photo": {
+      "contract": "WS-51: POST /v1/uploads {contentType, kind:'chat'} → presigned PUT → POST /v1/ledgers/:id/messages {imageKey,imageWidth,imageHeight, body?}",
+      "android": "chat/ChatApi.sendPhoto 재사용. 갤러리는 ActivityResultContracts.PickVisualMedia(권한 불필요), BitmapFactory로 크기 확인·샘플링 후 JPEG 85/긴 변 1600px로 정규화해 업로드. 말풍선은 서버 imageUrl을 HttpURLConnection으로 읽어 원본 비율(aspectRatio)로 표시.",
+      "ios": "KGChatApi.sendPhoto 재사용. PhotosPicker(iOS17) → UIImage → UIGraphicsImageRenderer로 JPEG 정규화(긴 변 1600px) 후 업로드. 말풍선은 AsyncImage(scaledToFit, max 220x260)로 비율 유지.",
+      "normalizationReason": "서버는 image/jpeg·png·webp만 presign하므로 갤러리 원본(HEIC 등)을 그대로 보내면 400이 된다. 양 앱 모두 JPEG로 통일."
+    },
+    "states": "각 화면에 Loading / Empty / Failed(network:Boolean, code) 4종 상태를 두고, 네트워크 오류는 NETWORK_UNAVAILABLE로 별도 문구·재시도 버튼을 표시한다. 채팅은 사진 전송 실패·사진 읽기 실패 문구를 actionError로 노출한다.",
+    "tokens": "말풍선 배경은 DesignTokens.soft/track, 텍스트 색은 navy/muted만 사용. 신규 하드코딩 색 없음. 폰트는 기존 프로젝트 관례(ExpertCopy / customerCopy·Pretendard) 사용."
+  },
+  "verification": [
+    {
+      "check": "AOS 빌드",
+      "command": "cd apps/android && JAVA_HOME=…/.local-toolchains/jdk17 ANDROID_HOME=…/.local-toolchains/android-sdk ./gradlew :app:assembleDevDebug",
+      "result": "PASS",
+      "evidence": "종료코드 0. 산출물 apps/android/app/build/outputs/apk/dev/debug/app-dev-debug.apk (15,424,971 bytes, sha256 c181e13d01b0f384234a49ff72b347a415aa950f41b6cc362f501afa49031c2f), 2026-11-04T18:12 KST"
+    },
+    {
+      "check": "AOS 계측 테스트 컴파일(실행 아님)",
+      "command": "./gradlew :app:assembleDevDebugAndroidTest",
+      "result": "PASS",
+      "evidence": "종료코드 0. 테스트 소스의 CustomerMessage/CustomerChatContent 시그니처를 새 필드·콜백에 맞춰 갱신."
+    },
+    {
+      "check": "iOS 시뮬레이터 빌드",
+      "command": "xcodebuild -project Kimgosu.xcodeproj -scheme Kimgosu -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build",
+      "result": "PASS",
+      "evidence": "** BUILD SUCCEEDED ** (Xcode 27.0/27A266a)"
+    },
+    {
+      "check": "iOS UI 테스트 타깃 컴파일(실행 아님)",
+      "command": "xcodebuild … build-for-testing",
+      "result": "PASS",
+      "evidence": "** TEST BUILD SUCCEEDED **"
+    },
+    {
+      "check": "dev API 읽기 경로 (허용된 네트워크 검증)",
+      "command": "curl https://api-dev-kimgosu.mintech.ai — slot1 로그인, GET /v1/me, /v1/experts, /v1/experts/:id, /v1/experts/:id/reviews",
+      "result": "PASS",
+      "evidence": "login 200(slot1 USER '테스트01'), me 200, experts 200(1건 '테스트11'), detail 200(expert+services 15), reviews 200(reviews 5, summary.count 5). 응답 필드명이 앱 디코더와 일치. 쓰기(원장 생성·메시지·후기)는 만들지 않았다."
+    },
+    {
+      "check": "WS-51 이미지 API dev 배포 여부 실측",
+      "command": "POST /v1/uploads {contentType:'image/jpeg', kind:'chat'}",
+      "result": "BLOCKED",
+      "evidence": "400 INVALID_REQUEST — dev 배포본은 아직 kind=chat을 모른다(WS-51 미배포). 따라서 앱의 사진 전송 경로는 dev에서 실호출할 수 없다. WS-51 병합·배포 후 재검증 필요."
+    }
+  ],
+  "notRun": [
+    "앱 실행·화면 전환·상태 표시 확인 — NOT_RUN (시뮬레이터 정책)",
+    "검색→상세→거래 시작→채팅→완료→후기 전 구간 실제 사용자 동작 — NOT_RUN (시뮬레이터 정책)",
+    "텍스트·사진 전송 후 재조회 시 사진 표시 — NOT_RUN (시뮬레이터 정책). 추가로 dev에 WS-51 이미지 API가 없어 실 API로도 미검증(BLOCKED).",
+    "완료 확인 양측 확인 동작 — NOT_RUN (시뮬레이터 정책)",
+    "AOS/iOS 결과 동등성 QA — NOT_RUN (실행 필요, uiux QA 소관)"
+  ],
+  "evidenceArtifacts": {
+    "priorWip": "records/parallel-10/WS-52/evidence/*.png — 이전 WIP 커밋(ea0e6b4)에 포함된 스크린샷이며 이번 실행에서 생성/검증한 증거가 아니다.",
+    "thisRun": "코드 변경은 git working tree(diff)에 있으며 커밋하지 않았다."
+  },
+  "notes": [
+    "ChatApi.kt/ChatApi.swift는 WS-51 브랜치(41e2b70)의 클라이언트 계약 구현을 그대로 복사했다. WS-51 병합 시 동일 파일이 되도록 내용을 바꾸지 않았다.",
+    "dev GET /v1/ledgers는 고수 소유 원장만 반환하므로 고객 흐름은 이 경로를 쓰지 않는다(화면도 사용하지 않음).",
+    "알려진 제약: 채팅은 최근 50건만 조회(limit=50)하며 추가 페이징 UI가 없다. 카드 범위(메시지 목록·전송·사진)에는 페이징 요구가 없어 만들지 않았다.",
+    "다음 작업: WS-51 병합 후 dev 배포본에서 사진 전송 실호출, 그 다음 uiux 실행 QA(동등성 포함)."
+  ]
+}

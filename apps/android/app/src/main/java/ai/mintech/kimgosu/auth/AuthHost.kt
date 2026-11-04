@@ -25,10 +25,16 @@ import ai.mintech.kimgosu.auth.ui.*
         } else model.handle(event)
     }
     LaunchedEffect(Unit) { model.start() }
+    // 외부 브라우저(Chrome)로 구글 동의 화면을 연다. 복귀는 kimgosu:// 딥링크 또는 onResume으로 처리한다.
+    LaunchedEffect(model.externalUrl) {
+        val url = model.externalUrl ?: return@LaunchedEffect
+        model.consumeExternalUrl()
+        context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url)))
+    }
     val owner = context as? androidx.lifecycle.LifecycleOwner
     DisposableEffect(owner) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
-            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) { model.refreshPolicy(); model.setOsPermission(
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) { model.refreshPolicy(); model.onBrowserReturned(); model.setOsPermission(
                 if (androidx.core.app.NotificationManagerCompat.from(context).areNotificationsEnabled()) "허용" else "미허용") }
         }
         owner?.lifecycle?.addObserver(observer)
