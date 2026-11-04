@@ -1,10 +1,15 @@
 <resources>
     <style name="BaseAppTheme" parent="android:style/Theme.Material.Light.NoActionBar">
         <item name="android:fontFamily">sans</item>
-        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
 
         <item name="android:windowActionModeOverlay">true</item>
-        <item name="android:windowBackground">#FFFFFF</item>
+        <!-- The splash poster's edges are dark blue. Anything the poster does not
+             cover shows this colour, so the status and navigation bars do not
+             read as white bands around the artwork. -->
+        <item name="android:windowBackground">#00275F</item>
         <item name="android:colorAccent">#0B1E35</item>
     </style>
     <style name="AppTheme" parent="BaseAppTheme" />
