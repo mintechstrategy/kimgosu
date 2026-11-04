@@ -1,0 +1,120 @@
+{
+  "baseUrl": "https://api-dev-kimgosu.mintech.ai",
+  "startedAt": "2026-11-04T08:35:40.555Z",
+  "finishedAt": "2026-11-04T08:35:42.998Z",
+  "slots": {
+    "user": 1,
+    "expert": 11
+  },
+  "ledgerId": "c6240e9a-6bd6-425e-97e8-0368d9ed4231",
+  "quoteId": "1fe39992-3170-4247-a7a6-5461df9a8e68",
+  "checks": [
+    {
+      "id": 1,
+      "title": "비로그인 원장 생성",
+      "expected": {
+        "status": 401,
+        "code": "AUTH_REQUIRED"
+      },
+      "actual": {
+        "status": 401,
+        "code": "AUTH_REQUIRED"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "id": 2,
+      "title": "일반 사용자가 고수 원장에 견적 제시",
+      "expected": {
+        "status": 403,
+        "code": "EXPERT_ONLY"
+      },
+      "actual": {
+        "status": 403,
+        "code": "EXPERT_ONLY"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "id": 3,
+      "title": "이미 수락된 견적 재수락",
+      "expected": {
+        "status": 409,
+        "code": "INVALID_TRANSITION"
+      },
+      "actual": {
+        "status": 409,
+        "code": "INVALID_TRANSITION"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "id": 4,
+      "title": "만료·미발급 state로 소셜 콜백",
+      "expected": {
+        "status": 401,
+        "code": "OAUTH_STATE_INVALID"
+      },
+      "actual": {
+        "status": 401,
+        "code": "OAUTH_STATE_INVALID"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "id": 5,
+      "title": "같은 쪽이 완료 확인 두 번",
+      "expected": {
+        "status": 409,
+        "code": "ALREADY_CONFIRMED"
+      },
+      "actual": {
+        "status": 409,
+        "code": "ALREADY_CONFIRMED"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "id": 6,
+      "title": "남의 키로 채팅 이미지 전송",
+      "expected": {
+        "status": 403,
+        "code": "IMAGE_NOT_OWNED"
+      },
+      "actual": null,
+      "verdict": "BLOCKED",
+      "note": "dev API가 imageKey를 아직 받지 않는다(WS-51 미배포)"
+    },
+    {
+      "id": 7,
+      "title": "존재하지 않는 고수로 원장 생성",
+      "expected": {
+        "status": 404,
+        "code": "EXPERT_NOT_FOUND"
+      },
+      "actual": {
+        "status": 404,
+        "code": "EXPERT_NOT_FOUND"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "id": 8,
+      "title": "활동 상태에 잘못된 값",
+      "expected": {
+        "status": 400,
+        "code": "INVALID_REQUEST"
+      },
+      "actual": {
+        "status": 400,
+        "code": "INVALID_REQUEST"
+      },
+      "verdict": "PASS"
+    }
+  ],
+  "summary": {
+    "pass": 7,
+    "fail": 0,
+    "blocked": 1
+  }
+}

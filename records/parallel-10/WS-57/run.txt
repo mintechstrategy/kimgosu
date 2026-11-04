@@ -1,0 +1,10 @@
+ 1. PASS    비로그인 원장 생성 → 401 AUTH_REQUIRED (기대 401 AUTH_REQUIRED)
+ 2. PASS    일반 사용자가 고수 원장에 견적 제시 → 403 EXPERT_ONLY (기대 403 EXPERT_ONLY)
+ 3. PASS    이미 수락된 견적 재수락 → 409 INVALID_TRANSITION (기대 409 INVALID_TRANSITION)
+ 4. PASS    만료·미발급 state로 소셜 콜백 → 401 OAUTH_STATE_INVALID (기대 401 OAUTH_STATE_INVALID)
+ 5. PASS    같은 쪽이 완료 확인 두 번 → 409 ALREADY_CONFIRMED (기대 409 ALREADY_CONFIRMED)
+ 6. BLOCKED 남의 키로 채팅 이미지 전송 → - (기대 403 IMAGE_NOT_OWNED)  (dev API가 imageKey를 아직 받지 않는다(WS-51 미배포))
+ 7. PASS    존재하지 않는 고수로 원장 생성 → 404 EXPERT_NOT_FOUND (기대 404 EXPERT_NOT_FOUND)
+ 8. PASS    활동 상태에 잘못된 값 → 400 INVALID_REQUEST (기대 400 INVALID_REQUEST)
+
+PASS 7 / FAIL 0 / BLOCKED 1  base=https://api-dev-kimgosu.mintech.ai

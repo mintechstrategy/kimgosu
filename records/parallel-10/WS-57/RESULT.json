@@ -1,0 +1,102 @@
+{
+  "ws": "WS-57",
+  "title": "실패 경로 E2E",
+  "status": "PARTIAL",
+  "worktree": "/Users/mintech-mac/hermes/dev-profile/shared/projects/wt-WS-57",
+  "baseCommit": "9eb3bc6",
+  "summary": "services/backend/scripts/e2e-failure-paths.mjs를 새로 만들어 8개 실패 경로를 실제 dev API로 검증했다. 7건 PASS(401 AUTH_REQUIRED·403 EXPERT_ONLY·409 INVALID_TRANSITION·401 OAUTH_STATE_INVALID·409 ALREADY_CONFIRMED·404 EXPERT_NOT_FOUND·400 INVALID_REQUEST), 1건 BLOCKED(남의 키로 채팅 이미지 전송 — dev API가 WS-51의 imageKey를 아직 받지 않아 400 INVALID_REQUEST). FAIL 0.",
+  "changedFiles": [
+    "services/backend/scripts/e2e-failure-paths.mjs (신규: 8개 실패 경로 검증, FAIL→exit 1 / BLOCKED→exit 2)",
+    "records/parallel-10/WS-57/RESULT.json",
+    "records/parallel-10/WS-57/run.json (스크립트 --json-out 원문)",
+    "records/parallel-10/WS-57/run.txt (실행 콘솔 원문)"
+  ],
+  "script": {
+    "path": "services/backend/scripts/e2e-failure-paths.mjs",
+    "usage": "node scripts/e2e-failure-paths.mjs [--base-url https://api-dev-kimgosu.mintech.ai] [--json-out <path>]",
+    "design": [
+      "한 항목 = { id, title, expect: { status, code }, run }. 기대 상태코드와 error.code를 함께 비교한다(코드 없는 200을 통과로 보지 않는다).",
+      "준비 단계는 dev 테스트 계정(slot 1 USER, slot 11 EXPERT)으로 기존 원장 재사용 + 견적 1건 제안→수락. 만든 데이터는 지우지 않고 id를 출력·기록한다.",
+      "BLOCKED는 기능 미배포를 뜻하며 PASS 집계에 넣지 않는다. 종료 코드: FAIL 있음 1, FAIL 없이 BLOCKED 있음 2, 전부 PASS 0.",
+      "새 의존성 없음(node:crypto, node:fs, 전역 fetch만). 기존 e2e-transaction.mjs와 같은 call/arg 관례를 따른다."
+    ],
+    "expectations": {
+      "1": "POST /v1/ledgers 무토큰 → 401 AUTH_REQUIRED",
+      "2": "POST /v1/ledgers/:id/quotes 고객 토큰 → 403 EXPERT_ONLY",
+      "3": "POST /v1/quotes/:id/respond 이미 ACCEPTED 상태에서 재수락 → 409 INVALID_TRANSITION",
+      "4": "GET /v1/auth/oauth/google/callback 미발급 state → 401 OAUTH_STATE_INVALID",
+      "5": "POST /v1/quotes/:id/complete 같은 쪽 두 번째 확인 → 409 ALREADY_CONFIRMED(설계 의도: 같은 쪽 재확인은 ALREADY_CONFIRMED, 타쪽 확인은 200)",
+      "6": "POST /v1/ledgers/:id/messages 남의 imageKey → 403 IMAGE_NOT_OWNED (미배포 시 BLOCKED)",
+      "7": "POST /v1/ledgers 존재하지 않는 expertId → 404 EXPERT_NOT_FOUND",
+      "8": "PATCH /v1/me/expert/availability availability=ON_BREAK → 400 INVALID_REQUEST"
+    }
+  },
+  "results": {
+    "baseUrl": "https://api-dev-kimgosu.mintech.ai",
+    "startedAt": "2026-11-04T08:35:40.555Z",
+    "finishedAt": "2026-11-04T08:35:42.998Z",
+    "slots": { "user": 1, "expert": 11 },
+    "ledgerId": "c6240e9a-6bd6-425e-97e8-0368d9ed4231",
+    "quoteId": "1fe39992-3170-4247-a7a6-5461df9a8e68",
+    "checks": [
+      { "id": 1, "title": "비로그인 원장 생성", "expected": { "status": 401, "code": "AUTH_REQUIRED" }, "actual": { "status": 401, "code": "AUTH_REQUIRED" }, "verdict": "PASS" },
+      { "id": 2, "title": "일반 사용자가 고수 원장에 견적 제시", "expected": { "status": 403, "code": "EXPERT_ONLY" }, "actual": { "status": 403, "code": "EXPERT_ONLY" }, "verdict": "PASS" },
+      { "id": 3, "title": "이미 수락된 견적 재수락", "expected": { "status": 409, "code": "INVALID_TRANSITION" }, "actual": { "status": 409, "code": "INVALID_TRANSITION" }, "verdict": "PASS" },
+      { "id": 4, "title": "만료·미발급 state로 소셜 콜백", "expected": { "status": 401, "code": "OAUTH_STATE_INVALID" }, "actual": { "status": 401, "code": "OAUTH_STATE_INVALID" }, "verdict": "PASS" },
+      { "id": 5, "title": "같은 쪽이 완료 확인 두 번", "expected": { "status": 409, "code": "ALREADY_CONFIRMED" }, "actual": { "status": 409, "code": "ALREADY_CONFIRMED" }, "verdict": "PASS" },
+      { "id": 6, "title": "남의 키로 채팅 이미지 전송", "expected": { "status": 403, "code": "IMAGE_NOT_OWNED" }, "actual": null, "verdict": "BLOCKED", "note": "dev API가 imageKey를 아직 받지 않는다(WS-51 미배포). 실제 응답 400 INVALID_REQUEST." },
+      { "id": 7, "title": "존재하지 않는 고수로 원장 생성", "expected": { "status": 404, "code": "EXPERT_NOT_FOUND" }, "actual": { "status": 404, "code": "EXPERT_NOT_FOUND" }, "verdict": "PASS" },
+      { "id": 8, "title": "활동 상태에 잘못된 값", "expected": { "status": 400, "code": "INVALID_REQUEST" }, "actual": { "status": 400, "code": "INVALID_REQUEST" }, "verdict": "PASS" }
+    ],
+    "summary": { "pass": 7, "fail": 0, "blocked": 1 }
+  },
+  "verification": [
+    {
+      "check": "실패 경로 E2E 1차 실행(실 dev API)",
+      "command": "cd services/backend && node scripts/e2e-failure-paths.mjs --json-out ../../records/parallel-10/WS-57/run.json | tee ../../records/parallel-10/WS-57/run.txt",
+      "result": "PASS",
+      "evidence": "PASS 7 / FAIL 0 / BLOCKED 1, exit=2. 각 항목이 기대 상태코드+에러코드와 비교되어 출력됨(run.txt 원문)."
+    },
+    {
+      "check": "재실행 안정성(같은 스크립트 2회 연속)",
+      "command": "같은 명령을 연속 3회 실행(08:35:04 · 08:35:2x · 08:35:40 UTC)",
+      "result": "PASS",
+      "evidence": "3회 모두 동일 판정(PASS 7 / BLOCKED 1, exit 2). 기존 원장을 재사용하고 매번 새 견적을 만들어 재실행 시 409로 오판하지 않는다."
+    },
+    {
+      "check": "불일치 시 exit 1 동작",
+      "command": "기대값만 402로 바꾼 사본(scratch) 실행 → 1번 항목 비교",
+      "result": "PASS",
+      "evidence": "'1. FAIL 비로그인 원장 생성 → 401 AUTH_REQUIRED (기대 402 AUTH_REQUIRED)', exit=1. 사본은 저장소에 남기지 않았다."
+    },
+    {
+      "check": "6번 BLOCKED 근거(기능 미배포 확인)",
+      "command": "POST /v1/ledgers/:id/messages { imageKey: 'chat/<expertId>/<uuid>.jpg' } (slot 1 토큰)",
+      "result": "BLOCKED",
+      "evidence": "HTTP 400 {\"error\":{\"code\":\"INVALID_REQUEST\"}} — 배포된 서버가 imageKey 필드를 모른다. wt-WS-51 코드는 같은 요청을 저장 전 403 IMAGE_NOT_OWNED로 거부하며, RESULT(WS-51)에 원격 배포 NOT_RUN으로 기록되어 있다."
+    },
+    {
+      "check": "스크립트 문법·의존성",
+      "command": "node scripts/e2e-failure-paths.mjs 실행 자체(파싱 성공) + package.json 변경 없음",
+      "result": "PASS",
+      "evidence": "실행 성공, 새 패키지 추가 없음. services/backend/package.json 무변경."
+    }
+  ],
+  "acceptance": [
+    { "criterion": "각 항목이 기대 상태코드·에러코드와 비교되고 결과가 출력된다", "status": "PASS", "note": "8개 항목 모두 'PASS/BLOCKED/FAIL 제목 → 실제 (기대 ...)' 형식으로 출력." },
+    { "criterion": "하나라도 어긋나면 exit 1", "status": "PASS", "note": "기대값을 틀리게 바꾼 사본에서 FAIL 1건과 exit 1을 확인." },
+    { "criterion": "아직 배포되지 않은 기능은 BLOCKED로 표시하고 성공 처리하지 않는다", "status": "PASS", "note": "6번을 BLOCKED로 두고 PASS 집계에서 제외, 종료 코드 2." },
+    { "criterion": "결과 원문을 RESULT.json에 남긴다", "status": "PASS", "note": "results 필드에 실행 JSON 원문 수록. 같은 내용이 run.json/run.txt로도 남아 있다." },
+    { "criterion": "8개 항목 전부 실제 dev API로 검증", "status": "PARTIAL", "note": "7건 실제 응답으로 검증, 6번은 기능 미배포로 BLOCKED." }
+  ],
+  "mobile": {
+    "status": "NOT_APPLICABLE",
+    "reason": "WS-57 범위는 services/backend/scripts/e2e-failure-paths.mjs 신규 1개이며 앱이 호출하는 계약·화면·동작을 바꾸지 않는다. AOS/iOS에 반영할 변경이 없어 두 앱을 건드리지 않았다(ANTI-SLOP 1·22: 요청 범위 밖 변경 금지)."
+  },
+  "notes": [
+    "2번은 '남의 원장'을 비참여자로 잡으면 설계상 404 LEDGER_NOT_FOUND(원장 존재 비노출)가 맞다. 계획이 요구한 403을 실제로 만드는 경로는 원장 참여자인 고객이 고수 권한으로 견적을 내는 경우이므로 그쪽으로 검증했다(403 EXPERT_ONLY).",
+    "4번은 만료 state를 API로 만들 수 없어 발급된 적 없는 43자 state를 썼다. consumeOAuthState의 동일 조건(consumed_at IS NULL AND expires_at>now())을 타므로 만료와 같은 401 OAUTH_STATE_INVALID 경로다.",
+    "5번의 설계 의도는 '같은 쪽 재확인 = 409 ALREADY_CONFIRMED, 반대쪽 확인이면 200 + 양측 확인 시 COMPLETED'다(quotes.ts 주석·코드). 스크립트는 409를 기대값으로 고정했다.",
+    "6번 unblock: WS-51(마이그레이션 018 + chat.ts imageKey, 403 IMAGE_NOT_OWNED)이 dev에 배포되면 재실행만으로 PASS/BLOCKED가 갈린다. 별도 코드 수정 불필요."
+  ]
+}
