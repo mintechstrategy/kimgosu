@@ -259,6 +259,40 @@
       ]
     },
     {
+      "id": "adminReviewList",
+      "method": "GET",
+      "path": "/v1/admin/reviews",
+      "authentication": "admin",
+      "source": "services/backend/src/admin.ts",
+      "querySchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "limit": { "type": "string", "pattern": "^[0-9]{1,3}$" },
+          "offset": { "type": "string", "pattern": "^[0-9]{1,6}$" }
+        }
+      },
+      "responses": {
+        "200": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["reviews", "total", "limit", "offset"],
+          "properties": {
+            "reviews": { "type": "array", "items": { "$ref": "#/definitions/AdminReview" } },
+            "total": { "type": "integer", "minimum": 0 },
+            "limit": { "type": "integer", "minimum": 1 },
+            "offset": { "type": "integer", "minimum": 0 }
+          }
+        }
+      },
+      "notes": "Moderation read path (WS-56). Returns hidden and visible rows alike, newest first, so the operator can find the id that hide/unhide take. The author nickname is the only identity exposed, matching the public projection.",
+      "errors": [
+        { "status": 401, "code": "AUTH_REQUIRED", "when": "missing or malformed Authorization header" },
+        { "status": 403, "code": "ADMIN_SESSION_REQUIRED", "when": "the bearer token is a member session, not an admin session" },
+        { "status": 403, "code": "ADMIN_REQUIRED", "when": "the session owner has no live ADMIN role grant" }
+      ]
+    },
+    {
       "id": "adminReviewHide",
       "method": "POST",
       "path": "/v1/admin/reviews/:id/hide",
@@ -399,6 +433,20 @@
         "retentionUntil": { "$ref": "#/definitions/NullableTimestamp" },
         "emailMasked": { "type": ["string", "null"] },
         "phoneMasked": { "$ref": "#/definitions/PhoneMasked" }
+      }
+    },
+    "AdminReview": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "authorNickname", "rating", "body", "createdAt", "hiddenAt", "hiddenReason"],
+      "properties": {
+        "id": { "$ref": "#/definitions/Uuid" },
+        "authorNickname": { "type": "string" },
+        "rating": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "body": { "type": ["string", "null"] },
+        "createdAt": { "$ref": "#/definitions/Timestamp" },
+        "hiddenAt": { "$ref": "#/definitions/NullableTimestamp" },
+        "hiddenReason": { "type": ["string", "null"] }
       }
     },
     "Restriction": {

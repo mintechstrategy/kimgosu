@@ -12,6 +12,7 @@
 
 import {
   adminMember, adminMemberRelease, adminMemberRestrict, adminMembers,
+  adminReviewHide, adminReviewList, adminReviewUnhide,
   adminSessionCreate, adminSessionGet, adminSessionLogout,
   type AdminMemberRestrictRequest, type ApiCall, type HttpMethod,
 } from '../api/generated.ts';
@@ -35,6 +36,9 @@ export interface LedgerRow {
   counterpartNumber: string; agreementCount: number; completedAgreements: number;
 }
 export interface RoleRow { id: string; role: string; reason: string; startsAt: string; endsAt: string | null; revokedAt: string | null }
+/** A review as the moderation list returns it; `hiddenAt` set means off the public list. */
+export interface ReviewRow { id: string; authorNickname: string; rating: number; body: string | null; createdAt: string; hiddenAt: string | null; hiddenReason: string | null }
+export interface ReviewPage { reviews: ReviewRow[]; total: number }
 export interface MemberDetail { member: AdminMemberDetailRow; restrictions: RestrictionRow[]; consents: ConsentRow[]; ledgers: LedgerRow[]; roles: RoleRow[] }
 export interface AdminOperator { memberId: string; nickname: string; customerNumber: string }
 export interface AdminSessionInfo { operator: AdminOperator; expiresAt: string }
@@ -66,6 +70,7 @@ export const ADMIN_ERROR_CODES = [
   'ADMIN_REQUIRED', 'ADMIN_SESSION_REQUIRED', 'AUTH_REQUIRED', 'SESSION_INVALID', 'MEMBER_NOT_FOUND',
   'MEMBER_WITHDRAWN', 'ALREADY_RESTRICTED', 'NOT_RESTRICTED', 'ADMIN_LOGIN_LOCKED', 'INVALID_TOKEN',
   'INVALID_REQUEST', 'ROUTE_NOT_FOUND',
+  'REVIEW_NOT_FOUND', 'REVIEW_ALREADY_HIDDEN', 'REVIEW_NOT_HIDDEN', 'REVIEW_EXISTS',
 ] as const;
 
 /** The console may only talk to the approved API origin or a loopback development server. */
@@ -154,6 +159,12 @@ export function createAdminApi(baseUrl: string, transport: typeof fetch = fetch,
     const d = obj(value);
     return { id: str(d.id), reason: str(d.reason), startsAt: str(d.startsAt), endsAt: nullable(d.endsAt), revokedAt: nullable(d.revokedAt), active: d.active === true, releaseReason: nullable(d.releaseReason ?? null) };
   };
+  const readReview = (value: unknown): ReviewRow => {
+    const d = obj(value);
+    const rating = count(d.rating);
+    if (rating < 1 || rating > 5) return invalid();
+    return { id: str(d.id), authorNickname: str(d.authorNickname), rating, body: nullable(d.body), createdAt: str(d.createdAt), hiddenAt: nullable(d.hiddenAt), hiddenReason: nullable(d.hiddenReason) };
+  };
 
   return {
     hasSession: () => adminToken !== undefined,
@@ -205,6 +216,22 @@ export function createAdminApi(baseUrl: string, transport: typeof fetch = fetch,
       const d = obj(await adminMemberRelease(callAuthed, { id }, { reason }));
       if (d.released !== true) return invalid();
       return { released: true, restrictionId: str(d.restrictionId), revokedAt: str(d.revokedAt) };
+    },
+    async reviews(params: { limit?: number; offset?: number } = {}): Promise<ReviewPage> {
+      const d = obj(await adminReviewList(callAuthed, {
+        limit: String(params.limit ?? 50),
+        offset: String(params.offset ?? 0),
+      }));
+      return { reviews: list(d.reviews).map(v => readReview(v)), total: count(d.total) };
+    },
+    /** Reason is passed through untouched: the server rejects a short or empty one with 400. */
+    async hideReview(id: string, reason: string): Promise<void> {
+      const d = obj(await adminReviewHide(callAuthed, { id }, { reason }));
+      if (d.hidden !== true) return invalid();
+    },
+    async unhideReview(id: string, reason: string): Promise<void> {
+      const d = obj(await adminReviewUnhide(callAuthed, { id }, { reason }));
+      if (d.hidden !== false) return invalid();
     },
   };
 }

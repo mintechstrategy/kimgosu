@@ -211,6 +211,39 @@ export function registerAdminRoutes(app: FastifyInstance, db: Sql) {
   });
 
   /**
+   * Review moderation list (WS-56). Without it an operator cannot find the
+   * review id the hide/unhide routes take; the public list filters hidden rows
+   * out, so moderation needs its own read path. Nickname is the only author
+   * identity exposed, matching the public projection.
+   */
+  app.get<{ Querystring: { limit?: string; offset?: string } }>('/v1/admin/reviews', {
+    schema: {
+      querystring: {
+        type: 'object', additionalProperties: false,
+        properties: {
+          limit: { type: 'string', pattern: '^[0-9]{1,3}$' },
+          offset: { type: 'string', pattern: '^[0-9]{1,6}$' },
+        },
+      },
+    },
+  }, async (request, reply) => {
+    const auth = await requireAdmin(request, reply); if (!auth) return;
+    const limit = cursor(request.query.limit, 50, 1, 100);
+    const offset = cursor(request.query.offset, 0, 0, 100000);
+    const total = Number((await db.query('SELECT count(*)::int AS count FROM kg_membership.reviews')).rows[0]?.count ?? 0);
+    const rows = await db.query(
+      `SELECT r.id, m.nickname AS "authorNickname", r.rating, r.body, r.created_at AS "createdAt",
+              r.hidden_at AS "hiddenAt", r.hidden_reason AS "hiddenReason"
+         FROM kg_membership.reviews r
+         JOIN kg_membership.members m ON m.id = r.author_id
+        ORDER BY r.created_at DESC, r.id DESC
+        LIMIT $1 OFFSET $2`,
+      [limit, offset],
+    );
+    return { reviews: rows.rows, total, limit, offset };
+  });
+
+  /**
    * Review moderation (WS-26, migration 014).
    *
    * Hiding is operator-only and never deletes: `hidden_at`/`hidden_reason` are

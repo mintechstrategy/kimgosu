@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
-import { AdminApiError, type AdminApi, type AdminMemberRow, type AdminOperator, type MemberDetail, type MemberStatus } from './api';
+import { AdminApiError, type AdminApi, type AdminMemberRow, type AdminOperator, type MemberDetail, type MemberStatus, type ReviewRow } from './api';
 
 const props = defineProps<{ api: AdminApi; operator?: AdminOperator }>();
 const emit = defineEmits<{ 'logged-out': []; 'session-expired': [message: string] }>();
@@ -27,6 +27,24 @@ const dialogType = ref<'restrict' | 'release'>('restrict');
 const form = ref({ reason: '', endsAt: '' });
 const submitting = ref(false);
 const actionError = ref('');
+
+/** 두 화면: 회원 관리, 리뷰 관리. 화면 상태는 각자 유지한다. */
+const tab = ref<'members' | 'reviews'>('members');
+
+const REVIEW_PAGE_SIZE = 50;
+const reviews = ref<ReviewRow[]>([]);
+const reviewPage = ref(1);
+const reviewTotal = ref(0);
+const reviewLoading = ref(false);
+const reviewLoaded = ref(false);
+const reviewError = ref('');
+const reviewMessage = ref('');
+const reviewDialog = ref<HTMLDialogElement>();
+const reviewTarget = ref<ReviewRow>();
+const reviewAction = ref<'hide' | 'unhide'>('hide');
+const reviewReason = ref('');
+const reviewSubmitting = ref(false);
+const reviewActionError = ref('');
 
 const api = props.api;
 const hasLiveRestriction = computed(() => detail.value?.restrictions.some(r => r.active) === true);
@@ -134,6 +152,77 @@ async function signOut() {
   }
 }
 
+function reviewMessageFor(e: unknown): string {
+  if (!(e instanceof AdminApiError)) return '처리하지 못했습니다. 잠시 후 다시 시도해주세요.';
+  switch (e.code) {
+    case 'ADMIN_REQUIRED':
+    case 'ADMIN_SESSION_REQUIRED': return '권한이 없습니다. 이 화면은 ADMIN 역할이 부여된 운영자 세션에서만 사용할 수 있습니다.';
+    case 'AUTH_REQUIRED':
+    case 'SESSION_INVALID': return '세션이 만료됐거나 유효하지 않습니다. 다시 로그인해주세요.';
+    // 숨김·해제 사유는 필수다. 비우면 클라이언트가 채우지 않고 서버 400을 그대로 보여준다.
+    case 'INVALID_REQUEST': return '서버가 400 INVALID_REQUEST로 거부했습니다. 사유는 2자 이상 입력해야 합니다.';
+    case 'REVIEW_NOT_FOUND': return '리뷰를 찾을 수 없습니다. 목록을 다시 조회해주세요.';
+    case 'REVIEW_ALREADY_HIDDEN': return '이미 숨김 처리된 리뷰입니다. 목록을 다시 조회해주세요.';
+    case 'REVIEW_NOT_HIDDEN': return '숨김 상태가 아닙니다. 목록을 다시 조회해주세요.';
+    case 'TIMEOUT': return '응답 시간이 초과됐습니다. 처리 결과가 불확실하므로 목록을 다시 조회해 확인해주세요.';
+    case 'NETWORK_ERROR': return '서버에 연결하지 못했습니다. 네트워크와 배포 상태를 확인해주세요.';
+    default: return `요청을 처리하지 못했습니다(HTTP ${e.status}). 목록을 다시 조회해 현재 상태를 확인해주세요.`;
+  }
+}
+
+async function loadReviews(target = reviewPage.value) {
+  if (!api.hasSession()) { emit('session-expired', '세션이 없습니다. 다시 로그인해주세요.'); return; }
+  reviewLoading.value = true; reviewError.value = ''; reviewLoaded.value = false;
+  try {
+    const result = await api.reviews({ limit: REVIEW_PAGE_SIZE, offset: (target - 1) * REVIEW_PAGE_SIZE });
+    reviews.value = result.reviews;
+    reviewTotal.value = result.total;
+    reviewPage.value = target;
+    reviewLoaded.value = true;
+  } catch (e) {
+    reviewLoaded.value = false; reviews.value = [];
+    if (e instanceof AdminApiError && ['AUTH_REQUIRED', 'SESSION_INVALID'].includes(e.code)) { endSession(e); return; }
+    reviewError.value = reviewMessageFor(e);
+  } finally { reviewLoading.value = false; }
+}
+
+const reviewPages = computed(() => Math.max(1, Math.ceil(reviewTotal.value / REVIEW_PAGE_SIZE)));
+
+function showReviews() {
+  tab.value = 'reviews';
+  if (!reviewLoaded.value) void loadReviews(1);
+}
+
+async function openReviewDialog(row: ReviewRow, action: 'hide' | 'unhide', event: Event) {
+  reviewTarget.value = row;
+  reviewAction.value = action;
+  reviewReason.value = '';
+  reviewActionError.value = '';
+  void event;
+  await nextTick();
+  reviewDialog.value?.showModal();
+}
+function closeReviewDialog() { if (!reviewSubmitting.value) reviewDialog.value?.close(); }
+
+async function submitReviewAction() {
+  if (!reviewTarget.value || reviewSubmitting.value) return;
+  const id = reviewTarget.value.id;
+  const reason = reviewReason.value.trim();
+  reviewSubmitting.value = true; reviewActionError.value = '';
+  try {
+    if (reviewAction.value === 'hide') await api.hideReview(id, reason);
+    else await api.unhideReview(id, reason);
+    reviewDialog.value?.close();
+    reviewMessage.value = reviewAction.value === 'hide'
+      ? '리뷰를 숨겼습니다. 공개 목록에서 빠지는지 서버 목록을 다시 조회합니다.'
+      : '숨김을 해제했습니다. 공개 목록에 다시 노출됩니다.';
+    await loadReviews(reviewPage.value);
+  } catch (e) {
+    if (e instanceof AdminApiError && ['AUTH_REQUIRED', 'SESSION_INVALID'].includes(e.code)) { endSession(e); return; }
+    reviewActionError.value = reviewMessageFor(e);
+  } finally { reviewSubmitting.value = false; }
+}
+
 onMounted(() => { void loadList(1); });
 onBeforeUnmount(() => { api.clearSession(); });
 
@@ -146,12 +235,18 @@ const statusLabel = (value: MemberStatus) => value === 'ACTIVE' ? '이용 가능
 <template>
   <header class="console-header">
     <h1>김고수 운영 콘솔</h1>
-    <p class="meta">회원·원장 조회와 이용 제한 — 관리자 전용</p>
+    <p class="meta">회원 조회·이용 제한, 리뷰 숨김 — 관리자 전용</p>
     <p class="who" v-if="operator">{{ operator.nickname }} · #{{ operator.customerNumber }}</p>
     <button class="text" type="button" :disabled="signingOut" @click="signOut">{{ signingOut ? '로그아웃 중…' : '로그아웃' }}</button>
   </header>
 
-  <main class="console" :aria-busy="listLoading || detailLoading || submitting">
+  <nav class="tabs" aria-label="운영 콘솔 화면">
+    <button type="button" :class="{ active: tab === 'members' }" :aria-current="tab === 'members' ? 'page' : undefined" @click="tab = 'members'">회원 관리</button>
+    <button type="button" :class="{ active: tab === 'reviews' }" :aria-current="tab === 'reviews' ? 'page' : undefined" @click="showReviews">리뷰 관리</button>
+  </nav>
+
+  <main class="console" :aria-busy="listLoading || detailLoading || submitting || reviewLoading || reviewSubmitting">
+    <template v-if="tab === 'members'">
       <nav class="toolbar" aria-label="회원 검색">
         <form class="search" @submit.prevent="search">
           <label for="query">검색어</label>
@@ -259,6 +354,43 @@ const statusLabel = (value: MemberStatus) => value === 'ACTIVE' ? '이용 가능
           <p class="meta">해제 사유는 감사 로그(audit_log)에 운영자와 함께 기록됩니다.</p>
         </template>
       </section>
+    </template>
+
+    <template v-else>
+      <p class="meta">총 {{ reviewTotal }}개 · 공개·숨김 리뷰를 모두 표시합니다. 숨김은 삭제가 아니라 공개 목록에서 제외하는 처리입니다.</p>
+      <p v-if="reviewMessage" class="notice success" role="status">{{ reviewMessage }}</p>
+      <p v-if="reviewError" class="notice error" role="alert">{{ reviewError }} <button class="text" type="button" @click="loadReviews(reviewPage)">다시 조회</button></p>
+      <p v-else-if="reviewLoading" class="notice" role="status">리뷰 목록을 불러오는 중입니다…</p>
+      <p v-else-if="reviewLoaded && reviews.length === 0" class="notice">등록된 리뷰가 없습니다.</p>
+
+      <table v-if="reviews.length" class="members">
+        <caption class="sr-only">리뷰 목록</caption>
+        <thead><tr><th scope="col">작성자</th><th scope="col">별점</th><th scope="col">내용</th><th scope="col">작성일</th><th scope="col">상태</th><th scope="col">처리</th></tr></thead>
+        <tbody>
+          <tr v-for="r in reviews" :key="r.id">
+            <td>{{ r.authorNickname }}</td>
+            <td>{{ r.rating }} / 5</td>
+            <td class="body">{{ r.body ?? '—' }}</td>
+            <td>{{ date(r.createdAt) }}</td>
+            <td>
+              <span class="badge" :class="r.hiddenAt ? 'restricted' : 'active'">{{ r.hiddenAt ? '숨김' : '공개' }}</span>
+              <span v-if="r.hiddenAt && r.hiddenReason" class="meta">사유: {{ r.hiddenReason }}</span>
+            </td>
+            <td>
+              <button v-if="!r.hiddenAt" class="text" type="button" :aria-label="r.authorNickname + ' 리뷰 숨김'" @click="openReviewDialog(r, 'hide', $event)">숨김</button>
+              <button v-else class="text" type="button" :aria-label="r.authorNickname + ' 리뷰 숨김 해제'" @click="openReviewDialog(r, 'unhide', $event)">숨김 해제</button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <p class="pagination" v-if="reviews.length">
+        <button class="secondary" type="button" :disabled="reviewPage <= 1 || reviewLoading" @click="loadReviews(reviewPage - 1)">이전</button>
+        <span>{{ reviewPage }} / {{ reviewPages }}</span>
+        <button class="secondary" type="button" :disabled="reviewPage >= reviewPages || reviewLoading" @click="loadReviews(reviewPage + 1)">다음</button>
+      </p>
+      <p class="meta">숨김 사유는 감사 로그(audit_log)에 운영자와 함께 기록되며 리뷰 본문은 기록하지 않습니다.</p>
+    </template>
   </main>
 
   <dialog ref="dialog" aria-labelledby="dialog-title" @close="actionError = ''">
@@ -280,6 +412,22 @@ const statusLabel = (value: MemberStatus) => value === 'ACTIVE' ? '이용 가능
       </div>
     </form>
   </dialog>
+
+  <dialog ref="reviewDialog" aria-labelledby="review-dialog-title" @close="reviewActionError = ''">
+    <form method="dialog" class="stack" @submit.prevent="submitReviewAction">
+      <h2 id="review-dialog-title">{{ reviewAction === 'hide' ? '리뷰 숨김' : '숨김 해제' }}</h2>
+      <p v-if="reviewTarget" class="meta">{{ reviewTarget.authorNickname }} · 별점 {{ reviewTarget.rating }}/5 · {{ date(reviewTarget.createdAt) }}</p>
+      <p>{{ reviewAction === 'hide' ? '숨긴 리뷰는 공개 목록에서 빠지며 삭제되지 않습니다.' : '숨김을 해제하면 공개 목록에 다시 노출됩니다.' }}</p>
+      <label for="review-reason">사유 <span class="required">필수</span></label>
+      <textarea id="review-reason" v-model="reviewReason" rows="3" maxlength="500"></textarea>
+      <p class="meta">{{ [...reviewReason].length }}/500 · 2자 이상이어야 하며, 비우면 서버가 400으로 거부합니다.</p>
+      <p v-if="reviewActionError" role="alert" class="error">{{ reviewActionError }}</p>
+      <div class="actions">
+        <button class="primary" type="submit" :disabled="reviewSubmitting">{{ reviewSubmitting ? '처리 중…' : '확인' }}</button>
+        <button class="secondary" type="button" :disabled="reviewSubmitting" @click="closeReviewDialog">취소</button>
+      </div>
+    </form>
+  </dialog>
 </template>
 
 <style scoped>
@@ -289,6 +437,9 @@ const statusLabel = (value: MemberStatus) => value === 'ACTIVE' ? '이용 가능
 .console-header .meta { color: #9fb0c9; margin: 0; }
 .console-header .who { margin: 0 0 0 auto; font-size: 14px; color: #cfe0ff; }
 .console { max-width: 1120px; margin: 0 auto; padding: 24px 32px 96px; }
+.tabs { display: flex; gap: 8px; max-width: 1120px; margin: 0 auto; padding: 16px 32px 0; }
+.tabs button { background: #fff; border-color: #d8e0e8; color: #44556d; }
+.tabs button.active { background: #1b53c8; border-color: #1b53c8; color: #fff; }
 .card { background: #fff; border: 1px solid #d8e0e8; border-radius: 14px; padding: 24px; margin-top: 20px; }
 .stack { display: grid; gap: 10px; }
 label { font-weight: 600; font-size: 14px; }
@@ -310,7 +461,8 @@ button:disabled { opacity: .5; cursor: default; }
 .notice.error, .error { background: #fdf1f0; border-color: #f2c6c1; color: #8f1d14; }
 .notice.success { background: #eefaf2; border-color: #bfe6cd; color: #17603a; }
 .members { width: 100%; border-collapse: collapse; margin-top: 16px; background: #fff; border: 1px solid #d8e0e8; border-radius: 12px; overflow: hidden; }
-.members th, .members td { text-align: left; padding: 10px 12px; border-bottom: 1px solid #e6ecf2; font-size: 14px; }
+.members th, .members td { text-align: left; padding: 10px 12px; border-bottom: 1px solid #e6ecf2; font-size: 14px; vertical-align: top; }
+.members td.body { max-width: 360px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .members thead th { background: #f7f9fc; font-size: 13px; color: #44556d; }
 .members tr.selected { background: #eef4ff; }
 .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; background: #eef2f7; margin-right: 4px; }
