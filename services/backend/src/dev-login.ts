@@ -31,7 +31,7 @@ export function registerDevLoginRoutes(app: FastifyInstance, db: Sql) {
   });
 
   app.post<{ Body: { slot: number } }>('/v1/auth/dev/login', {
-    schema: body({ slot: { type: 'integer', minimum: 1, maximum: 20 } }),
+    schema: body({ slot: { type: 'integer', minimum: 1, maximum: 30 } }),
   }, async req => {
     const row = (await db.query(
       `SELECT a.member_id AS "memberId",a.role,a.label,m.nickname,m.expert_active AS "expertActive"
