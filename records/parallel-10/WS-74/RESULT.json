@@ -1,0 +1,121 @@
+{
+  "ws": "WS-74",
+  "task": "앱 목록 성능·이미지 캐시 — AOS + iOS",
+  "status": "DONE",
+  "worktree": "/Users/mintech-mac/hermes/dev-profile/shared/projects/wt-WS-74",
+  "branch": "ws/WS-74",
+  "baseCommit": "5bd1dc9",
+  "policy": "시뮬레이터·에뮬레이터 실행 금지. 빌드까지만 검증하며 실행이 필요한 검증은 NOT_RUN (시뮬레이터 정책). git commit/push 하지 않음. 새 의존성 추가 없음. dev API 읽기 호출만 수행.",
+  "summary": "검색·고수 상세(서비스/후기) 목록을 지연 렌더링(LazyColumn / LazyVStack, 안정 키)으로 바꾸고, 서버가 이미 제공하던 nextCursor(검색)와 offset(후기) 페이지네이션에 '더 보기'를 연결했다. 원격 사진은 AOS·iOS 각각 하나의 공용 컴포넌트(RemoteImage)로 통합해 자리표시자 → 로드 완료 180ms 페이드, 실패 시 '사진 없음' 대체 표시를 넣고 메모리 + 디스크 캐시(iOS URLCache/NSCache, Android LruCache + cacheDir)로 같은 URL 재요청을 막았다. 기존에 화면마다 흩어져 있던 즉석 이미지 로더 3개(AOS)·AsyncImage 4곳(iOS)을 대체해 중복을 제거했다. 새 의존성은 없다.",
+  "changedFiles": [
+    "apps/android/app/src/main/java/ai/mintech/kimgosu/ui/RemoteImage.kt (신규: 공용 원격 이미지 — LruCache + cacheDir 디스크 캐시, 페이드, 실패 대체 표시)",
+    "apps/android/app/src/main/java/ai/mintech/kimgosu/customer/CustomerSearchScreen.kt (검색 커서 페이지네이션 + LazyColumn '더 보기')",
+    "apps/android/app/src/main/java/ai/mintech/kimgosu/customer/CustomerExpertScreen.kt (상세 화면 Column+verticalScroll → LazyColumn, 후기 offset '더 보기', RemoteThumb 제거)",
+    "apps/android/app/src/main/java/ai/mintech/kimgosu/customer/CustomerChatScreen.kt (메시지 사진 로더 → RemoteImage)",
+    "apps/android/app/src/main/java/ai/mintech/kimgosu/expert/ExpertServiceScreen.kt (ServicePhoto 제거, RemoteImage 사용)",
+    "apps/android/app/src/main/java/ai/mintech/kimgosu/expert/ServiceGallery.kt (갤러리 페이지 → RemoteImage)",
+    "apps/ios/Kimgosu/RemoteImageView.swift (신규: KGImageLoader URLCache/NSCache + RemoteImage 뷰)",
+    "apps/ios/Kimgosu/CustomerSearchView.swift (커서 페이지네이션 + '더 보기')",
+    "apps/ios/Kimgosu/CustomerExpertView.swift (VStack → LazyVStack, 후기 offset '더 보기')",
+    "apps/ios/Kimgosu/CustomerChatView.swift (메시지 사진 → RemoteImage)",
+    "apps/ios/Kimgosu/ExpertServiceView.swift (ServicePhotoThumb → RemoteImage)",
+    "apps/ios/Kimgosu/ServiceGalleryView.swift (갤러리 페이지 → RemoteImage)",
+    "apps/ios/Kimgosu.xcodeproj/project.pbxproj (RemoteImageView.swift 등록)",
+    "records/parallel-10/WS-74/RESULT.json"
+  ],
+  "notChanged": [
+    "services/backend, contracts/* — 서버는 이미 GET /v1/experts?limit&cursor 와 GET /v1/experts/:id/reviews?limit&offset 을 제공하고 있어 변경하지 않았다",
+    "로컬 사진 선택·업로드 경로(ChatApi, ExpertServiceView 업로드) — 이번 범위는 표시/캐시이며 업로드 정규화는 WS-51/52 산출물 그대로다",
+    "원장(ledger) 목록 화면 — 앱에 아직 존재하지 않는다(검색·고수 상세·채팅만 있음). 새 화면은 이 카드 범위가 아니므로 만들지 않았다",
+    "기존 AOS 계측 테스트·iOS UI 테스트 본문 — 시그니처에 기본값을 줘 기존 호출을 깨지 않게 했다"
+  ],
+  "implementation": {
+    "lists": {
+      "android": "검색: LazyColumn(items key=expertId) + '더 보기' footer. 고수 상세: Column+verticalScroll 을 LazyColumn 으로 바꾸고 services items(key=id), reviews items(key=id) 로 분리해 화면 밖 항목은 합성하지 않는다. 채팅은 기존 LazyColumn(key=id) 유지.",
+      "ios": "검색: ScrollView + LazyVStack(기존 유지). 고수 상세: ScrollView 안 VStack → LazyVStack 으로 변경해 서비스·후기 행이 화면에 들어올 때 생성된다. 채팅은 기존 LazyVStack 유지.",
+      "pagination": "검색은 서버 nextCursor 가 null 이 될 때까지 20건씩 뒤에 붙인다(AOS loadMore, iOS loadMore). 후기는 이미 받은 개수를 offset 으로 보내 20건씩 추가한다(AOS loadMoreReviews, iOS loadMoreReviews). 두 앱 모두 첫 페이지를 지우지 않고 append 하며, 더 받을 것이 없으면 버튼을 숨긴다.",
+      "serverContract": "GET /v1/experts?limit=20&cursor=<base64url> → {experts, nextCursor}. GET /v1/experts/:id/reviews?limit=20&offset=N → {reviews, summary{count,average}, pagination{limit,offset,total}}. 서버가 준 reviewCount(summary.count)와 현재 개수를 비교해 '더 보기' 노출을 정한다."
+    },
+    "images": {
+      "android": "ui/RemoteImage.kt — LruCache(8MB, byteCount 기준) → cacheDir/images/<sha256(url)> 원본 바이트 → HttpURLConnection(8s timeout). 로드 전에는 DesignTokens.soft 자리표시자, 로드 후 180ms alpha 페이드, 실패 시 '사진 없음' 텍스트. 같은 URL 은 메모리나 캐시 파일에서 즉시 돌아와 재요청하지 않는다.",
+      "ios": "RemoteImageView.swift — NSCache<NSURL, UIImage> + URLCache(memory 20MB / disk 100MB, diskPath kg-images), requestCachePolicy .returnCacheDataElseLoad. 로드 전 DesignTokens.soft 자리표시자, 로드 후 withAnimation 0.18s 페이드, 실패 시 SF Symbol photo + '사진 없음'. 사진 URL 은 업로드마다 새로 생기는 불변 주소라 캐시 재사용이 안전하다.",
+      "consolidation": "AOS 는 ServicePhoto(ExpertServiceScreen)·RemoteThumb(CustomerExpertScreen)·MessageImage(CustomerChatScreen) 3개 즉석 로더를 RemoteImage 하나로, iOS 는 AsyncImage 4곳(갤러리·썸네일·채팅·서비스 행)을 RemoteImage 하나로 통합했다. 중복 로더는 삭제했고 dead import 도 정리했다.",
+      "failureDisplay": "양 앱 모두 실패 시 같은 박스 크기를 유지한 채 '사진 없음'(AOS 텍스트 / iOS 아이콘+텍스트)을 표시한다 — 목록 레이아웃이 흔들리지 않는다."
+    },
+    "states": "목록 상태 4종(Loading/Empty/Failed/Ready)은 기존 구조를 그대로 두었다. 추가로 페이지 단위 실패는 첫 페이지를 지우지 않고 footer 문구('더 불러오지 못했습니다. 다시 시도' / '후기를 더 불러오지 못했습니다. 다시 시도')와 재시도로만 드러낸다.",
+    "tokens": "자리표시자·실패·더 보기 문구는 DesignTokens.soft/muted 만 사용하고 새 색·폰트를 추가하지 않았다. 기존 ExpertCopy/customerCopy 스타일을 유지했다."
+  },
+  "verification": [
+    {
+      "check": "AOS 빌드",
+      "command": "cd apps/android && ./gradlew --offline :app:assembleDevDebug",
+      "result": "PASS",
+      "evidence": "BUILD SUCCESSFUL (2026-11-04T22:08 KST). 산출물 app-dev-debug.apk sha256 7e3e8c586b02bc958d1b88fbe5cc3f7e538526a5144a72b4f0a8cea4bf3b0d4a"
+    },
+    {
+      "check": "AOS 계측 테스트 컴파일(실행 아님)",
+      "command": "./gradlew --offline :app:assembleDevDebugAndroidTest",
+      "result": "PASS",
+      "evidence": "BUILD SUCCESSFUL. CustomerSearchContent 에 기본값 있는 파라미터만 추가해 기존 CustomerFlowTests 호출이 그대로 컴파일된다."
+    },
+    {
+      "check": "iOS 시뮬레이터 빌드",
+      "command": "xcodebuild -project Kimgosu.xcodeproj -scheme Kimgosu -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build",
+      "result": "PASS",
+      "evidence": "** BUILD SUCCEEDED ** (Xcode 27.0/27A266a, 2026-11-04T22:08 KST). RemoteImageView.swift 가 타깃에 포함되어 컴파일됨."
+    },
+    {
+      "check": "iOS 테스트 타깃 빌드(build-for-testing)",
+      "command": "xcodebuild ... build-for-testing",
+      "result": "NOT_RUN",
+      "evidence": "기존(HEAD 5bd1dc9)부터 project.pbxproj 가 존재하지 않는 KimgosuUITests/WS53CustomerFlowTests.swift 를 참조해 UI 테스트 타깃이 빌드되지 않는다(git show HEAD:apps/ios/Kimgosu.xcodeproj/project.pbxproj 로 확인). 이 카드 산출물과 무관한 선행 결함이라 고치지 않았다. 앱 타깃 빌드는 별도로 PASS."
+    },
+    {
+      "check": "dev API 페이지 응답 형태 확인(읽기 전용)",
+      "command": "curl GET https://api-dev-kimgosu.mintech.ai/v1/experts?limit=2 / GET /v1/experts/6c5e6a8f-…/reviews?limit=20&offset=0",
+      "result": "PASS",
+      "evidence": "experts: HTTP 200, experts 1건, nextCursor null (dev 데이터에 활동 고수가 1명뿐). reviews: HTTP 200, reviews 5건, summary{count:5,average:5}, pagination{limit:20,offset:0,total:5}. 두 응답 필드명이 클라이언트 디코더와 일치."
+    },
+    {
+      "check": "이미지 URL 응답(캐시 대상)",
+      "command": "curl -I https://media-dev-kimgosu.mintech.ai/service/.../….png",
+      "result": "PASS",
+      "evidence": "HTTP/2 200, content-type image/png, etag 존재, cache-control 헤더 없음. 헤더가 없어 iOS 는 .returnCacheDataElseLoad, AOS 는 자체 디스크 캐시로 재요청을 막는다(둘 다 코드에 반영)."
+    },
+    {
+      "check": "실기기/시뮬레이터에서 50건 목록 스크롤·이미지 페이드·실패 표시 실행 확인",
+      "command": "(실행 없음)",
+      "result": "NOT_RUN",
+      "evidence": "NOT_RUN (시뮬레이터 정책). 검증 근거는 코드(LazyColumn/LazyVStack + 안정 키, RemoteImage 페이드·실패 분기)와 양 앱 빌드 성공까지다."
+    },
+    {
+      "check": "목록 50건 첫 표시까지 시간 측정",
+      "command": "(측정 없음)",
+      "result": "NOT_RUN",
+      "evidence": "NOT_RUN (시뮬레이터 정책) — 앱을 띄워 첫 프레임까지 시간을 잴 수 없다. 또한 dev 데이터가 고수 1명/후기 5건이라 50건 시나리오 자체를 만들 수 없다. 수치를 추정해 적지 않는다."
+    }
+  ],
+  "acceptance": [
+    {
+      "criterion": "목록이 50건일 때 스크롤이 끊기지 않는다(코드 근거 + 빌드)",
+      "result": "PASS",
+      "evidence": "AOS CustomerSearchScreen.kt:189 LazyColumn + items(key=expertId), CustomerExpertScreen.kt:245/263/279 LazyColumn + items(key=id) (기존 Column+verticalScroll 제거), iOS CustomerSearchView.swift:160 LazyVStack, CustomerExpertView.swift:207 LazyVStack. 화면 밖 행은 합성되지 않고, 페이지는 20건 단위 append 라 50건이어도 전체를 한 번에 만들지 않는다. 양 앱 빌드 PASS. 실기기 스크롤 실측은 NOT_RUN."
+    },
+    {
+      "criterion": "이미지 실패 시 대체 표시가 있다",
+      "result": "PASS",
+      "evidence": "AOS ui/RemoteImage.kt failed 분기에서 '사진 없음'(DesignTokens.muted, 11sp)을 같은 박스에 표시. iOS RemoteImageView.swift 실패 분기에서 SF Symbol photo + '사진 없음'. 자리표시자는 양쪽 모두 DesignTokens.soft."
+    },
+    {
+      "criterion": "두 앱 빌드 성공",
+      "result": "PASS",
+      "evidence": "AOS assembleDevDebug / assembleDevDebugAndroidTest BUILD SUCCESSFUL, iOS iphonesimulator Debug BUILD SUCCEEDED."
+    }
+  ],
+  "notes": [
+    "원장(ledger) 목록 화면은 앱에 존재하지 않아 대상에서 제외했다. 새 목록 화면을 만드는 것은 이 카드의 요구가 아니다.",
+    "검색 페이지네이션은 dev 데이터에 고수가 1명뿐이라 nextCursor 가 항상 null 이어서 2페이지 이상 실호출로는 확인하지 못했다. 서버 라우트 구현(keyset cursor)과 응답 필드명만 읽기로 확인했다.",
+    "iOS build-for-testing 실패는 HEAD 5bd1dc9 의 pbxproj 가 없는 WS53CustomerFlowTests.swift 를 참조하는 선행 문제다(WS52CustomerFlowTests.swift 만 존재). 이번 카드에서 고치지 않았다.",
+    "새 의존성 추가 없음(gradle·Package·pod 변경 없음). 네트워크 쓰기·커밋·푸시 없음. dev API 는 GET 만 호출했다."
+  ]
+}

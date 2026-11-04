@@ -1,6 +1,7 @@
 package ai.mintech.kimgosu.expert
 
 import ai.mintech.kimgosu.ui.DesignTokens
+import ai.mintech.kimgosu.ui.RemoteImage
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -15,7 +16,6 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -36,7 +36,7 @@ fun ServiceImageGallery(images: List<ServiceImage>, modifier: Modifier = Modifie
             state = pager,
             modifier = Modifier.fillMaxWidth().aspectRatio(4f / 3f).testTag("service-gallery"),
         ) { page ->
-            ServicePhoto(ordered[page].url, Modifier.fillMaxSize().testTag("service-gallery-page-$page"),
+            RemoteImage(ordered[page].url, Modifier.fillMaxSize().testTag("service-gallery-page-$page"),
                 contentScale = ContentScale.Fit)
         }
         if (ordered.size > 1) {

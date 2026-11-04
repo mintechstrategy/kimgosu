@@ -31,6 +31,9 @@ enum KGCustomerSearchState: Equatable {
 
 @MainActor final class KGCustomerSearchModel: ObservableObject {
     @Published private(set) var state: KGCustomerSearchState = .loading
+    @Published private(set) var nextCursor: String?
+    @Published private(set) var loadingMore = false
+    @Published private(set) var moreFailed = false
     private let transport: KGAuthTransport
     private var task: Task<Void, Never>?
 
@@ -39,11 +42,14 @@ enum KGCustomerSearchState: Equatable {
     func load(category: String?) {
         task?.cancel()
         state = .loading
+        nextCursor = nil
+        moreFailed = false
         task = Task { @MainActor [weak self] in
             guard let self else { return }
             do {
                 let json = try await self.transport.request("GET", Self.searchPath(category), token: nil, body: nil)
                 if Task.isCancelled { return }
+                self.nextCursor = json["nextCursor"] as? String
                 let experts = Self.decode(json)
                 self.state = experts.isEmpty ? .empty : .ready(experts)
             } catch {
@@ -59,10 +65,33 @@ enum KGCustomerSearchState: Equatable {
         }
     }
 
-    static func searchPath(_ category: String?) -> String {
+    /// 첫 페이지를 지우지 않고 서버 커서 다음 페이지를 뒤에 붙인다.
+    func loadMore(category: String?) {
+        guard let cursor = nextCursor, case .ready(let loaded) = state, !loadingMore else { return }
+        loadingMore = true
+        moreFailed = false
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { self.loadingMore = false }
+            do {
+                let json = try await self.transport.request("GET", Self.searchPath(category, cursor: cursor), token: nil, body: nil)
+                self.nextCursor = json["nextCursor"] as? String
+                if case .ready(let current) = self.state { self.state = .ready(current + Self.decode(json)) }
+                else { self.state = .ready(loaded + Self.decode(json)) }
+            } catch {
+                self.moreFailed = true
+            }
+        }
+    }
+
+    static func searchPath(_ category: String?, cursor: String? = nil) -> String {
         var path = "/v1/experts?limit=20"
         if let category, !category.isEmpty, let encoded = category.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) {
             path += "&category=" + encoded
+        }
+        if let cursor {
+            // 서버 커서는 base64url이라 그대로 쿼리에 넣어도 안전하다.
+            path += "&cursor=" + cursor
         }
         return path
     }
@@ -143,6 +172,17 @@ struct KGCustomerSearchView: View {
                             }.padding(14).frame(maxWidth: .infinity, alignment: .leading)
                                 .overlay(RoundedRectangle(cornerRadius: 6).stroke(DesignTokens.border))
                         }.buttonStyle(.plain).accessibilityIdentifier("expert-card-\(expert.id)")
+                    }
+                    if model.nextCursor != nil {
+                        Button { model.loadMore(category: category) } label: {
+                            customerCopy(model.loadingMore ? "불러오는 중…"
+                                        : (model.moreFailed ? "더 불러오지 못했습니다. 다시 시도" : "더 보기"),
+                                        size: 13, semibold: true)
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(model.loadingMore)
+                        .accessibilityIdentifier("customer-search-more")
                     }
                 }.padding(.horizontal, 20)
             }.accessibilityIdentifier("customer-search-results-list")

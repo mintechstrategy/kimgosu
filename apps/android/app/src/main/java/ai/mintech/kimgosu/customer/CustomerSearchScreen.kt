@@ -51,11 +51,19 @@ sealed interface CustomerSearchState {
 
 class CustomerSearchModel(private val transport: AuthTransport = MembershipHttp()) {
     var state by mutableStateOf<CustomerSearchState>(CustomerSearchState.Loading); private set
+    var nextCursor by mutableStateOf<String?>(null); private set
+    var loadingMore by mutableStateOf(false); private set
+    var moreFailed by mutableStateOf(false); private set
 
     suspend fun load(category: String?) {
         state = CustomerSearchState.Loading
+        nextCursor = null
+        moreFailed = false
         try {
-            state = decode(transport.request("GET", searchPath(category), null, null))
+            val json = transport.request("GET", searchPath(category), null, null)
+            nextCursor = cursorOf(json)
+            val experts = decodeExperts(json)
+            state = if (experts.isEmpty()) CustomerSearchState.Empty else CustomerSearchState.Ready(experts)
         } catch (e: CancellationException) {
             throw e
         } catch (e: AuthFailure) {
@@ -67,16 +75,42 @@ class CustomerSearchModel(private val transport: AuthTransport = MembershipHttp(
         }
     }
 
+    /** 첫 페이지를 지우지 않고 서버 커서 다음 페이지를 뒤에 붙인다. */
+    suspend fun loadMore(category: String?) {
+        val cursor = nextCursor ?: return
+        val loaded = (state as? CustomerSearchState.Ready)?.experts ?: return
+        if (loadingMore) return
+        loadingMore = true
+        moreFailed = false
+        try {
+            val json = transport.request("GET", searchPath(category, cursor), null, null)
+            nextCursor = cursorOf(json)
+            state = CustomerSearchState.Ready(loaded + decodeExperts(json))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            moreFailed = true
+        } finally {
+            loadingMore = false
+        }
+    }
+
     companion object {
-        fun searchPath(category: String?): String {
-            val base = "/v1/experts?limit=20"
-            if (category.isNullOrBlank()) return base
-            return base + "&category=" + java.net.URLEncoder.encode(category, "UTF-8")
+        fun searchPath(category: String?, cursor: String? = null): String {
+            var path = "/v1/experts?limit=20"
+            if (!category.isNullOrBlank()) path += "&category=" + java.net.URLEncoder.encode(category, "UTF-8")
+            if (cursor != null) path += "&cursor=" + java.net.URLEncoder.encode(cursor, "UTF-8")
+            return path
         }
 
         fun decode(json: JSONObject): CustomerSearchState {
+            val experts = decodeExperts(json)
+            return if (experts.isEmpty()) CustomerSearchState.Empty else CustomerSearchState.Ready(experts)
+        }
+
+        fun decodeExperts(json: JSONObject): List<CustomerExpertCard> {
             val array = json.getJSONArray("experts")
-            val experts = List(array.length()) { index ->
+            return List(array.length()) { index ->
                 val row = array.getJSONObject(index)
                 CustomerExpertCard(
                     expertId = row.getString("expertId"),
@@ -87,8 +121,10 @@ class CustomerSearchModel(private val transport: AuthTransport = MembershipHttp(
                     fromPrice = if (row.isNull("fromPrice")) null else row.optLong("fromPrice"),
                 )
             }
-            return if (experts.isEmpty()) CustomerSearchState.Empty else CustomerSearchState.Ready(experts)
         }
+
+        fun cursorOf(json: JSONObject): String? =
+            if (json.isNull("nextCursor")) null else json.optString("nextCursor").takeIf { it.isNotBlank() }
     }
 }
 
@@ -106,7 +142,11 @@ fun CustomerSearchScreen(
     CustomerSearchContent(
         category = category,
         state = model.state,
+        hasMore = model.nextCursor != null,
+        loadingMore = model.loadingMore,
+        moreFailed = model.moreFailed,
         onRetry = { scope.launch { model.load(category) } },
+        onLoadMore = { scope.launch { model.loadMore(category) } },
         onClearCategory = onClearCategory,
         onOpenExpert = onOpenExpert,
         onBack = onBack,
@@ -121,6 +161,10 @@ fun CustomerSearchContent(
     onClearCategory: () -> Unit,
     onOpenExpert: (String, String) -> Unit,
     onBack: () -> Unit,
+    hasMore: Boolean = false,
+    loadingMore: Boolean = false,
+    moreFailed: Boolean = false,
+    onLoadMore: () -> Unit = {},
 ) {
     Column(Modifier.fillMaxSize().background(Color.White).safeDrawingPadding().testTag("customer-search")) {
         Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -144,6 +188,15 @@ fun CustomerSearchContent(
             is CustomerSearchState.Failed -> ExpertFailure(state.network, state.code, onRetry)
             is CustomerSearchState.Ready -> LazyColumn(Modifier.weight(1f).padding(top = 8.dp).testTag("customer-search-results")) {
                 items(state.experts, key = { it.expertId }) { expert -> ExpertCard(expert, onOpenExpert) }
+                if (hasMore) {
+                    item("more") {
+                        TextButton(onClick = onLoadMore, enabled = !loadingMore,
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("customer-search-more")) {
+                            ExpertCopy(if (loadingMore) "불러오는 중…" else if (moreFailed) "더 불러오지 못했습니다. 다시 시도" else "더 보기",
+                                weight = FontWeight.SemiBold)
+                        }
+                    }
+                }
             }
         }
     }

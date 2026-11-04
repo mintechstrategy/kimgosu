@@ -26,20 +26,7 @@ private struct ServiceGalleryPage: View {
     let url: String?
 
     var body: some View {
-        AsyncImage(url: url.flatMap(URL.init(string:))) { phase in
-            switch phase {
-            case .success(let image):
-                image.resizable().scaledToFit()
-            case .failure:
-                Text("사진을 불러오지 못했습니다.")
-                    .font(.system(size: 13))
-                    .foregroundStyle(.secondary)
-            case .empty:
-                ProgressView()
-            @unknown default:
-                Color.clear
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        RemoteImage(url: url, contentMode: .fit)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
