@@ -428,6 +428,34 @@ test('WS-26: an operator hide removes the review from the public list and stores
   assert.equal(missing.json().error.code, 'REVIEW_NOT_FOUND');
 });
 
+test('WS-56: the moderation list shows hidden rows and needs an admin session', async () => {
+  const target = (await pool.query(
+    `SELECT id FROM kg_membership.reviews WHERE ledger_id=$1 AND author_id=$2`, [WINDOW_OPEN_LEDGER, WINDOW_CUSTOMER_OPEN.id],
+  )).rows[0].id as string;
+
+  const anonymous = await app.inject({ method: 'GET', url: '/v1/admin/reviews' });
+  assert.equal(anonymous.statusCode, 401);
+
+  const member = await app.inject({ method: 'GET', url: '/v1/admin/reviews', headers: auth(CUSTOMER.token) });
+  assert.equal(member.statusCode, 403);
+  assert.equal(member.json().error.code, 'ADMIN_SESSION_REQUIRED');
+
+  const listed = await app.inject({ method: 'GET', url: '/v1/admin/reviews?limit=100', headers: auth(ADMIN_SESSION_TOKEN) });
+  assert.equal(listed.statusCode, 200);
+  const body = listed.json();
+  const rows = body.reviews as Record<string, unknown>[];
+  assert.equal(typeof body.total, 'number');
+  assert.ok(rows.length >= 1);
+
+  const row = rows.find(review => review.id === target);
+  assert.ok(row, 'a hidden review must still be listed for moderation');
+  assert.deepEqual(Object.keys(row).sort(),
+    ['authorNickname', 'body', 'createdAt', 'hiddenAt', 'hiddenReason', 'id', 'rating'].sort());
+  assert.notEqual(row.hiddenAt, null);
+  assert.equal(row.hiddenReason, '욕설 포함');
+  assert.equal(typeof row.authorNickname, 'string');
+});
+
 test('WS-26: unhide restores the review and records why', async () => {
   const target = (await pool.query(
     `SELECT id FROM kg_membership.reviews WHERE ledger_id=$1 AND author_id=$2`, [WINDOW_OPEN_LEDGER, WINDOW_CUSTOMER_OPEN.id],

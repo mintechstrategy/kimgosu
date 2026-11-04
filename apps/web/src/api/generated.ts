@@ -15,6 +15,7 @@ export const operations = {
   adminMemberRestrict: { method: "POST", path: "/v1/admin/members/:id/restrict", authentication: "admin" },
   adminMembers: { method: "GET", path: "/v1/admin/members", authentication: "admin" },
   adminReviewHide: { method: "POST", path: "/v1/admin/reviews/:id/hide", authentication: "admin" },
+  adminReviewList: { method: "GET", path: "/v1/admin/reviews", authentication: "admin" },
   adminReviewUnhide: { method: "POST", path: "/v1/admin/reviews/:id/unhide", authentication: "admin" },
   adminSessionCreate: { method: "POST", path: "/v1/admin/session", authentication: "none" },
   adminSessionGet: { method: "GET", path: "/v1/admin/session", authentication: "admin" },
@@ -33,6 +34,7 @@ export const operations = {
   myReviews: { method: "GET", path: "/v1/me/reviews", authentication: "session-active" },
   policyPromote: { method: "POST", path: "/v1/admin/policies/promote", authentication: "admin" },
   quoteComplete: { method: "POST", path: "/v1/quotes/:id/complete", authentication: "session-active" },
+  quoteInbox: { method: "GET", path: "/v1/me/quotes", authentication: "session-active" },
   quoteList: { method: "GET", path: "/v1/ledgers/:id/quotes", authentication: "session-active" },
   quotePropose: { method: "POST", path: "/v1/ledgers/:id/quotes", authentication: "session-active" },
   quoteRespond: { method: "POST", path: "/v1/quotes/:id/respond", authentication: "session-active" },
@@ -53,6 +55,15 @@ export function queryString(query: Record<string, string | number | boolean | un
 }
 
 // contracts/admin.v0.1.json — schemaDefinitions
+export type AdminReview = {
+  id: Uuid;
+  authorNickname: string;
+  rating: number;
+  body: string | null;
+  createdAt: Timestamp;
+  hiddenAt: NullableTimestamp;
+  hiddenReason: string | null;
+};
 export type ConsentRecord = {
   kind: "TERMS" | "PRIVACY_CONSENT" | "PRIVACY_POLICY" | "MARKETING" | "OPERATIONS";
   title: string;
@@ -337,6 +348,16 @@ export type AdminReviewHideResponse200 = {
   hiddenReason: string;
   hidden: true;
 };
+export type AdminReviewListResponse200 = {
+  reviews: AdminReview[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+export type AdminReviewListQuery = {
+  limit?: string;
+  offset?: string;
+};
 export type AdminReviewUnhidePathParams = {
   id: string;
 };
@@ -497,6 +518,13 @@ export type QuoteCompleteRequest = {
   expectedVersion: number;
 };
 export type QuoteCompleteResponse200 = Quote;
+export type QuoteInboxResponse200 = {
+  quotes: Record<string, unknown>[];
+};
+export type QuoteInboxQuery = {
+  status?: "PROPOSED" | "ACCEPTED" | "REJECTED" | "COMPLETED";
+  limit?: string;
+};
 export type QuoteListPathParams = {
   id: string;
 };
@@ -613,6 +641,13 @@ export async function adminReviewHide(
   body: AdminReviewHideRequest,
 ): Promise<AdminReviewHideResponse200> {
   return await call(operationPath('adminReviewHide', params), "POST", body) as AdminReviewHideResponse200;
+}
+
+export async function adminReviewList(
+  call: ApiCall,
+  query?: AdminReviewListQuery,
+): Promise<AdminReviewListResponse200> {
+  return await call(operationPath('adminReviewList') + queryString(query ?? {}), "GET") as AdminReviewListResponse200;
 }
 
 export async function adminReviewUnhide(
@@ -741,6 +776,13 @@ export async function quoteComplete(
   body: QuoteCompleteRequest,
 ): Promise<QuoteCompleteResponse200> {
   return await call(operationPath('quoteComplete', params), "POST", body) as QuoteCompleteResponse200;
+}
+
+export async function quoteInbox(
+  call: ApiCall,
+  query?: QuoteInboxQuery,
+): Promise<QuoteInboxResponse200> {
+  return await call(operationPath('quoteInbox') + queryString(query ?? {}), "GET") as QuoteInboxResponse200;
 }
 
 export async function quoteList(
