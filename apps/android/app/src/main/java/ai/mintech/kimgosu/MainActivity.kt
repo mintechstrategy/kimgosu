@@ -210,7 +210,7 @@ class MainActivity : ComponentActivity() {
 @Composable private fun AssetImage(name: String, description: String?, modifier: Modifier) {
     val context = LocalContext.current
     val bitmap = remember(name) { context.assets.open(name).use { BitmapFactory.decodeStream(it) }.asImageBitmap() }
-    Image(bitmap, description, modifier, contentScale = ContentScale.Fit)
+    Image(bitmap, description, modifier, contentScale = ContentScale.Crop)
 }
 @Composable private fun MainScreen(home: Home, apiStatus: String?, profile: ProfileState,
                                    onRetryProfile: () -> Unit, onProfileLogin: () -> Unit,

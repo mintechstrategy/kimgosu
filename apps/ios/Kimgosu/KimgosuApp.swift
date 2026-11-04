@@ -123,9 +123,10 @@ final class OfflineProtocol: URLProtocol {
                 } else if !model.entered {
                     GeometryReader { geometry in
                         Image(uiImage: UIImage(named: "MobileAssets/splash.jpg") ?? UIImage())
-                            .resizable().scaledToFit().frame(width: geometry.size.width, height: geometry.size.height)
+                            .resizable().scaledToFill().frame(width: geometry.size.width, height: geometry.size.height)
+                            .clipped()
                             .accessibilityLabel("김고수 시작 화면").accessibilityIdentifier("splash-image")
-                    }.background(Color.white).ignoresSafeArea()
+                    }.ignoresSafeArea()
                         .task {
                             model.record("splash-appeared")
                             await Task.yield()
