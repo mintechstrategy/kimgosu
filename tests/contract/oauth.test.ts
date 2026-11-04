@@ -118,6 +118,7 @@ test('auth/config 의 oauth 블록이 v0.3 authConfig.oauth 스키마와 일치�
   const v02Schema = v02.operations.find((o: { id: string }) => o.id === 'authConfig').responses['200'];
   const baseline = ajv.compile({ definitions: v02.schemaDefinitions, ...v02Schema });
   assert(baseline(res.json()), 'v0.2 baseline: ' + ajv.errorsText(baseline.errors));
+  // 연결 상태는 자격증명 유무에서만 나온다. 구글도 같은 규칙으로 목록에 있다.
   assert.deepEqual(res.json().oauth.providers.map((p: { id: string; connected: boolean }) => [p.id, p.connected]),
-    [['kakao', false], ['naver', false], ['apple', false]]);
+    [['google', false], ['kakao', false], ['naver', false], ['apple', false]]);
 });
