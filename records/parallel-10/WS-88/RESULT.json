@@ -1,0 +1,110 @@
+{
+  "ws": "WS-88",
+  "status": "DONE",
+  "summary": "채팅방 사진 모아보기(CHAT_MEDIA_GALLERY)+사진 보기를 AOS(Compose)·iOS(SwiftUI)에 동시 구현하고, 두 앱 빌드 성공·문구 대조 스크립트 PASS·기능 화면 하드코딩 색/크기 0건을 확인했다. 실행·실거래 검증은 QA 슬롯 몫이라 NOT_RUN이며 자체 QA가 아니다.",
+  "conflicts": [
+    {
+      "item": "카드 본문 '30일 경과분은 보관 기간이 지나 삭제되었습니다로 표시하고 썸네일을 만들지 않는다'",
+      "decision": "미구현(스펙 우선)",
+      "reason": "spec.md §4.10·§5.2는 보관 기한·삭제 완료를 추정하지 않고 서버가 확정한 ITEM_UNAVAILABLE만 표시하도록 하고, screens.md에 해당 문구가 없다. 카드도 '해석이 갈리면 스펙을 따른다', '문구는 screens.md와 완전 일치'를 요구하므로 스펙을 따랐다.",
+      "needs": "사용자/정책 담당이 30일 규칙을 확정하면 서버 계약과 문구를 먼저 추가한 뒤 반영해야 한다."
+    },
+    {
+      "item": "카드 본문 '길게 눌러 사진첩 저장'",
+      "decision": "미구현(스펙 우선)",
+      "reason": "spec.md §5.2는 '앱 제공 저장·공유 버튼 없음'을 명시하고, §7은 OS 외부 메뉴 노출이 비공개 정책과 충돌할 수 있어 임의 도입을 금지한다. 사진첩 저장은 개인정보·비공개 첨부 정책 결정이 선행돼야 한다.",
+      "needs": "비공개 첨부의 기기 저장 허용 여부 정책 결정 + 스펙 변경 승인."
+    }
+  ],
+  "deviations": [
+    "D2 채팅방에는 신고/차단 옵션 컨테이너가 아직 없어 ENTRY를 채팅 헤더 아래 텍스트 행으로 배치했다(spec §5.1의 '옵션 안 ENTRY'와 위치만 다르고 문구·동작은 동일). D2 진입 영역 자체의 로딩/빈/오류/NET 상태는 권한 사전조회 API가 없어 구현하지 않았고, 실제 상태는 갤러리 화면이 표시한다.",
+    "방 전체 첨부 전용 API가 없어(P spec §7 게이트) 기존 검증된 GET /v1/ledgers/{id}/messages 응답의 서버 저장 첨부만 모아 보여준다. 로컬 DB·로컬 메시지 스크랩·영속 캐시는 없다. 조회 페이지가 1페이지만이므로 전체 수를 주장하지 않고 POSITION을 표시하지 않는다.",
+    "파일 목록·동영상 목록 계약이 없어 파일 탭은 PREPARING 문구를, 동영상 항목은 만들지 않았다(VIDEO_READY 뷰어·OS 파일 미리보기·핀치 확대·추가 페이지 로딩 미구현)."
+  ],
+  "changedFiles": [
+    "apps/android/app/src/main/java/ai/mintech/kimgosu/chat/ChatGalleryTokens.kt",
+    "apps/android/app/src/main/java/ai/mintech/kimgosu/chat/ChatMediaGalleryScreen.kt",
+    "apps/android/app/src/main/java/ai/mintech/kimgosu/customer/CustomerChatScreen.kt",
+    "apps/android/app/src/androidTest/java/ai/mintech/kimgosu/CustomerFlowTests.kt",
+    "apps/ios/Kimgosu/ChatGalleryTokens.swift",
+    "apps/ios/Kimgosu/ChatGalleryView.swift",
+    "apps/ios/Kimgosu/CustomerChatView.swift",
+    "apps/ios/Kimgosu.xcodeproj/project.pbxproj",
+    "scripts/check-chat-gallery-strings.mjs"
+  ],
+  "dependencies": {
+    "added": [],
+    "note": "새 dependency·라이브러리 없음. 기존 ChatApi/AuthTransport/DesignTokens/ExpertCopy/customerCopy 재사용."
+  },
+  "states": {
+    "note": "CHAT_MEDIA_GALLERY 상태 4종 구현 위치",
+    "AOS": {
+      "loading": "ChatMediaGalleryScreen.kt:116 (GalleryState.Loading) / 렌더 :189 GalleryLoading()",
+      "empty": "ChatMediaGalleryScreen.kt:126-127 (GalleryState.Empty) / 렌더 :191 GalleryNotice",
+      "error": "ChatMediaGalleryScreen.kt:129-133 (GalleryState.Failed) / 렌더 :190 GalleryFailure",
+      "network": "ChatMediaGalleryScreen.kt:131 (Failed(network = true)) / 카피 :59 NET"
+    },
+    "iOS": {
+      "loading": "ChatGalleryView.swift:74 (state = .loading) / 렌더 :147 case .loading",
+      "empty": "ChatGalleryView.swift:82 (state = .empty) / 렌더 :165 case .empty",
+      "error": "ChatGalleryView.swift:85-90 (.failed) / 렌더 :153 case .failed",
+      "network": "ChatGalleryView.swift:91 (state = .failed(network: true)) / 카피 :21 net"
+    }
+  },
+  "verification": [
+    {
+      "check": "AOS 빌드",
+      "command": "cd apps/android && JAVA_HOME=<.local-toolchains/jdk17> ANDROID_HOME=<.local-toolchains/android-sdk> ./gradlew --no-daemon --max-workers=2 :app:assembleDevDebug",
+      "result": "PASS",
+      "evidence": "BUILD SUCCESSFUL in 56s (38 tasks). 산출물 app/build/outputs/apk/dev/debug/app-dev-debug.apk 15,412,000 bytes (2026-11-05 09:22)."
+    },
+    {
+      "check": "iOS 빌드",
+      "command": "cd apps/ios && xcodebuild -project Kimgosu.xcodeproj -scheme Kimgosu -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build",
+      "result": "PASS",
+      "evidence": "** BUILD SUCCEEDED ** (exit 0, Xcode 27.0). 새 파일 2개는 project.pbxproj의 PBXFileReference/PBXBuildFile/Sources에 등록해 실제 컴파일 대상에 포함됨."
+    },
+    {
+      "check": "문구 대조 스크립트",
+      "command": "node scripts/check-chat-gallery-strings.mjs",
+      "result": "PASS",
+      "evidence": "screens.md 문구 67개, AOS 27개, iOS 27개, 상태 문구 7개 → 'PASS 문구가 screens.md 와 완전 일치하고 두 앱이 동일합니다.' (D2·VIDEO_READY 상태 문구는 범위 밖으로 제외, 문서 기준 필터)"
+    },
+    {
+      "check": "기능 화면 하드코딩 색·크기 grep",
+      "command": "grep -nE '[0-9]+\\.(dp|sp)|Color\\(0x' apps/android/.../chat/ChatMediaGalleryScreen.kt  /  grep -nE 'size: [0-9]|padding\\([0-9]|cornerRadius: [0-9]|Color\\(red' apps/ios/Kimgosu/ChatGalleryView.swift",
+      "result": "PASS",
+      "evidence": "두 파일 모두 match 0건. 수치·색은 ChatGalleryTokens.kt / ChatGalleryTokens.swift 의 토큰 정의 한 곳에만 존재하고 나머지는 토큰 참조."
+    },
+    {
+      "check": "상태 4종 코드 위치 기록",
+      "command": "grep -n 'GalleryState\\.(Loading|Empty|Failed|Ready)' / 'case \\.(loading|empty|failed|ready)'",
+      "result": "PASS",
+      "evidence": "위 states 항목에 AOS·iOS 파일:행 기록."
+    },
+    {
+      "check": "AOS/iOS 실행·화면 확인, 실제 개발 API/DB/R2 거래, 동등성 비교",
+      "command": "—",
+      "result": "NOT_RUN",
+      "evidence": "카드 지시대로 레인은 빌드까지만 수행하고 실행 검증은 QA 슬롯에서 한다."
+    },
+    {
+      "check": "androidTest / XCUITest 실행",
+      "command": "—",
+      "result": "NOT_RUN",
+      "evidence": "CustomerFlowTests 는 시그니처 변경(onOpenGallery)에 맞춰 컴파일 가능하게만 수정했고 계측 테스트는 실행하지 않았다(assembleDebugAndroidTest·simctl 미실행)."
+    }
+  ],
+  "open": [
+    "QA 슬롯: 에뮬레이터/시뮬레이터에서 갤러리 진입·4상태·뒤로가기 복귀 확인",
+    "백엔드: 방 전체 첨부 목록(정렬·페이지·허용행동)·파일/동영상 메타 계약 인계 후 파일 탭·VIDEO_READY 연결",
+    "정책 결정: 30일 보관 표시, 사진첩 저장(길게 누르기) — 둘 다 스펙 변경 승인 필요",
+    "D2 옵션 컨테이너(신고/차단) 도입 시 ENTRY를 그 컨테이너 행으로 이동"
+  ],
+  "risks": [
+    "메시지 API 1페이지(서버 기본 limit)만 사용하므로 아주 오래된 첨부는 보이지 않는다. 전체 이력으로 표시하지 않도록 POSITION·개수를 주장하지 않는다.",
+    "썸네일은 원본 imageUrl 을 그대로 받아 표시한다(별도 썸네일 API 없음) — 회선 비용·성능은 QA에서 측정 필요.",
+    "iOS 는 AsyncImage 기본 캐시를 쓰며, 이는 업무 데이터 영속 저장이 아니라 OS 이미지 캐시다."
+  ],
+  "git": "커밋·push 없음. 변경은 worktree(ws/WS-88) 작업 트리에만 남겼다."
+}

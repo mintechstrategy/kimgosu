@@ -39,6 +39,8 @@ D00000000000000000000002 = {isa = PBXBuildFile; fileRef = D100000000000000000000
 		F00000000000000000000009 = {isa = PBXBuildFile; fileRef = F10000000000000000000009; };
 		F00000000000000000000010 = {isa = PBXBuildFile; fileRef = F10000000000000000000010; };
 		FA00000000000000000001 = {isa = PBXBuildFile; fileRef = FB00000000000000000001; };
+		F00000000000000000000011 = {isa = PBXBuildFile; fileRef = F10000000000000000000011; };
+		F00000000000000000000012 = {isa = PBXBuildFile; fileRef = F10000000000000000000012; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -82,6 +84,8 @@ D10000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = folder; 
 		F10000000000000000000009 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Kimgosu/CustomerReviewView.swift; sourceTree = "<group>"; };
 		F10000000000000000000010 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KimgosuUITests/WS53CustomerFlowTests.swift; sourceTree = "<group>"; };
 		FB00000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Kimgosu/ChatApi.swift; sourceTree = "<group>"; };
+		F10000000000000000000011 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Kimgosu/ChatGalleryTokens.swift; sourceTree = "<group>"; };
+		F10000000000000000000012 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Kimgosu/ChatGalleryView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -130,6 +134,8 @@ D10000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = folder; 
 				F10000000000000000000008,
 				F10000000000000000000009,
 				F10000000000000000000010,
+				F10000000000000000000011,
+				F10000000000000000000012,
 				FB00000000000000000001,
 				A00000000000000000000004 /* Products */,
 			);
@@ -258,6 +264,8 @@ D10000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = folder; 
 				F00000000000000000000008,
 				F00000000000000000000009,
 				FA00000000000000000001,
+				F00000000000000000000011,
+				F00000000000000000000012,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

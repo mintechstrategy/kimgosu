@@ -5,6 +5,8 @@ import ai.mintech.kimgosu.auth.AuthTransport
 import ai.mintech.kimgosu.auth.MembershipHttp
 import ai.mintech.kimgosu.auth.SecureSession
 import ai.mintech.kimgosu.chat.ChatApi
+import ai.mintech.kimgosu.chat.ChatMediaGalleryScreen
+import ai.mintech.kimgosu.chat.GalleryCopy
 import ai.mintech.kimgosu.expert.ExpertCopy
 import ai.mintech.kimgosu.expert.ExpertFailure
 import ai.mintech.kimgosu.expert.ExpertLoading
@@ -30,6 +32,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -316,6 +319,11 @@ fun CustomerChatScreen(
         }
     }
     LaunchedEffect(ledgerId) { model.refresh(ledgerId) }
+    var galleryOpen by rememberSaveable { mutableStateOf(false) }
+    if (galleryOpen) {
+        ChatMediaGalleryScreen(ledgerId = ledgerId, onClose = { galleryOpen = false })
+        return
+    }
     CustomerChatContent(
         expertNickname = expertNickname,
         state = model.state,
@@ -328,6 +336,7 @@ fun CustomerChatScreen(
         onAccept = { quote -> scope.launch { model.respondQuote(ledgerId, quote, "accept") } },
         onComplete = { quote -> scope.launch { model.confirmComplete(ledgerId, quote) } },
         onWriteReview = { onWriteReview(ledgerId, expertNickname) },
+        onOpenGallery = { galleryOpen = true },
         onBack = onBack,
     )
 }
@@ -345,6 +354,7 @@ fun CustomerChatContent(
     onAccept: (CustomerQuote) -> Unit,
     onComplete: (CustomerQuote) -> Unit,
     onWriteReview: () -> Unit,
+    onOpenGallery: () -> Unit,
     onBack: () -> Unit,
 ) {
     var draft by remember { mutableStateOf("") }
@@ -355,6 +365,10 @@ fun CustomerChatContent(
                 ExpertCopy(expertNickname.ifBlank { "고수" } + " 님과의 거래", Modifier.padding(top = 2.dp), 19, bold = true)
             }
             TextButton(onClick = onBack, modifier = Modifier.heightIn(min = 48.dp).testTag("customer-chat-back")) { ExpertCopy("뒤로") }
+        }
+        TextButton(onClick = onOpenGallery,
+            modifier = Modifier.padding(start = 8.dp, end = 20.dp).heightIn(min = 48.dp).testTag("customer-chat-gallery-entry")) {
+            ExpertCopy(GalleryCopy.ENTRY, color = DesignTokens.navy, weight = FontWeight.SemiBold)
         }
         when (state) {
             CustomerChatState.Loading -> ExpertLoading()
