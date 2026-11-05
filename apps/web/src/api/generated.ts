@@ -20,6 +20,7 @@ export const operations = {
   adminSessionCreate: { method: "POST", path: "/v1/admin/session", authentication: "none" },
   adminSessionGet: { method: "GET", path: "/v1/admin/session", authentication: "admin" },
   adminSessionLogout: { method: "POST", path: "/v1/admin/session/logout", authentication: "admin" },
+  adminStats: { method: "GET", path: "/v1/admin/stats", authentication: "admin" },
   agreementAccept: { method: "POST", path: "/v1/agreements/:id/accept", authentication: "session-active" },
   agreementComplete: { method: "POST", path: "/v1/agreements/:id/complete", authentication: "session-active" },
   agreementCreate: { method: "POST", path: "/v1/agreements", authentication: "session-active" },
@@ -144,6 +145,10 @@ export type Message = {
   ledgerId: Uuid;
   senderId: Uuid;
   body: string | null;
+  imageKey: string | null;
+  imageUrl: string | null;
+  imageWidth: number | null;
+  imageHeight: number | null;
   deleted: boolean;
   createdAt: Timestamp;
   readAt: NullableTimestamp;
@@ -387,6 +392,28 @@ export type AdminSessionGetResponse200 = {
 export type AdminSessionLogoutResponse200 = {
   loggedOut: true;
 };
+export type AdminStatsResponse200 = {
+  from: string;
+  to: string;
+  totals: {
+    trades: number;
+    completed: number;
+    completionRate: number;
+    reports: number;
+    newMembers: number;
+  };
+  daily: ({
+    date: string;
+    trades: number;
+    completed: number;
+    reports: number;
+    newMembers: number;
+  })[];
+};
+export type AdminStatsQuery = {
+  from?: string;
+  to?: string;
+};
 export type AgreementAcceptPathParams = {
   id: string;
 };
@@ -489,7 +516,10 @@ export type MessageSendPathParams = {
   id: string;
 };
 export type MessageSendRequest = {
-  body: string;
+  body?: string;
+  imageKey?: string;
+  imageWidth?: number;
+  imageHeight?: number;
 };
 export type MessageSendResponse201 = Message;
 export type MyReviewsResponse200 = {
@@ -675,6 +705,13 @@ export async function adminSessionLogout(
   call: ApiCall,
 ): Promise<AdminSessionLogoutResponse200> {
   return await call(operationPath('adminSessionLogout'), "POST") as AdminSessionLogoutResponse200;
+}
+
+export async function adminStats(
+  call: ApiCall,
+  query?: AdminStatsQuery,
+): Promise<AdminStatsResponse200> {
+  return await call(operationPath('adminStats') + queryString(query ?? {}), "GET") as AdminStatsResponse200;
 }
 
 export async function agreementAccept(

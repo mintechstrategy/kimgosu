@@ -130,7 +130,7 @@ for (const name of NAMES) test(`${name}: operation 목록 = 실제 등록 라우
   }
 });
 
-test('전체 앱(buildApp)에 31개 operation이 실제로 등록되어 있다', async () => {
+test('전체 앱(buildApp)에 34개 operation이 실제로 등록되어 있다', async () => {
   const app = buildApp(dbDouble as never, 'ws27-contract');
   await app.ready();
   try {
@@ -147,7 +147,7 @@ test('5개 계약은 서로 겹치지 않고, 계약에 없는 라우트는 문�
   const claimed: string[] = [];
   for (const contract of CONTRACTS) claimed.push(...contract.operations.map(operationKey));
   assert.equal(new Set(claimed).size, claimed.length, 'two contracts claim the same route');
-  assert.equal(claimed.length, 31);
+  assert.equal(claimed.length, 34);
 
   const v02 = JSON.parse(readFileSync(new URL('../../contracts/auth-membership.v0.2.json', import.meta.url), 'utf8'));
   const v03 = JSON.parse(readFileSync(new URL('../../contracts/auth-membership.v0.3.json', import.meta.url), 'utf8'));
@@ -180,8 +180,15 @@ test('5개 계약은 서로 겹치지 않고, 계약에 없는 라우트는 문�
     'GET /v1/experts/:id',
     'GET /v1/me/expert',
     'PATCH /v1/me/expert/availability',
+    'GET /v1/me/expert/availability/periods',
+    'POST /v1/me/expert/availability/periods',
+    'DELETE /v1/me/expert/availability/periods/:id',
     'POST /v1/uploads',
     'POST /v1/auth/oauth/apple/callback',
+    // 알림함(WS-75)은 아직 어떤 계약 JSON에도 등재되지 않았다. 기존 동결 계약을
+    // 열지 않기 위해 여기에 노출하고 후속 계약 개정 카드에서 등재한다.
+    'GET /v1/notifications',
+    'POST /v1/notifications/read-all',
   ];
   const unclaimed = inventory.filter(route => !covered.has(route));
   sameSet(unclaimed, documentedGaps, 'unclaimed routes changed: a live route is missing from every contract');

@@ -4,6 +4,7 @@ import type { Sql, Row } from './app.ts';
 import type { Authenticate } from './auth.ts';
 import { ApiError } from './security.ts';
 import { audit, requireActiveMember } from './kernel.ts';
+import { notify } from './notifications.ts';
 
 /**
  * Quote flow: expert proposes -> customer accepts/rejects -> both sides confirm
@@ -176,6 +177,12 @@ export function registerQuoteRoutes(app: FastifyInstance, db: Sql, authenticate:
         await audit(sql, auth.memberId, 'QUOTE_PROPOSED', 'quote', id, null, {
           ledgerId: request.params.id, amount: request.body.amount, priceType, vatIncluded,
         });
+        await notify(sql, {
+          memberId: ledger.customerMemberId, kind: 'QUOTE',
+          title: '새 견적이 도착했습니다',
+          body: '견적 내용을 확인하고 수락 여부를 정해주세요.',
+          ledgerId: request.params.id,
+        });
         return present(created);
       });
       return reply.code(201).send(quote);
@@ -338,6 +345,14 @@ export function registerQuoteRoutes(app: FastifyInstance, db: Sql, authenticate:
         );
         await transition(sql, String(quote.id), 'ACCEPTED', 'COMPLETED', auth.memberId, 'both parties confirmed');
         await audit(sql, auth.memberId, 'QUOTE_COMPLETED', 'quote', String(quote.id), null, { agreementId: String(quote.agreementId) });
+        for (const memberId of [participants.customerMemberId, participants.expertMemberId]) {
+          await notify(sql, {
+            memberId, kind: 'AGREEMENT',
+            title: '거래가 완료되었습니다',
+            body: '완료된 거래의 후기를 남길 수 있습니다.',
+            ledgerId: quote.ledgerId,
+          });
+        }
       }
 
       return present((await sql.query(

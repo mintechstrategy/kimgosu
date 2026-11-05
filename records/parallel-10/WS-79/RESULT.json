@@ -1,0 +1,103 @@
+{
+  "ws": "WS-79",
+  "task": "E2E 확장 (취소·신고·알림) — services/backend/scripts/e2e-extended.mjs 신규",
+  "status": "BLOCKED",
+  "worktree": "/Users/mintech-mac/hermes/dev-profile/shared/projects/wt-WS-79",
+  "baseBranch": "ws/WS-79",
+  "baseCommit": "5bd1dc9",
+  "summary": "e2e-extended.mjs를 추가하고 실제 dev API(https://api-dev-kimgosu.mintech.ai)에 1회 실행했다. 스크립트는 취소(WS-71)·신고(WS-61/68)·알림(WS-75) 3개 흐름을 단계별 기대/실제로 출력하고, dev에 없는 라우트는 404 ROUTE_NOT_FOUND로 판별해 BLOCKED로 남긴다(성공 처리 금지). 실행 결과 dev는 이 세 기능이 모두 미배포여서 3개 흐름 전부 BLOCKED(exit 2)다. 로그인·원장·견적·메시지처럼 이미 배포된 단계는 PASS 5건. 취소·신고·알림은 각각 ws/WS-71·ws/WS-68·ws/WS-75에만 있어 어떤 단일 브랜치에도 셋이 함께 있지 않고, dev 배포도 그 이전 소스다. AOS/iOS는 이 WS에 앱 화면·계약 변경 범위가 없다(스크립트는 API 계약만 호출).",
+  "changedFiles": [
+    "services/backend/scripts/e2e-extended.mjs",
+    "records/parallel-10/WS-79/RESULT.json"
+  ],
+  "implementation": {
+    "file": "services/backend/scripts/e2e-extended.mjs",
+    "dependencies": "추가 없음. Node 내장 fetch/process만 사용(e2e-customer-flow.mjs와 같은 방식).",
+    "structure": [
+      "흐름 1 취소: 전용 계정 쌍(--cancel-slot, 기본 2)으로 원장 생성 → 견적 → 채팅 텍스트/사진 → GET /v1/ledgers/:id/cancel로 ACTIVE 확인 → 고객 POST cancel(reasonCode=SCHEDULE) → 같은 쪽 재요청 409 CANCEL_ALREADY_REQUESTED → 고수 POST {}로 수락 → 200 CANCELLED+cancelledAt → 재조회 CANCELLED",
+      "흐름 2 신고: 계정 쌍(--flow-slot, 기본 3)으로 원장 → 견적 → 고수 메시지 → 고객 POST /v1/reports(targetType=MESSAGE) → 관리자(슬롯 21) dev 로그인 후 POST /v1/admin/session 교환 → GET /v1/admin/reports?status=OPEN 목록에서 대상 고수 메시지 신고 확인 → GET /v1/admin/reports/:id 상세(targetMessage.id 일치) → POST /v1/admin/reports/:id/status REVIEWED → 재조회 status/resolution 확인",
+      "흐름 3 알림: 신고/알림 고객의 GET /v1/notifications로 기준 unreadCount 측정 → 새 견적 제시 → GET /v1/notifications?kind=QUOTE 에서 ledgerId 일치·미읽음 QUOTE 행 + 배지 증가 확인 → POST /v1/notifications/read-all → unreadCount=0 → 재조회에서 해당 알림 readAt 채워짐 확인",
+      "미배포 판별: 404 + error.code=ROUTE_NOT_FOUND 인 첫 호출에서 Undeployed를 던져 해당 흐름만 BLOCKED로 기록하고 다음 흐름 계속. 기대와 다른 응답은 Failed로 그 단계에서 중단하고 실패 단계·기대·실제를 출력",
+      "exit code: 0 전 단계 PASS, 1 FAIL, 2 FAIL 없이 BLOCKED만 있음(기존 e2e-customer-flow.mjs의 BLOCKED 규칙과 동일)",
+      "재실행: 신고는 실행마다 새 메시지를 신고하므로 반복 가능. 취소는 원장당 1회만 성립하므로 취소 전용 계정 쌍을 분리하고, 시작 시 원장이 이미 CANCELLED면 --cancel-slot을 바꾸라는 문구와 함께 BLOCKED 처리"
+    ]
+  },
+  "verification": [
+    {
+      "check": "문법 검사",
+      "command": "node --check services/backend/scripts/e2e-extended.mjs",
+      "result": "PASS",
+      "evidence": "SYNTAX_OK (출력 없음, exit 0)"
+    },
+    {
+      "check": "실제 dev API 1회 실행",
+      "command": "node services/backend/scripts/e2e-extended.mjs",
+      "result": "BLOCKED",
+      "evidence": "EXIT=2. 총 8개 검사 PASS 5 / BLOCKED 3 / FAIL 0. PASS: 로그인(고수 11, 취소 고객 2, 신고/알림 고객 3, 관리자 21 dev 로그인), 취소 — 원장 생성/재사용(HTTP 200 created=false id=2017f933-…), 신고 — 원장 생성/재사용(HTTP 200 id=92ac1472-…), 신고 — 견적 제시(HTTP 201 quoteId=b4c171e1-…), 신고 — 신고 대상 메시지(HTTP 201 messageId=201470d6-…). BLOCKED: '취소 — 원장 취소 상태 조회'(GET /v1/ledgers/:id/cancel → HTTP 404 ROUTE_NOT_FOUND), '신고 — 메시지 신고 접수'(POST /v1/reports → HTTP 404 ROUTE_NOT_FOUND), '알림 — 수신함 조회'(GET /v1/notifications → HTTP 404 ROUTE_NOT_FOUND). 출력 전문은 이 RESULT의 devRunOutput 참조."
+    },
+    {
+      "check": "dev 라우트 표면 사전 확인(무인증 프로브)",
+      "command": "curl -X {GET|POST} https://api-dev-kimgosu.mintech.ai/{v1/notifications, v1/notifications/read-all, v1/reports, v1/admin/reports, v1/ledgers/<uuid>/cancel}",
+      "result": "BLOCKED",
+      "evidence": "6개 라우트 모두 HTTP 404 {\"error\":{\"code\":\"ROUTE_NOT_FOUND\"}}. 인증만 없으면 401이 나와야 하므로 라우트 자체가 배포되지 않은 것으로 판별(스크립트의 isRouteMissing과 같은 기준)."
+    },
+    {
+      "check": "PASS 경로(전이·관리자 처리·배지 감소) 로컬 검증",
+      "command": "로컬 PostgreSQL + 마이그레이션 001~023 + 시드 계정 + KG_DEV_LOGIN 서버로 실행",
+      "result": "NOT_RUN",
+      "evidence": "취소는 ws/WS-71, 신고는 ws/WS-68(및 ws/WS-61), 알림은 ws/WS-75에만 있어 세 기능을 함께 가진 브랜치가 없다(ws/WS-77은 취소+알림만, 신고 없음). 로컬 검증을 위해 다른 레인 브랜치를 병합·적용하는 것은 이 WS의 쓰기 범위를 넘으므로 하지 않았다."
+    },
+    {
+      "check": "AOS 빌드",
+      "command": "해당 없음",
+      "result": "NOT_RUN",
+      "evidence": "WS-79는 apps/android 변경이 없다(변경 파일 0). 빌드 검증은 이 WS 산출물에 대해 의미가 없어 실행하지 않았다."
+    },
+    {
+      "check": "iOS 빌드",
+      "command": "해당 없음",
+      "result": "NOT_RUN",
+      "evidence": "WS-79는 apps/ios 변경이 없다(변경 파일 0)."
+    }
+  ],
+  "acceptance": [
+    {
+      "criterion": "3개 흐름이 실제 dev API에서 실행됨",
+      "result": "BLOCKED",
+      "evidence": "3개 흐름 모두 실행을 시작했고 이미 배포된 선행 단계는 실제 거래로 통과했다. 그러나 취소·신고·알림 라우트가 dev에 없어 핵심 단계는 실행되지 않았다. 성공으로 세지 않는다."
+    },
+    {
+      "criterion": "각 단계 기대/실제 출력",
+      "result": "PASS",
+      "evidence": "record()가 모든 검사에서 '기대/실제'를 함께 출력하고, 실패 시 '실패 단계 / 기대 / 실제'를 출력한 뒤 exit 1."
+    },
+    {
+      "criterion": "미배포 기능은 BLOCKED 표시(성공 처리 금지)",
+      "result": "PASS",
+      "evidence": "404 ROUTE_NOT_FOUND만 BLOCKED로 판정하고, BLOCKED가 하나라도 있으면 exit 2 + '전체 통과는 아니다' 문구 출력. 실측 3건 BLOCKED."
+    },
+    {
+      "criterion": "AOS·iOS 함께 반영",
+      "result": "N/A",
+      "evidence": "WS-79 계획 항목은 백엔드 스크립트 1개다. 앱 화면 변경이 없어 두 플랫폼 모두 변경 0건으로 동등(불일치 없음). 취소 UI는 WS-71, 알림 UI는 WS-75가 이미 양 앱에 함께 넣었고, 이 WS에서 앱 코드를 건드리지 않았다."
+    }
+  ],
+  "risks": [
+    "dev가 세 기능을 배포하기 전까지 이 스크립트는 BLOCKED(exit 2)만 낸다. CI에 연결하면 계속 실패로 보이므로 배포 후 연결해야 한다.",
+    "신고 흐름은 관리자 dev 계정(슬롯 21)의 live ADMIN role_grants에 의존한다. 시드가 없는 환경에서는 /v1/admin/session이 403 ADMIN_REQUIRED로 실패하며, 이는 미배포(BLOCKED)가 아니라 FAIL로 드러난다.",
+    "취소 흐름은 원장당 1회 성립이므로 같은 --cancel-slot으로 재실행하면 취소 단계만 BLOCKED가 된다(안내 문구 출력). 다른 슬롯으로 바꾸면 다시 검증된다.",
+    "PASS 경로(전이 3단계·관리자 처리·배지 감소)는 실제 배포 환경에서 아직 한 번도 통과해 본 적이 없다. 배포 직후 첫 실행에서 오류가 나올 수 있다.",
+    "이 실행으로 dev DB에 원장 2건(기존 재사용 1건, 신규 1건)과 견적·메시지가 이력으로 남았다(스크립트가 id를 출력). 기존 e2e와 같은 규칙으로 삭제하지 않았다."
+  ],
+  "nextActions": [
+    "WS-77 통합 후 백엔드를 dev에 배포한다(ws/WS-71 취소, ws/WS-68 신고+관리자, ws/WS-75 알림, 각 마이그레이션 021·023 포함).",
+    "배포 후 같은 명령을 재실행해 BLOCKED 3건이 PASS로 바뀌는지 확인하고 이 RESULT를 갱신한다.",
+    "앱 쪽 취소·신고·알림 화면은 uiux 스펙 인계 후 별도 카드에서 AOS·iOS 동시 구현 대상이다(이 WS 범위 아님)."
+  ],
+  "selfQa": {
+    "type": "자체 QA (독립 QA 아님)",
+    "verdict": "FAIL/BLOCKED — 수용 기준 1(3개 흐름 실행) 미충족, 원인은 dev 미배포",
+    "detail": "스크립트 작성과 문법·실행 경로는 확인했다. 기능 검증은 대상 API가 없어 불가하며, 미배포를 성공으로 바꾸지 않았다."
+  },
+  "devRunOutput": "확장 E2E (취소·신고·알림) — https://api-dev-kimgosu.mintech.ai\n계정: 고수 11, 취소 고객 2, 신고/알림 고객 3, 관리자 21\n\n[0] 로그인\n  PASS  로그인 (4개 계정 dev 로그인)\n[취소]\n  PASS  취소 — 원장 생성/재사용  HTTP 200, id=2017f933-3dc7-4ae3-a5de-d46293597083, created=false\n  BLOCKED  취소 — 원장 취소 상태 조회  HTTP 404 ROUTE_NOT_FOUND — dev 미배포\n[신고]\n  PASS  신고 — 원장 생성/재사용  HTTP 200, id=92ac1472-697e-40fb-915d-b54dc1e5827e, created=false\n  PASS  신고 — 견적 제시  HTTP 201, quoteId=b4c171e1-dbdc-42aa-a30c-91894c3e53f7\n  PASS  신고 — 신고 대상 메시지  HTTP 201, messageId=201470d6-2f0a-4d80-8b73-e86e10e32f5a\n  BLOCKED  신고 — 메시지 신고 접수  HTTP 404 ROUTE_NOT_FOUND — dev 미배포\n[알림]\n  BLOCKED  알림 — 수신함 조회  HTTP 404 ROUTE_NOT_FOUND — dev 미배포\n\n흐름 결과 (8개 검사): PASS 5, BLOCKED 3, FAIL 0\n생성 데이터: startedAt 2026-11-04T13:51:52.987Z, expertMemberId 6c5e6a8f-7cdf-4522-8fe2-8fe0dc1c4eb0, cancelCustomerMemberId f786eca2-25b1-48ba-afaf-89523c36160a, flowCustomerMemberId d2918259-d1a7-4028-9022-ed0c91364ead, cancelLedgerId 2017f933-3dc7-4ae3-a5de-d46293597083, flowLedgerId 92ac1472-697e-40fb-915d-b54dc1e5827e, flowQuoteId b4c171e1-dbdc-42aa-a30c-91894c3e53f7, reportedMessageId 201470d6-2f0a-4d80-8b73-e86e10e32f5a\nEXIT=2"
+}

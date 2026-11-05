@@ -1,0 +1,138 @@
+{
+  "ws": "WS-72",
+  "task": "관리자 대시보드 (웹)",
+  "status": "DONE",
+  "worktree": "/Users/mintech-mac/hermes/dev-profile/shared/projects/wt-WS-72",
+  "branch": "ws/WS-72",
+  "baseCommit": "5bd1dc9",
+  "finishedAt": "2026-11-04 22:12 KST",
+  "summary": "운영 콘솔에 대시보드 탭을 추가하고 GET /v1/admin/stats?from=&to= 를 서버 집계로 구현했다. 지표는 기간 내 합의(거래) 수·완료 수·완료율·신고 수·신규 회원이며, 완료율은 거래 수와 같은 모집단(기간 내 requested_at 합의 중 COMPLETED)의 백분율(소수 1자리)을 서버가 계산해 내려준다. 날짜 경계는 Asia/Seoul 고정(+09:00)이고 to는 포함이며, from/to를 비우면 최근 7일이 기본값이고 추이(daily)는 기간의 마지막 최대 7일을 일별로 돌려준다. 화면은 지표 카드 4개 + 일별 거래 막대(표시 비율만 클라이언트, 값은 서버값 그대로) + 기간 필터(시작일·종료일)이며 로딩·빈 기간·오류·정상 4상태를 갖는다. 실제 loopback HTTP + 실제 PostgreSQL(마이그레이션 001~020 + WS-61 021)로 기간 A(2026-10-29~11-04) 3건/33.3%/신고 2/신규 2 와 기간 B(2026-10-01~10-31) 1건/100%/신고 1/신규 3 을 실측했고, 빌드된 콘솔을 Chrome(Playwright)으로 띄워 기간을 바꾸면 화면 숫자가 바뀌는 것까지 확인했다. AOS·iOS는 만들지 않았다: PLAN-WAVE10 공통 1이 'AOS·iOS 함께(WS-72만 웹)'로 이 레인을 웹 전용으로 명시적으로 예외 처리했고, 관리자 콘솔은 웹 전용 문서(admin.html)이며 모바일 관리자 화면은 승인된 기획·디자인이 없다(승인 없는 신규 화면을 임의로 만들지 않는다는 규칙). 자체 검증이며 독립 QA가 아니다.",
+  "platforms": {
+    "web": "IMPLEMENTED_AND_VERIFIED",
+    "android": "NOT_APPLICABLE — PLAN-WAVE10 공통 1이 WS-72만 웹으로 예외. 승인된 모바일 관리자 화면 기획·디자인 없음",
+    "ios": "NOT_APPLICABLE — 상동"
+  },
+  "changedFiles": [
+    "services/backend/src/admin.ts",
+    "services/backend/tests/admin-stats.integration.test.ts",
+    "services/backend/package.json",
+    "contracts/admin.v0.1.json",
+    "apps/web/src/api/generated.ts",
+    "apps/web/src/admin/api.ts",
+    "apps/web/src/admin/AdminApp.vue",
+    "apps/web/src/admin/main.ts",
+    "apps/web/tests/unit/admin-api.test.ts",
+    "tests/contract/ws27-contracts.test.ts",
+    "records/parallel-10/WS-72/RESULT.json"
+  ],
+  "implementation": {
+    "api": "GET /v1/admin/stats — admin scope 필수(requireAdminScope 재사용: adm_ 토큰 + 라이브 ADMIN role grant 재조회). 쿼리 from/to는 ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ 패턴 + 실재 날짜 검사(2026-02-31·2026-13-01 거부) + from<=to, 위반 시 400 INVALID_REQUEST. 두 번의 집계 쿼리: (1) 기간 합계 4개 스칼라 서브쿼리(agreements 2 + reports 1 + members 1), (2) generate_series로 만든 일자별 경계에 같은 서브쿼리를 붙인 daily. 일자 경계는 (d::timestamp AT TIME ZONE 'Asia/Seoul')로 계산해 +09:00 고정. 응답 { from, to, totals{ trades, completed, completionRate, reports, newMembers }, daily[{date,trades,completed,reports,newMembers}] } — completionRate는 0~100 백분율 1자리로 서버가 계산.",
+    "client": "apps/web/src/admin/api.ts의 stats()가 generated.ts의 adminStats 호출로 요청하고 응답을 런타임 검증한다(정수>=0, completionRate 0~100, 알 수 없는 값은 INVALID_RESPONSE). completionRate는 서버 값을 그대로 표시하며 클라이언트에서 완료/거래를 나누지 않는다.",
+    "ui": "AdminApp.vue에 '대시보드' 탭 추가(기본 진입 탭은 기존 회원 관리 유지 — 무관한 동작 변경 없음). 기간 필터(type=date 시작/종료 + 적용), 지표 카드 4개(거래 수·완료율·신고 수·신규 회원), 최근 7일 추이 막대 목록(일자·막대·값·완료/신고/신규), 안내 문구. 상태: 로딩(role=status) / 빈 기간(거래·신고·신규 0 → 안내) / 오류(role=alert + 다시 조회) / 정상. 403은 기존 전역 권한 패널, 401은 기존 세션 만료 경로를 그대로 사용. 색·간격은 design tokens(tokens.css의 --navy/--track/--muted/--border)만 사용하고, admin 문서가 토큰을 로드하지 않아 admin/main.ts에서 tokens.css를 import했다.",
+    "contract": "contracts/admin.v0.1.json에 adminStats operation 추가(querySchema는 핸들러 schema와 동일, 응답 스키마·오류 4종·KST/모집단 정의 notes 포함). scripts/generate-client.mjs 재실행으로 generated.ts 갱신(32 operations, 2회 실행 시 바이트 동일 확인). tests/contract/ws27-contracts.test.ts의 operation 총계 31→32 갱신.",
+    "tests": "unit: apps/web/tests/unit/admin-api.test.ts에 WS72 테스트 1개(기간 쿼리 전달, 빈 기간=서버 기본값, completionRate>100 응답 거부). integration: services/backend/tests/admin-stats.integration.test.ts 신규 4케이스(기간별 값 차이·KST 경계, 기본 최근 7일, 불가능/역전 기간 400, 스코프 401/403). package.json test:integration 체인에 등록."
+  },
+  "acceptanceCriteria": [
+    {
+      "criterion": "기간을 바꾸면 숫자가 바뀐다(API 실측)",
+      "result": "PASS",
+      "evidence": "실제 HTTP + 실제 PostgreSQL: A(2026-10-29~11-04) trades=3 completed=1 rate=33.3 reports=2 newMembers=2 daily=7, B(2026-10-01~10-31) trades=1 completed=1 rate=100 reports=1 newMembers=3. DB를 직접 센 값(3)과 API 값 일치. 빌드된 콘솔 화면에서도 기간 변경 시 카드 값이 3/33.3%/2/2 → 1/100%/1/3 으로 바뀜을 DOM에서 읽어 확인."
+    },
+    {
+      "criterion": "npm run typecheck && test:unit && build 통과 (apps/web)",
+      "result": "PASS",
+      "evidence": "typecheck(vue-tsc) 무오류, test:unit 233 pass/0 fail, build 성공(admin-*.js/css 산출)."
+    }
+  ],
+  "verification": [
+    {
+      "check": "웹 타입체크",
+      "command": "cd apps/web && npm run typecheck",
+      "result": "PASS",
+      "evidence": "vue-tsc --noEmit 오류 0."
+    },
+    {
+      "check": "웹 유닛 테스트",
+      "command": "cd apps/web && npm run test:unit",
+      "result": "PASS",
+      "evidence": "tests 233, pass 233, fail 0 (WS72 신규 테스트 포함)."
+    },
+    {
+      "check": "웹 빌드",
+      "command": "cd apps/web && npm run build",
+      "result": "PASS",
+      "evidence": "vite build 성공. dist/assets/admin-*.js 43.9kB, admin-*.css 7.9kB."
+    },
+    {
+      "check": "백엔드 타입체크",
+      "command": "cd services/backend && npm run check",
+      "result": "PASS",
+      "evidence": "tsc --noEmit 오류 0."
+    },
+    {
+      "check": "백엔드 유닛 테스트",
+      "command": "cd services/backend && npm test",
+      "result": "PASS",
+      "evidence": "tests 28, pass 28, fail 0."
+    },
+    {
+      "check": "계약 인벤토리/스키마 테스트",
+      "command": "node --test tests/contract/contract.test.ts tests/contract/oauth.test.ts tests/contract/ws27-contracts.test.ts tests/policy/metadata.test.ts",
+      "result": "PASS",
+      "evidence": "tests 68, pass 68, fail 0. 계약 operation 32개 = buildApp 등록 라우트 32개(양방향), adminStats querySchema가 핸들러 schema와 deepEqual."
+    },
+    {
+      "check": "generated client 재생성 멱등성",
+      "command": "node scripts/generate-client.mjs (2회) && diff",
+      "result": "PASS",
+      "evidence": "두 번째 실행 결과가 첫 결과와 바이트 동일(32 operations from 5 contracts)."
+    },
+    {
+      "check": "실제 API 실측 — 기간별 집계/기본값/오류/권한 (실제 PostgreSQL + 실제 HTTP)",
+      "command": "node <scratch>/ws72-verify.mjs (kgtest_ws72: 마이그레이션 001~020 + WS-61 021 적용, buildApp + app.listen(127.0.0.1) 후 fetch)",
+      "result": "PASS",
+      "evidence": "18/18 PASS. POST /v1/admin/session 201(adm_ 토큰 발급) → 기간 A 200 {3,1,33.3,2,2} daily 7일(10-29~11-04, 11-01에 2건) → 기간 B 200 {1,1,100,1,3} daily 7일(10-25~10-31) → 기본 호출 2026-10-29~2026-11-04 → from>to 400 INVALID_REQUEST → 2026-13-01 400 → days=7 400 → 회원 토큰 403 ADMIN_SESSION_REQUIRED → 무토큰 401 AUTH_REQUIRED. KST 11-04 23:30 신고가 11-04로 집계됨(UTC 11-04 14:30)."
+    },
+    {
+      "check": "통합 테스트(저장소 커밋본) — 실제 PostgreSQL",
+      "command": "cd services/backend && KG_TEST_DATABASE_URL=postgres://postgres@127.0.0.1:55432/kgtest_ws72 node --test tests/admin-stats.integration.test.ts",
+      "result": "PASS",
+      "evidence": "tests 4, pass 4, fail 0."
+    },
+    {
+      "check": "통합 테스트 가드 — kg_membership.reports 없는 DB",
+      "command": "KG_TEST_DATABASE_URL=.../kgtest_ws72_noreports node --test tests/admin-stats.integration.test.ts",
+      "result": "SKIP (설계된 skip)",
+      "evidence": "tests 4, skipped 4 (사유: 'kg_membership.reports (WS-61 migration 021) is not in this database'). 이 브랜치에는 021이 없어 이 DB에서는 엔드포인트가 500이므로, 거짓 PASS 대신 skip으로 드러낸다."
+    },
+    {
+      "check": "화면 실측 — 빌드 산출물 + 실제 API, Chrome(Playwright)",
+      "command": "VITE_API_BASE_URL=http://127.0.0.1:5599 npm run build → vite preview:4178 → node <scratch>/ws72-ui-check.mjs",
+      "result": "PASS",
+      "evidence": "dev 계정(slot 30, ADMIN) 로그인 → 대시보드 탭: 기간 2026-10-29~11-04 카드 '거래 수 3 / 완료율 33.3% 완료 1건 / 신고 수 2 / 신규 회원 2', 기간을 2026-10-01~10-31로 바꾸고 적용 → '거래 수 1 / 완료율 100% 완료 1건 / 신고 1 / 신규 회원 3'. 2025-01-01~01-07 → 빈 기간 안내 노출. stats 요청을 abort 시키면 role=alert 로 '서버에 연결하지 못했습니다…다시 조회' 표시(alert 1개). 화면 스크린샷 4장: records 밖 scratch 경로 ws72-dashboard-{a,b,empty,error}.png."
+    },
+    {
+      "check": "AOS·iOS 빌드",
+      "command": "-",
+      "result": "NOT_RUN",
+      "evidence": "WS-72는 PLAN-WAVE10 공통 1에서 웹 전용으로 예외 처리됨. 모바일 앱 코드 변경 없음."
+    },
+    {
+      "check": "dev 환경(https://api-dev-kimgosu.mintech.ai) 실거래",
+      "command": "-",
+      "result": "NOT_RUN",
+      "evidence": "이 카드의 수용 기준은 로컬 API 실측이며, dev 배포·push는 금지(원격 쓰기·커밋 금지). 검증은 loopback PostgreSQL + loopback HTTP로 수행."
+    }
+  ],
+  "dependencies": [
+    "kg_membership.reports (WS-61 / PLAN-WAVE8, 마이그레이션 021_reports_and_blocks.sql) — 이 브랜치 base(5bd1dc9)에는 없다. 신고 수 집계가 이 테이블을 읽으므로, 021이 없는 DB에서는 /v1/admin/stats 가 500 INTERNAL_ERROR 가 된다(0으로 속이지 않는다). 로컬 검증은 이 워크트리에 021 파일을 추가하지 않고, 검증용 DB(kgtest_ws72)에만 적용해 수행했다. 통합 테스트는 021 부재 시 skip으로 드러난다.",
+    "최종 머지 시 wave 8/9 레인과 admin.ts·admin.v0.1.json 이 겹칠 수 있다(WS-68이 /v1/admin/reports 를 추가). 이 레인은 admin.ts 끝에 stats 라우트 1개, 계약 operations 배열 앞쪽에 adminStats 1개만 추가해 충돌 면적을 최소화했다."
+  ],
+  "notes": [
+    "거래 1건 = 합의(agreements) 1건으로 정의했다. 완료율의 분모가 거래 수와 같아야 화면에서 두 카드가 같은 모집단을 말한다. 계약 notes에도 적었다.",
+    "from/to 를 비우면 서버가 최근 7일을 기본값으로 정하고 응답의 from/to를 화면이 입력칸에 되돌려 표시한다(클라이언트가 날짜를 만들지 않는다).",
+    "daily 는 기간의 마지막 최대 7일만 내려준다(장기간 필터에서 막대가 수십 개로 늘어나지 않게). 기간 합계는 from~to 전체다.",
+    "권한 결정은 기존 requireAdminScope 를 그대로 재사용했다(새 권한 로직 없음). 회원 목록/리뷰 화면의 동작·기본 탭은 바꾸지 않았다.",
+    "자체 검증이며 독립 QA가 아니다."
+  ]
+}

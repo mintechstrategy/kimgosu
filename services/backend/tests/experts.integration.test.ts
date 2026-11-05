@@ -56,7 +56,7 @@ const serviceBody = (overrides: Record<string, unknown> = {}) => ({
 });
 
 before(async () => {
-  await pool.query(`TRUNCATE kg_membership.expert_services, kg_membership.expert_profiles CASCADE`);
+  await pool.query(`TRUNCATE kg_membership.expert_services, kg_membership.expert_profiles, kg_membership.expert_availability_periods CASCADE`);
   await seedMember(expertA, '고수A', true);
   await seedMember(expertB, '고수B', true);
   await seedMember(customer, '고객C', false);
@@ -458,4 +458,94 @@ test('a service keeps up to five images in the given order and refuses more or f
   assert.deepEqual(cleared.json().images, []);
   assert.equal(cleared.json().imageKey, null);
   assert.equal(cleared.json().imageUrl, null);
+});
+
+const kstToday = async () =>
+  (await pool.query(`SELECT to_char((now() AT TIME ZONE 'Asia/Seoul')::date,'YYYY-MM-DD') AS day`)).rows[0].day as string;
+
+test('a vacation period marks the expert 휴가 중 in search and is removed again', async () => {
+  const today = await kstToday();
+  const created = await app.inject({
+    method: 'POST', url: '/v1/me/expert/availability/periods', headers: auth(expertA.token),
+    payload: { startsAt: today, endsAt: today, reason: '현장 일정' },
+  });
+  assert.equal(created.statusCode, 201, created.body);
+  assert.equal(created.json().startsAt, today);
+  assert.equal(created.json().endsAt, today);
+  assert.equal(created.json().reason, '현장 일정');
+
+  const stored = (await pool.query(
+    `SELECT to_char(starts_at,'YYYY-MM-DD') AS "startsAt", to_char(ends_at,'YYYY-MM-DD') AS "endsAt"
+       FROM kg_membership.expert_availability_periods WHERE id=$1`, [created.json().id],
+  )).rows[0];
+  assert.deepEqual(stored, { startsAt: today, endsAt: today });
+
+  const listed = await app.inject({ method: 'GET', url: '/v1/me/expert/availability/periods', headers: auth(expertA.token) });
+  assert.equal(listed.statusCode, 200);
+  assert.deepEqual(listed.json().periods.map((period: { id: string }) => period.id), [created.json().id]);
+
+  // 휴가 중이어도 노출은 유지되고 표시만 바뀐다.
+  const search = await app.inject({ method: 'GET', url: '/v1/experts?limit=50' });
+  const row = search.json().experts.find((expert: { expertId: string }) => expert.expertId === expertA.id);
+  assert.ok(row, '휴가 중인 고수도 검색 결과에 남아 있어야 한다');
+  assert.equal(row.onVacation, true);
+
+  const deleted = await app.inject({
+    method: 'DELETE', url: `/v1/me/expert/availability/periods/${created.json().id}`, headers: auth(expertA.token),
+  });
+  assert.equal(deleted.statusCode, 200, deleted.body);
+  assert.deepEqual(deleted.json(), { id: created.json().id });
+
+  const afterDelete = await app.inject({ method: 'GET', url: '/v1/experts?limit=50' });
+  assert.equal(afterDelete.json().experts.find((expert: { expertId: string }) => expert.expertId === expertA.id).onVacation, false);
+  const remaining = await app.inject({ method: 'GET', url: '/v1/me/expert/availability/periods', headers: auth(expertA.token) });
+  assert.deepEqual(remaining.json().periods, []);
+});
+
+test('a period outside today does not mark the expert as away', async () => {
+  const today = await kstToday();
+  const past = await pool.query(`SELECT to_char(($1::date - 3),'YYYY-MM-DD') AS day`, [today]);
+  const created = await app.inject({
+    method: 'POST', url: '/v1/me/expert/availability/periods', headers: auth(expertA.token),
+    payload: { startsAt: past.rows[0].day, endsAt: past.rows[0].day },
+  });
+  assert.equal(created.statusCode, 201, created.body);
+  const search = await app.inject({ method: 'GET', url: '/v1/experts?limit=50' });
+  assert.equal(search.json().experts.find((expert: { expertId: string }) => expert.expertId === expertA.id).onVacation, false);
+});
+
+test('an end day before the start day is a 400 and stores nothing', async () => {
+  const before = (await pool.query(`SELECT count(*)::int AS n FROM kg_membership.expert_availability_periods`)).rows[0].n;
+  const reversed = await app.inject({
+    method: 'POST', url: '/v1/me/expert/availability/periods', headers: auth(expertA.token),
+    payload: { startsAt: '2026-03-05', endsAt: '2026-03-04' },
+  });
+  assert.equal(reversed.statusCode, 400);
+  assert.equal(reversed.json().error.code, 'INVALID_PERIOD');
+
+  const impossible = await app.inject({
+    method: 'POST', url: '/v1/me/expert/availability/periods', headers: auth(expertA.token),
+    payload: { startsAt: '2026-02-30', endsAt: '2026-03-02' },
+  });
+  assert.equal(impossible.statusCode, 400);
+
+  const after = (await pool.query(`SELECT count(*)::int AS n FROM kg_membership.expert_availability_periods`)).rows[0].n;
+  assert.equal(after, before);
+});
+
+test('a period belongs to its owner: another member cannot delete it', async () => {
+  const period = (await pool.query(
+    `SELECT id FROM kg_membership.expert_availability_periods WHERE member_id=$1 ORDER BY created_at LIMIT 1`,
+    [expertA.id],
+  )).rows[0];
+  assert.ok(period);
+  const foreign = await app.inject({
+    method: 'DELETE', url: `/v1/me/expert/availability/periods/${period.id}`, headers: auth(expertB.token),
+  });
+  assert.equal(foreign.statusCode, 404);
+  assert.equal(foreign.json().error.code, 'PERIOD_NOT_FOUND');
+  const still = (await pool.query(
+    `SELECT 1 FROM kg_membership.expert_availability_periods WHERE id=$1`, [period.id],
+  )).rows[0];
+  assert.ok(still);
 });

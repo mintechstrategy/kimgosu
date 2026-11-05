@@ -4,6 +4,7 @@ import type { Sql } from './app.ts';
 import type { Authenticate } from './auth.ts';
 import { ApiError } from './security.ts';
 import { audit, fail, requireActiveMember } from './kernel.ts';
+import { notify } from './notifications.ts';
 
 const idSchema = { type: 'string', format: 'uuid' };
 const params = { type: 'object', required: ['id'], additionalProperties: false, properties: { id: idSchema } };
@@ -53,7 +54,7 @@ export function registerReviewRoutes(app: FastifyInstance, db: Sql, authenticate
     const auth = await requireMember(request, reply); if (!auth) return;
     return db.transaction(async sql => {
       const ledger = (await sql.query(
-        `SELECT expert_member_id AS "expertMemberId", customer_member_id AS "customerMemberId"
+        `SELECT expert_member_id AS "expertMemberId", customer_member_id AS "customerMemberId", status
            FROM kg_membership.ledgers WHERE id=$1 FOR UPDATE`,
         [request.params.id],
       )).rows[0];
@@ -62,6 +63,8 @@ export function registerReviewRoutes(app: FastifyInstance, db: Sql, authenticate
       const pair = [String(ledger.expertMemberId), String(ledger.customerMemberId)];
       const me = String(auth.memberId);
       if (!pair.includes(me)) throw new ApiError(403, 'NOT_A_PARTICIPANT');
+      // WS-71: 취소된 거래에는 후기를 쓸 수 없다. 완료 이력이 남아 있어도 마찬가지다.
+      if (ledger.status === 'CANCELLED') throw new ApiError(409, 'LEDGER_CANCELLED');
       const targetId = pair.find(id => id !== me)!;
 
       const completed = (await sql.query(
@@ -97,6 +100,12 @@ export function registerReviewRoutes(app: FastifyInstance, db: Sql, authenticate
 
       await audit(sql, me, 'REVIEW_CREATED', 'review', String(review.id), undefined,
         { ledgerId: request.params.id, targetId, rating: request.body.rating });
+      await notify(sql, {
+        memberId: targetId, kind: 'REVIEW',
+        title: '새 후기가 등록되었습니다',
+        body: '받은 후기를 확인해보세요.',
+        ledgerId: request.params.id,
+      });
       return reply.code(201).send(review);
     });
   });

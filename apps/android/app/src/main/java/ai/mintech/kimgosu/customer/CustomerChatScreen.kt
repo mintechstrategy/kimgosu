@@ -9,6 +9,7 @@ import ai.mintech.kimgosu.expert.ExpertCopy
 import ai.mintech.kimgosu.expert.ExpertFailure
 import ai.mintech.kimgosu.expert.ExpertLoading
 import ai.mintech.kimgosu.ui.DesignTokens
+import ai.mintech.kimgosu.ui.RemoteImage
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -19,21 +20,23 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -48,8 +51,6 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.IOException
-import java.net.HttpURLConnection
-import java.net.URL
 
 data class CustomerMessage(
     val id: String,
@@ -74,14 +75,50 @@ data class CustomerQuote(
     val createdAt: String,
 )
 
+/**
+ * WS-71 거래 취소 상태. 서버가 유일한 근거이며 화면은 그대로 표시만 한다.
+ * requestedByMe가 true면 내가 요청한 것이고, false면 상대가 요청한 것이다.
+ */
+data class CustomerCancellation(
+    val status: String,
+    val requestedByMe: Boolean?,
+    val reasonCode: String?,
+    val detail: String?,
+    val requestedAt: String?,
+    val cancelledAt: String?,
+) {
+    companion object {
+        fun decode(json: JSONObject) = CustomerCancellation(
+            status = json.getString("status"),
+            requestedByMe = if (json.isNull("requestedByMe")) null else json.getBoolean("requestedByMe"),
+            reasonCode = if (json.isNull("reasonCode")) null else json.optString("reasonCode"),
+            detail = if (json.isNull("detail")) null else json.optString("detail"),
+            requestedAt = if (json.isNull("requestedAt")) null else json.optString("requestedAt"),
+            cancelledAt = if (json.isNull("cancelledAt")) null else json.optString("cancelledAt"),
+        )
+    }
+}
+
+/** 서버가 허용하는 사유 코드(ledger.ts CANCEL_REASON_CODES)와 화면 문구. */
+internal val CANCEL_REASONS = listOf(
+    "SCHEDULE" to "일정이 맞지 않음",
+    "PRICE" to "금액·조건이 맞지 않음",
+    "SCOPE_CHANGED" to "작업 범위가 바뀜",
+    "OTHER" to "기타",
+)
+
+internal fun cancelReasonLabel(code: String?): String =
+    CANCEL_REASONS.firstOrNull { it.first == code }?.second ?: "사유 미기록"
+
 sealed interface CustomerChatState {
     data object Loading : CustomerChatState
-    data class Empty(val ownId: String) : CustomerChatState
+    data class Empty(val ownId: String, val cancellation: CustomerCancellation) : CustomerChatState
     data class Failed(val network: Boolean, val code: String) : CustomerChatState
     data class Ready(
         val ownId: String,
         val messages: List<CustomerMessage>,
         val quotes: List<CustomerQuote>,
+        val cancellation: CustomerCancellation,
     ) : CustomerChatState
 }
 
@@ -107,8 +144,11 @@ class CustomerChatModel(
             val me = transport.request("GET", "/v1/me", token).getString("id")
             val messages = decodeMessages(transport.request("GET", "/v1/ledgers/" + enc(ledgerId) + "/messages?limit=50", token))
             val quotes = decodeQuotes(transport.request("GET", "/v1/ledgers/" + enc(ledgerId) + "/quotes", token))
-            state = if (messages.isEmpty() && quotes.isEmpty()) CustomerChatState.Empty(me)
-            else CustomerChatState.Ready(me, messages, quotes)
+            val cancellation = CustomerCancellation.decode(
+                transport.request("GET", "/v1/ledgers/" + enc(ledgerId) + "/cancel", token))
+            state = if (messages.isEmpty() && quotes.isEmpty() && cancellation.status == "ACTIVE")
+                CustomerChatState.Empty(me, cancellation)
+            else CustomerChatState.Ready(me, messages, quotes, cancellation)
         } catch (e: CancellationException) {
             throw e
         } catch (e: AuthFailure) {
@@ -190,6 +230,20 @@ class CustomerChatModel(
             JSONObject().put("expectedVersion", quote.version))
     }
 
+    /**
+     * 취소 요청과 수락은 같은 엔드포인트다. 이미 요청이 있으면 서버가 이 호출을
+     * 상대의 수락으로 처리하므로 클라이언트는 상태를 보내지 않는다.
+     */
+    suspend fun requestCancel(ledgerId: String, reasonCode: String, detail: String) = mutate(ledgerId) {
+        val payload = JSONObject().put("reasonCode", reasonCode)
+        if (detail.isNotBlank()) payload.put("detail", detail.trim())
+        transport.request("POST", "/v1/ledgers/" + enc(ledgerId) + "/cancel", it, payload)
+    }
+
+    suspend fun acceptCancel(ledgerId: String) = mutate(ledgerId) {
+        transport.request("POST", "/v1/ledgers/" + enc(ledgerId) + "/cancel", it)
+    }
+
     private suspend fun mutate(ledgerId: String, call: suspend (String) -> JSONObject) {
         if (actionBusy) return
         val token = runCatching { sessions.read() }.getOrNull()
@@ -211,6 +265,11 @@ class CustomerChatModel(
                 "ALREADY_CONFIRMED" -> "이미 완료 확인을 했습니다. 상대 확인을 기다리는 중입니다."
                 "VERSION_CONFLICT" -> "다른 변경이 먼저 반영되었습니다. 새로고침 후 다시 시도해주세요."
                 "QUOTE_EXPIRED" -> "견적 유효기간이 지났습니다."
+                "LEDGER_COMPLETED" -> "완료된 거래는 취소할 수 없습니다."
+                "CANCEL_ALREADY_REQUESTED" -> "이미 취소를 요청했습니다. 상대 수락을 기다리는 중입니다."
+                "ALREADY_CANCELLED" -> "이미 취소된 거래입니다."
+                "LEDGER_CANCELLED" -> "취소된 거래에는 후기를 작성할 수 없습니다."
+                "REASON_REQUIRED" -> "취소 사유를 선택해주세요."
                 else -> if (e.status == 401) "세션이 만료되었습니다. 다시 로그인해주세요." else "요청을 처리하지 못했습니다. (${e.code})"
             }
         } catch (_: IOException) {
@@ -327,6 +386,8 @@ fun CustomerChatScreen(
         onPickPhoto = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
         onAccept = { quote -> scope.launch { model.respondQuote(ledgerId, quote, "accept") } },
         onComplete = { quote -> scope.launch { model.confirmComplete(ledgerId, quote) } },
+        onRequestCancel = { reason, detail -> scope.launch { model.requestCancel(ledgerId, reason, detail) } },
+        onAcceptCancel = { scope.launch { model.acceptCancel(ledgerId) } },
         onWriteReview = { onWriteReview(ledgerId, expertNickname) },
         onBack = onBack,
     )
@@ -344,10 +405,13 @@ fun CustomerChatContent(
     onPickPhoto: () -> Unit,
     onAccept: (CustomerQuote) -> Unit,
     onComplete: (CustomerQuote) -> Unit,
+    onRequestCancel: (String, String) -> Unit,
+    onAcceptCancel: () -> Unit,
     onWriteReview: () -> Unit,
     onBack: () -> Unit,
 ) {
     var draft by remember { mutableStateOf("") }
+    var cancelDialog by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().background(Color.White).safeDrawingPadding().testTag("customer-chat")) {
         Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
@@ -360,12 +424,15 @@ fun CustomerChatContent(
             CustomerChatState.Loading -> ExpertLoading()
             is CustomerChatState.Failed -> ExpertFailure(state.network, state.code, onRetry)
             is CustomerChatState.Empty -> {
+                CancelCard(state.cancellation, actionBusy, onOpen = { cancelDialog = true }, onAccept = onAcceptCancel)
                 EmptyMessages(Modifier.weight(1f))
                 Composer(draft, sending, onDraft = { draft = it }, onSend = { text -> onSend(text); draft = "" }, onPickPhoto = onPickPhoto)
             }
             is CustomerChatState.Ready -> {
+                val cancelled = state.cancellation.status == "CANCELLED"
+                CancelCard(state.cancellation, actionBusy, onOpen = { cancelDialog = true }, onAccept = onAcceptCancel)
                 val quote = CustomerChatModel.activeQuote(state.quotes)
-                if (quote != null) QuoteCard(quote, actionBusy, onAccept, onComplete, onWriteReview)
+                if (quote != null) QuoteCard(quote, actionBusy, cancelled, onAccept, onComplete, onWriteReview)
                 actionError?.let { ExpertCopy(it, Modifier.padding(horizontal = 20.dp, vertical = 6.dp).testTag("customer-chat-error"), 13) }
                 if (state.messages.isEmpty()) {
                     EmptyMessages(Modifier.weight(1f))
@@ -379,7 +446,95 @@ fun CustomerChatContent(
                 Composer(draft, sending, onDraft = { draft = it }, onSend = { text -> onSend(text); draft = "" }, onPickPhoto = onPickPhoto)
             }
         }
+        if (cancelDialog) {
+            CancelRequestDialog(
+                busy = actionBusy,
+                onDismiss = { cancelDialog = false },
+                onSubmit = { reason, detail -> cancelDialog = false; onRequestCancel(reason, detail) })
+        }
     }
+}
+
+/** 취소 요청 카드. 상태 4종(요청 가능·요청됨·상대 요청·취소됨)을 서버 값으로만 그린다. */
+@Composable
+private fun CancelCard(
+    cancellation: CustomerCancellation,
+    busy: Boolean,
+    onOpen: () -> Unit,
+    onAccept: () -> Unit,
+) {
+    Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp).fillMaxWidth()
+        .border(1.dp, if (cancellation.status == "CANCELLED") DesignTokens.border else DesignTokens.navy, RoundedCornerShape(6.dp))
+        .padding(14.dp).testTag("customer-cancel")) {
+        when (cancellation.status) {
+            "CANCELLED" -> {
+                ExpertCopy("취소된 거래입니다", size = 15, bold = true)
+                ExpertCopy("사유: " + cancelReasonLabel(cancellation.reasonCode), Modifier.padding(top = 4.dp), 13, color = DesignTokens.muted)
+                cancellation.detail?.takeIf { it.isNotBlank() }?.let {
+                    ExpertCopy(it, Modifier.padding(top = 2.dp), 13, color = DesignTokens.muted)
+                }
+            }
+            "CANCEL_REQUESTED" -> {
+                val mine = cancellation.requestedByMe == true
+                ExpertCopy(if (mine) "취소를 요청했습니다" else "상대가 취소를 요청했습니다", size = 15, bold = true)
+                ExpertCopy("사유: " + cancelReasonLabel(cancellation.reasonCode), Modifier.padding(top = 4.dp), 13, color = DesignTokens.muted)
+                cancellation.detail?.takeIf { it.isNotBlank() }?.let {
+                    ExpertCopy(it, Modifier.padding(top = 2.dp), 13, color = DesignTokens.muted)
+                }
+                if (mine) {
+                    ExpertCopy("상대 수락을 기다리는 중입니다.", Modifier.padding(top = 8.dp).testTag("customer-cancel-waiting"), 13, color = DesignTokens.muted)
+                } else {
+                    Button(onClick = onAccept, enabled = !busy,
+                        modifier = Modifier.padding(top = 10.dp).fillMaxWidth().heightIn(min = 48.dp).testTag("customer-cancel-accept"),
+                        colors = ButtonDefaults.buttonColors(containerColor = DesignTokens.navy)) {
+                        ExpertCopy(if (busy) "처리 중…" else "취소 수락", color = Color.White, weight = FontWeight.SemiBold)
+                    }
+                }
+            }
+            else -> TextButton(onClick = onOpen, enabled = !busy,
+                modifier = Modifier.heightIn(min = 48.dp).testTag("customer-cancel-open")) {
+                ExpertCopy("거래 취소", weight = FontWeight.SemiBold, color = DesignTokens.navy)
+            }
+        }
+    }
+}
+
+/** 사유 선택. 서버가 허용한 코드만 보내고 직접 입력한 사유는 detail로만 전달한다. */
+@Composable
+private fun CancelRequestDialog(busy: Boolean, onDismiss: () -> Unit, onSubmit: (String, String) -> Unit) {
+    var reason by remember { mutableStateOf(CANCEL_REASONS.first().first) }
+    var detail by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { ExpertCopy("거래 취소 요청", size = 19, bold = true) },
+        text = {
+            Column {
+                ExpertCopy("사유를 선택해주세요.", size = 13, color = DesignTokens.muted)
+                CANCEL_REASONS.forEach { (code, label) ->
+                    Row(Modifier.padding(top = 6.dp).fillMaxWidth().heightIn(min = 44.dp)
+                        .clickable { reason = code }.padding(horizontal = 4.dp, vertical = 10.dp).testTag("customer-cancel-reason-$code"),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(selected = reason == code, onClick = { reason = code })
+                        ExpertCopy(label, Modifier.padding(start = 4.dp), 14)
+                    }
+                }
+                OutlinedTextField(value = detail, onValueChange = { if (it.length <= 500) detail = it },
+                    modifier = Modifier.padding(top = 8.dp).fillMaxWidth().testTag("customer-cancel-detail"),
+                    placeholder = { Text("상세 사유 (선택)", fontSize = 13.sp) },
+                    textStyle = TextStyle(fontFamily = ai.mintech.kimgosu.expert.expertFont(), fontSize = 13.sp, color = DesignTokens.navy),
+                    shape = RoundedCornerShape(6.dp), maxLines = 3)
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onSubmit(reason, detail) }, enabled = !busy,
+                modifier = Modifier.heightIn(min = 48.dp).testTag("customer-cancel-submit")) {
+                ExpertCopy("취소 요청", weight = FontWeight.SemiBold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) { ExpertCopy("닫기") }
+        },
+    )
 }
 
 @Composable
@@ -436,32 +591,21 @@ private fun MessageBubble(message: CustomerMessage, mine: Boolean) {
 /** 원본 비율을 유지한다. 서버가 준 픽셀 크기가 없으면 고정 높이로만 표시한다. */
 @Composable
 private fun MessageImage(url: String, width: Int?, height: Int?, last: Boolean) {
-    var bitmap by remember(url) { mutableStateOf<Bitmap?>(null) }
-    LaunchedEffect(url) {
-        bitmap = withContext(Dispatchers.IO) {
-            runCatching {
-                val connection = URL(url).openConnection() as HttpURLConnection
-                try {
-                    connection.connectTimeout = 8000; connection.readTimeout = 8000
-                    if (connection.responseCode !in 200..299) return@runCatching null
-                    connection.inputStream.use { BitmapFactory.decodeStream(it) }
-                } finally { connection.disconnect() }
-            }.getOrNull()
-        }
-    }
-    val shape = RoundedCornerShape(6.dp)
     val ratio = if (width != null && height != null && width > 0 && height > 0) width.toFloat() / height else null
-    Box(Modifier.padding(bottom = if (last) 0.dp else 6.dp).widthIn(max = 220.dp)
-        .then(if (ratio != null) Modifier.aspectRatio(ratio) else Modifier.height(160.dp))
-        .background(DesignTokens.soft, shape).testTag("customer-message-image")) {
-        bitmap?.let { Image(it.asImageBitmap(), null, Modifier.fillMaxWidth(), contentScale = ContentScale.Fit) }
-    }
+    RemoteImage(
+        url,
+        Modifier.padding(bottom = if (last) 0.dp else 6.dp).widthIn(max = 220.dp)
+            .then(if (ratio != null) Modifier.aspectRatio(ratio) else Modifier.height(160.dp))
+            .testTag("customer-message-image"),
+        contentScale = ContentScale.Fit,
+    )
 }
 
 @Composable
 private fun QuoteCard(
     quote: CustomerQuote,
     busy: Boolean,
+    cancelled: Boolean,
     onAccept: (CustomerQuote) -> Unit,
     onComplete: (CustomerQuote) -> Unit,
     onWriteReview: () -> Unit,
@@ -475,6 +619,8 @@ private fun QuoteCard(
         }
         if (quote.message.isNotBlank()) ExpertCopy(quote.message, Modifier.padding(top = 6.dp), 13, color = DesignTokens.muted)
         when {
+            cancelled -> ExpertCopy("취소된 거래입니다. 견적을 더 진행할 수 없습니다.",
+                Modifier.padding(top = 10.dp).testTag("customer-quote-cancelled"), 13, color = DesignTokens.muted)
             quote.effectiveStatus == "PROPOSED" -> Button(onClick = { onAccept(quote) }, enabled = !busy,
                 modifier = Modifier.padding(top = 10.dp).fillMaxWidth().heightIn(min = 48.dp).testTag("customer-quote-accept"),
                 colors = ButtonDefaults.buttonColors(containerColor = DesignTokens.navy)) {

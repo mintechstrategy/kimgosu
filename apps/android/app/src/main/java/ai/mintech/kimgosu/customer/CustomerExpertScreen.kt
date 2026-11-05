@@ -8,14 +8,13 @@ import ai.mintech.kimgosu.expert.ExpertCopy
 import ai.mintech.kimgosu.expert.ExpertFailure
 import ai.mintech.kimgosu.expert.ExpertLoading
 import ai.mintech.kimgosu.ui.DesignTokens
-import android.graphics.BitmapFactory
-import androidx.compose.foundation.Image
+import ai.mintech.kimgosu.ui.RemoteImage
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.TextButton
@@ -23,20 +22,14 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.IOException
-import java.net.HttpURLConnection
-import java.net.URL
 
 data class CustomerServiceItem(
     val id: String,
@@ -84,10 +77,13 @@ class CustomerExpertModel(
 ) {
     var state by mutableStateOf<CustomerExpertState>(CustomerExpertState.Loading); private set
     var start by mutableStateOf<CustomerStartState>(CustomerStartState.Idle); private set
+    var loadingMoreReviews by mutableStateOf(false); private set
+    var reviewsMoreFailed by mutableStateOf(false); private set
 
     suspend fun load(expertId: String) {
         state = CustomerExpertState.Loading
         start = CustomerStartState.Idle
+        reviewsMoreFailed = false
         try {
             val detail = decodeDetail(transport.request("GET", "/v1/experts/" + enc(expertId), null, null))
             val reviews = runCatching { transport.request("GET", "/v1/experts/" + enc(expertId) + "/reviews?limit=20", null, null) }
@@ -110,6 +106,26 @@ class CustomerExpertModel(
             state = CustomerExpertState.Failed(network = true, code = "NETWORK_UNAVAILABLE")
         } catch (_: Exception) {
             state = CustomerExpertState.Failed(network = false, code = "INVALID_API_RESPONSE")
+        }
+    }
+
+    /** 서버가 준 offset 다음 후기부터 붙인다. 이미 받은 후기는 다시 요청하지 않는다. */
+    suspend fun loadMoreReviews(expertId: String) {
+        val current = state as? CustomerExpertState.Ready ?: return
+        if (loadingMoreReviews || current.detail.reviews.size >= current.detail.reviewCount) return
+        loadingMoreReviews = true
+        reviewsMoreFailed = false
+        try {
+            val json = transport.request("GET",
+                "/v1/experts/" + enc(expertId) + "/reviews?limit=20&offset=" + current.detail.reviews.size, null, null)
+            val latest = state as? CustomerExpertState.Ready ?: return
+            state = latest.copy(detail = latest.detail.copy(reviews = latest.detail.reviews + decodeReviews(json)))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            reviewsMoreFailed = true
+        } finally {
+            loadingMoreReviews = false
         }
     }
 
@@ -195,6 +211,9 @@ fun CustomerExpertScreen(expertId: String, onBack: () -> Unit, onStartChat: (Str
         state = model.state,
         start = model.start,
         onRetry = { scope.launch { model.load(expertId) } },
+        onLoadMoreReviews = { scope.launch { model.loadMoreReviews(expertId) } },
+        loadingMoreReviews = model.loadingMoreReviews,
+        reviewsMoreFailed = model.reviewsMoreFailed,
         onStartDeal = {
             val nickname = (model.state as? CustomerExpertState.Ready)?.detail?.nickname.orEmpty()
             scope.launch { model.startDeal(expertId) { ledgerId -> onStartChat(ledgerId, nickname) } }
@@ -210,6 +229,9 @@ fun CustomerExpertContent(
     onRetry: () -> Unit,
     onStartDeal: () -> Unit,
     onBack: () -> Unit,
+    loadingMoreReviews: Boolean = false,
+    reviewsMoreFailed: Boolean = false,
+    onLoadMoreReviews: () -> Unit = {},
 ) {
     Column(Modifier.fillMaxSize().background(Color.White).safeDrawingPadding().testTag("customer-expert")) {
         Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -220,43 +242,58 @@ fun CustomerExpertContent(
             CustomerExpertState.Loading -> ExpertLoading()
             is CustomerExpertState.Empty -> Column(Modifier.padding(20.dp)) { ExpertCopy(state.message, color = DesignTokens.muted) }
             is CustomerExpertState.Failed -> ExpertFailure(state.network, state.code, onRetry)
-            is CustomerExpertState.Ready -> Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
-                ExpertCopy(state.detail.nickname.ifBlank { "고수" }, Modifier.padding(top = 8.dp), 22, bold = true)
-                val meta = listOf(state.detail.activityRegion).filter { it.isNotBlank() }
-                if (meta.isNotEmpty()) ExpertCopy(meta.joinToString(" · "), Modifier.padding(top = 4.dp), 13, color = DesignTokens.muted)
-                if (state.detail.introduction.isNotBlank()) {
-                    ExpertCopy("소개", Modifier.padding(top = 22.dp), 17, bold = true)
-                    ExpertCopy(state.detail.introduction, Modifier.padding(top = 8.dp), 14)
+            is CustomerExpertState.Ready -> LazyColumn(Modifier.weight(1f).padding(horizontal = 20.dp)) {
+                item {
+                    ExpertCopy(state.detail.nickname.ifBlank { "고수" }, Modifier.padding(top = 8.dp), 22, bold = true)
+                    val meta = listOf(state.detail.activityRegion).filter { it.isNotBlank() }
+                    if (meta.isNotEmpty()) ExpertCopy(meta.joinToString(" · "), Modifier.padding(top = 4.dp), 13, color = DesignTokens.muted)
+                    if (state.detail.introduction.isNotBlank()) {
+                        ExpertCopy("소개", Modifier.padding(top = 22.dp), 17, bold = true)
+                        ExpertCopy(state.detail.introduction, Modifier.padding(top = 8.dp), 14)
+                    }
+                    if (state.detail.career.isNotBlank()) {
+                        ExpertCopy("경력", Modifier.padding(top = 20.dp), 17, bold = true)
+                        ExpertCopy(state.detail.career, Modifier.padding(top = 8.dp), 14)
+                    }
+                    ExpertCopy("서비스", Modifier.padding(top = 22.dp), 17, bold = true)
                 }
-                if (state.detail.career.isNotBlank()) {
-                    ExpertCopy("경력", Modifier.padding(top = 20.dp), 17, bold = true)
-                    ExpertCopy(state.detail.career, Modifier.padding(top = 8.dp), 14)
-                }
-                ExpertCopy("서비스", Modifier.padding(top = 22.dp), 17, bold = true)
                 if (state.detail.services.isEmpty()) {
-                    ExpertCopy("등록된 서비스가 없습니다.", Modifier.padding(top = 8.dp), 13, color = DesignTokens.muted)
+                    item { ExpertCopy("등록된 서비스가 없습니다.", Modifier.padding(top = 8.dp), 13, color = DesignTokens.muted) }
                 } else {
-                    state.detail.services.forEach { service -> ServiceRow(service) }
+                    items(state.detail.services, key = { it.id }) { service -> ServiceRow(service) }
                 }
-                ExpertCopy("후기", Modifier.padding(top = 22.dp), 17, bold = true)
-                if (state.reviewsUnavailable) {
-                    ExpertCopy("후기를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.", Modifier.padding(top = 8.dp), 13, color = DesignTokens.muted)
-                } else if (state.detail.reviews.isEmpty()) {
-                    ExpertCopy("아직 후기가 없습니다.", Modifier.padding(top = 8.dp).fillMaxWidth()
-                        .border(1.dp, DesignTokens.border, RoundedCornerShape(6.dp)).padding(16.dp).testTag("customer-review-empty"),
-                        13, color = DesignTokens.muted)
-                } else {
-                    val average = state.detail.reviewAverage
-                    ExpertCopy("평점 " + (average?.let { String.format(java.util.Locale.KOREA, "%.1f", it) } ?: "-") +
-                        " · 후기 ${state.detail.reviewCount}개", Modifier.padding(top = 8.dp).testTag("customer-review-summary"), 13, color = DesignTokens.muted)
-                    state.detail.reviews.forEach { review -> ReviewRow(review) }
+                item {
+                    ExpertCopy("후기", Modifier.padding(top = 22.dp), 17, bold = true)
+                    if (state.reviewsUnavailable) {
+                        ExpertCopy("후기를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.", Modifier.padding(top = 8.dp), 13, color = DesignTokens.muted)
+                    } else if (state.detail.reviews.isEmpty()) {
+                        ExpertCopy("아직 후기가 없습니다.", Modifier.padding(top = 8.dp).fillMaxWidth()
+                            .border(1.dp, DesignTokens.border, RoundedCornerShape(6.dp)).padding(16.dp).testTag("customer-review-empty"),
+                            13, color = DesignTokens.muted)
+                    } else {
+                        val average = state.detail.reviewAverage
+                        ExpertCopy("평점 " + (average?.let { String.format(java.util.Locale.KOREA, "%.1f", it) } ?: "-") +
+                            " · 후기 ${state.detail.reviewCount}개", Modifier.padding(top = 8.dp).testTag("customer-review-summary"), 13, color = DesignTokens.muted)
+                    }
                 }
-                Button(onClick = onStartDeal, enabled = start !is CustomerStartState.Busy,
-                    modifier = Modifier.padding(top = 24.dp, bottom = 24.dp).fillMaxWidth().heightIn(min = 50.dp).testTag("customer-start-deal"),
-                    colors = ButtonDefaults.buttonColors(containerColor = DesignTokens.navy)) {
-                    ExpertCopy(if (start is CustomerStartState.Busy) "거래를 시작하는 중…" else "거래 시작", color = Color.White, weight = FontWeight.SemiBold)
+                items(state.detail.reviews, key = { it.id }) { review -> ReviewRow(review) }
+                if (state.detail.reviews.size < state.detail.reviewCount) {
+                    item("reviews-more") {
+                        TextButton(onClick = onLoadMoreReviews, enabled = !loadingMoreReviews,
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("customer-reviews-more")) {
+                            ExpertCopy(if (loadingMoreReviews) "불러오는 중…" else if (reviewsMoreFailed) "후기를 더 불러오지 못했습니다. 다시 시도" else "후기 더 보기",
+                                weight = FontWeight.SemiBold)
+                        }
+                    }
                 }
-                (start as? CustomerStartState.Failed)?.let { ExpertCopy(it.message, Modifier.padding(bottom = 20.dp).testTag("customer-start-error"), 13) }
+                item {
+                    Button(onClick = onStartDeal, enabled = start !is CustomerStartState.Busy,
+                        modifier = Modifier.padding(top = 24.dp, bottom = 24.dp).fillMaxWidth().heightIn(min = 50.dp).testTag("customer-start-deal"),
+                        colors = ButtonDefaults.buttonColors(containerColor = DesignTokens.navy)) {
+                        ExpertCopy(if (start is CustomerStartState.Busy) "거래를 시작하는 중…" else "거래 시작", color = Color.White, weight = FontWeight.SemiBold)
+                    }
+                    (start as? CustomerStartState.Failed)?.let { ExpertCopy(it.message, Modifier.padding(bottom = 20.dp).testTag("customer-start-error"), 13) }
+                }
             }
         }
     }
@@ -266,7 +303,7 @@ fun CustomerExpertContent(
 private fun ServiceRow(service: CustomerServiceItem) {
     Column(Modifier.padding(top = 8.dp).fillMaxWidth().border(1.dp, DesignTokens.border, RoundedCornerShape(6.dp)).padding(12.dp)) {
         service.imageUrl?.let { url ->
-            RemoteThumb(url, Modifier.fillMaxWidth().height(160.dp).background(DesignTokens.soft, RoundedCornerShape(4.dp)))
+            RemoteImage(url, Modifier.fillMaxWidth().height(160.dp))
         }
         ExpertCopy(service.title.ifBlank { service.category }, Modifier.padding(top = 8.dp), 15, bold = true)
         val meta = buildList {
@@ -285,21 +322,3 @@ private fun ReviewRow(review: CustomerPublicReview) {
     }
 }
 
-/** 서버가 imageUrl을 줄 때만 표시한다. 이미지 자체는 공개 URL에서 읽고 업무 데이터로 저장하지 않는다. */
-@Composable
-private fun RemoteThumb(url: String, modifier: Modifier) {
-    var bitmap by remember(url) { mutableStateOf<android.graphics.Bitmap?>(null) }
-    LaunchedEffect(url) {
-        bitmap = withContext(Dispatchers.IO) {
-            runCatching {
-                val connection = URL(url).openConnection() as HttpURLConnection
-                try {
-                    connection.connectTimeout = 8000; connection.readTimeout = 8000
-                    if (connection.responseCode !in 200..299) return@runCatching null
-                    connection.inputStream.use { BitmapFactory.decodeStream(it) }
-                } finally { connection.disconnect() }
-            }.getOrNull()
-        }
-    }
-    bitmap?.let { Image(it.asImageBitmap(), null, modifier, contentScale = ContentScale.Crop) }
-}

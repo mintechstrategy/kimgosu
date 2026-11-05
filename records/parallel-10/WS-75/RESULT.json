@@ -1,0 +1,187 @@
+{
+  "ws": "WS-75",
+  "task": "알림 확장 — 종류별 필터(견적/완료/후기/신고), 모두 읽음, 알림함 상단 필터 칩, 서버 값 배지 (AOS+iOS)",
+  "status": "DONE",
+  "worktree": "/Users/mintech-mac/hermes/dev-profile/shared/projects/wt-WS-75",
+  "baseCommit": "5bd1dc9",
+  "branch": "ws/WS-75",
+  "summary": "알림함 저장소(마이그레이션 021)와 GET /v1/notifications?kind=, POST /v1/notifications/read-all을 추가하고, 견적 제시·거래 완료·후기 등록·신고(후기 가림) 시점에 알림 행을 남기도록 연결했다. AOS는 notifications/NotificationsScreen.kt(필터 칩·모두 읽음·상태 4종·알림 아이콘 배지), iOS는 NotificationsView.swift(같은 4종 상태·칩·배지)를 추가했다. 실제 PostgreSQL(kgws75, 001~021 적용)에서 통합 테스트 7건 통과, 루프백 실제 HTTP로 필터·모두 읽음·배지 0을 실측했고 두 앱 빌드 성공. 시뮬레이터/에뮬레이터 실행과 dev API 실측은 하지 않았다(NOT_RUN).",
+  "changedFiles": [
+    "services/backend/migrations/021_notifications.sql",
+    "services/backend/src/notifications.ts",
+    "services/backend/src/app.ts",
+    "services/backend/src/quotes.ts",
+    "services/backend/src/ledger.ts",
+    "services/backend/src/reviews.ts",
+    "services/backend/src/admin.ts",
+    "services/backend/tests/notifications.integration.test.ts",
+    "services/backend/package.json",
+    "tests/contract/ws27-contracts.test.ts",
+    ".github/workflows/development.yml",
+    "apps/android/app/src/main/java/ai/mintech/kimgosu/notifications/NotificationsScreen.kt",
+    "apps/android/app/src/main/java/ai/mintech/kimgosu/MainActivity.kt",
+    "apps/ios/Kimgosu/NotificationsView.swift",
+    "apps/ios/Kimgosu/KimgosuApp.swift",
+    "apps/ios/Kimgosu.xcodeproj/project.pbxproj",
+    "records/parallel-10/WS-75/RESULT.json"
+  ],
+  "implementation": {
+    "schema": "021_notifications.sql — kg_membership.notifications(id, member_id, kind, title, body, ledger_id, created_at, read_at). kind CHECK IN ('QUOTE','AGREEMENT','REVIEW','REPORT'). 인덱스 2개(notification_inbox, notification_unread) + kg_dev_runtime GRANT. 기존 테이블 변경·데이터 재작성 없음.",
+    "api": {
+      "GET /v1/notifications?kind=": "kind는 QUOTE|AGREEMENT|REVIEW|REPORT만 허용(그 외 400 INVALID_REQUEST). 최신순(created_at DESC, id DESC) 최대 100건. 응답 { notifications[], unreadCount }. unreadCount는 필터와 무관한 전체 미읽음 수라 칩을 바꿔도 배지가 흔들리지 않는다.",
+      "POST /v1/notifications/read-all": "본인 미읽음 행만 read_at=now()로 갱신. 응답 { updated, unreadCount: 0 }. 두 번째 호출은 updated 0(멱등)."
+    },
+    "producers": [
+      "견적(QUOTE): POST /v1/ledgers/:id/quotes 성공 시 고객에게 1건 — quotes.ts, 같은 트랜잭션",
+      "완료(AGREEMENT): 견적 양측 완료 확인(both confirmed) 시 양측에 각 1건 — quotes.ts / POST /v1/agreements/:id/complete 시 상대방에게 1건 — ledger.ts",
+      "후기(REVIEW): POST /v1/ledgers/:id/reviews 성공 시 대상자에게 1건 — reviews.ts",
+      "신고(REPORT): POST /v1/admin/reviews/:id/hide(신고 접수 후 운영자 가림) 시 후기 작성자에게 1건 — admin.ts"
+    ],
+    "apps": {
+      "android": "notifications/NotificationsScreen.kt — NotificationsModel(AndroidViewModel) + NotificationsScreen. 상태 4종(Loading/Empty/Failed/Ready), 필터 칩 5개(전체·견적·완료·후기·신고)가 서버 쿼리 파라미터를 바꾸고 매번 재조회, 모두 읽음 버튼, 오류/세션 없음 안내와 재시도. MainActivity: 알림 아이콘 → 알림함, 서버 unreadCount 배지(>0일 때만, 99+), 뒤로가기로 닫기.",
+      "ios": "NotificationsView.swift — KGNotificationsModel(ObservableObject) + KGNotificationsView. 같은 4종 상태·칩·모두 읽음·재시도. KimgosuApp: @StateObject inbox, inboxOpen 라우트, HomeView 알림 버튼 배지(main-inbox-badge)와 화면 진입 시 refresh."
+    },
+    "designTokens": "양 앱 모두 DesignTokens(navy/soft/border/lime/muted)만 사용. 새 색·새 자산·새 의존성 없음."
+  },
+  "acceptance": [
+    {
+      "criterion": "필터를 바꾸면 서버 파라미터로 목록이 달라진다",
+      "status": "PASS",
+      "evidence": "실제 PostgreSQL 통합 테스트 'the kind query parameter selects the list on the server' + 루프백 실제 HTTP: GET /v1/notifications?kind=QUOTE → 1건, ?kind=REPORT → 0건, ?kind=CHAT → 400. 앱은 칩 선택마다 ?kind=를 붙여 재조회하고 클라이언트 필터링을 하지 않는다."
+    },
+    {
+      "criterion": "모두 읽음 후 배지가 0이 된다(API 실측)",
+      "status": "PASS",
+      "evidence": "루프백 HTTP: POST /v1/notifications/read-all → {\"updated\":1,\"unreadCount\":0}, 재조회 unreadCount=0·모든 readAt 채워짐, DB 재조회 QUOTE/REVIEW 모두 read=true, 두 번째 호출 updated=0. 다른 회원의 미읽음은 그대로(통합 테스트)."
+    },
+    {
+      "criterion": "두 앱 빌드 성공",
+      "status": "PASS",
+      "evidence": "Android ./gradlew :app:assembleDevDebug --offline exit 0. iOS xcodebuild ... -sdk iphonesimulator CODE_SIGNING_ALLOWED=NO build → ** BUILD SUCCEEDED **."
+    },
+    {
+      "criterion": "읽지 않은 개수는 서버 값만 사용",
+      "status": "PASS",
+      "evidence": "양 앱 모두 GET 응답의 unreadCount를 그대로 표시하고, read-all 응답의 unreadCount=0 뒤 재조회 값으로 확정한다. 클라이언트에서 항목을 세어 배지를 만들지 않는다."
+    },
+    {
+      "criterion": "상태 4종(로딩·빈·오류·내용) 표시",
+      "status": "PASS(구현+컴파일)/NOT_RUN(실행 렌더)",
+      "evidence": "양 앱에 Loading/Empty/Failed(SESSION_REQUIRED·네트워크·서버 오류)/Ready 구현, 각 testTag·accessibilityIdentifier 부여. 실행 화면 확인은 시뮬레이터 정책으로 NOT_RUN."
+    }
+  ],
+  "verification": [
+    {
+      "check": "백엔드 타입체크",
+      "command": "cd services/backend && npm run check",
+      "result": "PASS",
+      "evidence": "tsc --noEmit 오류 0"
+    },
+    {
+      "check": "마이그레이션 001~021 신규 DB 적용",
+      "command": "psql -h 127.0.0.1 -p 55432 -U postgres -d kgws75 -f services/backend/migrations/*.sql (순차)",
+      "result": "PASS",
+      "evidence": "빈 데이터베이스 kgws75에 001~021 전부 ON_ERROR_STOP=1로 적용 완료(020은 DROP CONSTRAINT IF EXISTS NOTICE만)."
+    },
+    {
+      "check": "알림 API 통합 테스트(실제 PostgreSQL)",
+      "command": "KG_TEST_DATABASE_URL=postgres://postgres@127.0.0.1:55432/kgws75 node --test tests/notifications.integration.test.ts",
+      "result": "PASS",
+      "evidence": "tests 7, pass 7, fail 0 — 비로그인 401 / 견적→고객만 수신 / kind 파라미터 / 완료→상대 수신 / 후기→대상자 / 신고 가림→작성자 / read-all 배지 0·멱등·타 회원 격리"
+    },
+    {
+      "check": "백엔드 유닛 테스트",
+      "command": "cd services/backend && npm test",
+      "result": "PASS",
+      "evidence": "tests 28, pass 28, fail 0"
+    },
+    {
+      "check": "영향받는 기존 통합 스위트 회귀",
+      "command": "node --test tests/{ledger,quotes,reviews,admin,local-db}.integration.test.ts (같은 kgws75)",
+      "result": "PASS",
+      "evidence": "ledger 8, quotes 8, reviews 21, admin 6, local-db 33 — 전부 fail 0"
+    },
+    {
+      "check": "계약 라우트 인벤토리 회귀",
+      "command": "node --test tests/contract/contract.test.ts tests/contract/oauth.test.ts tests/contract/ws27-contracts.test.ts tests/policy/metadata.test.ts",
+      "result": "PASS",
+      "evidence": "tests 68, pass 68, fail 0. 신규 2개 라우트를 계약 미등재 목록(documentedGaps)에 등재"
+    },
+    {
+      "check": "루프백 실제 HTTP(실제 Fastify 리스너 + 실제 PostgreSQL)",
+      "command": "node .ws75-listen.mjs + curl GET/POST (127.0.0.1:18075, 임시 하네스는 검증 후 삭제)",
+      "result": "PASS",
+      "evidence": "GET 전체 2건 unreadCount=1 → ?kind=QUOTE 1건 → ?kind=REPORT 0건 → POST read-all {updated:1,unreadCount:0} → 재조회 0건 미읽음 → 재호출 updated 0 → ?kind=CHAT 400 → 무토큰 401"
+    },
+    {
+      "check": "AOS 빌드",
+      "command": "cd apps/android && ./gradlew :app:assembleDevDebug --offline",
+      "result": "PASS",
+      "evidence": "exit 0, 빌드 로그 오류 없음"
+    },
+    {
+      "check": "iOS 빌드",
+      "command": "cd apps/ios && xcodebuild -project Kimgosu.xcodeproj -scheme Kimgosu -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build",
+      "result": "PASS",
+      "evidence": "** BUILD SUCCEEDED ** (exit 0)"
+    },
+    {
+      "check": "dev API(api-dev-kimgosu.mintech.ai) 실측",
+      "command": "POST /v1/auth/dev/login + GET /v1/notifications",
+      "result": "NOT_RUN",
+      "evidence": "새 엔드포인트는 dev에 배포되지 않았다(이 작업은 push·커밋·배포 금지). 배포 전 호출은 404 ROUTE_NOT_FOUND가 확정이므로 실행하지 않았다."
+    },
+    {
+      "check": "시뮬레이터/에뮬레이터 실행 검증",
+      "command": "-",
+      "result": "NOT_RUN",
+      "evidence": "NOT_RUN (시뮬레이터 정책). 앱 화면 렌더·칩 탭·배지 표시는 실행으로 확인하지 않았다."
+    },
+    {
+      "check": "Android androidTest(알림 UI)",
+      "command": "connectedDevDebugAndroidTest",
+      "result": "NOT_RUN",
+      "evidence": "에뮬레이터 실행 금지 정책. 알림 UI 계측 테스트는 추가하지 않았다(같은 정책으로 실행 불가)."
+    }
+  ],
+  "rawOutput": [
+    "$ KG_TEST_DATABASE_URL=...kgws75 node --test tests/notifications.integration.test.ts",
+    "✔ an anonymous caller cannot read the inbox (401)",
+    "✔ a proposed quote notifies the customer only",
+    "✔ the kind query parameter selects the list on the server",
+    "✔ completing an agreement notifies the counterpart",
+    "✔ a review notifies its target",
+    "✔ hiding a reported review notifies its author",
+    "✔ read-all clears the badge to zero for exactly this member",
+    "tests 7 / pass 7 / fail 0",
+    "",
+    "$ curl (루프백 실제 HTTP)",
+    "GET /v1/notifications            → {\"notifications\":[REVIEW(read),QUOTE(unread)],\"unreadCount\":1}",
+    "GET /v1/notifications?kind=QUOTE → {\"notifications\":[QUOTE],\"unreadCount\":1}",
+    "GET /v1/notifications?kind=REPORT→ {\"notifications\":[],\"unreadCount\":1}",
+    "POST /v1/notifications/read-all  → {\"updated\":1,\"unreadCount\":0}",
+    "GET /v1/notifications (재조회)    → 두 건 모두 readAt 채워짐, unreadCount 0",
+    "POST /v1/notifications/read-all  → {\"updated\":0,\"unreadCount\":0}",
+    "GET /v1/notifications?kind=CHAT  → 400",
+    "GET /v1/notifications (무토큰)    → 401",
+    "psql 재조회: QUOTE read=t, REVIEW read=t",
+    "",
+    "$ ./gradlew :app:assembleDevDebug --offline  → exit=0",
+    "$ xcodebuild ... build → ** BUILD SUCCEEDED **"
+  ],
+  "notCovered": [
+    "신고(REPORT) 알림의 발생 경로는 이 브랜치에 신고 접수 API가 없어 '운영자 후기 가림(/v1/admin/reviews/:id/hide)'으로 한정했다. 사용자 신고 접수가 별도 카드로 들어오면 그 지점에서 같은 notify()를 호출해야 한다.",
+    "알림 행의 ledger_id는 응답에 포함하지만 앱은 아직 원장 상세로 이동하지 않는다(딥링크 화면은 이 웨이브 범위 밖).",
+    "알림 목록은 최대 100건 고정이며 페이지네이션은 WS-74 범위다.",
+    "dev API 실측과 시뮬레이터/에뮬레이터 실행은 NOT_RUN(위 verification 참조)."
+  ],
+  "risks": [
+    "다른 레인 작업트리(예: wt-L01~L22, wt-WS-62)에 같은 이름 kg_membership.notifications 테이블이 서로 다른 스키마(recipient_member_id/target_type 계열, 026_notifications.sql)로 이미 존재한다. 이 브랜치는 021로 member_id/ledger_id 스키마를 정의했으므로 병합 시 마이그레이션 번호·테이블 정의 충돌을 반드시 조정해야 한다. CREATE TABLE IF NOT EXISTS라 조용히 넘어가면 런타임 쿼리가 깨진다.",
+    "개발 클러스터의 공용 테스트 DB(kgtest)에는 위 다른 스키마의 notifications 테이블이 남아 있어, 이 브랜치의 통합 테스트를 기본 URL로 돌리면 실패한다. 그래서 이번 검증은 신규 DB kgws75(001~021 적용)에서 수행했다. CI는 kg_release_ci를 001부터 새로 적용하므로 영향 없음(단, CI 글로브에 02* 추가 필요 — 아래 변경).",
+    ".github/workflows/development.yml의 마이그레이션 글로브에 02*_*.sql을 추가했다. 이 변경이 없으면 020·021이 CI 통합 DB에 적용되지 않아 신규 스위트가 'relation does not exist'로 실패한다."
+  ],
+  "notes": [
+    "push·커밋·배포·새 의존성 추가 없음. 웹(apps/web) 코드는 변경하지 않았다.",
+    "검증용 임시 하네스(.ws75-listen.mjs/.ws75-seed.sql)와 시드 데이터는 검증 후 삭제했다(kgws75 notifications 0행)."
+  ]
+}

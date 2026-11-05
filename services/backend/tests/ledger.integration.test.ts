@@ -239,3 +239,109 @@ test('opening a ledger refuses self, unknown experts and unauthenticated callers
   const anonymous = await app.inject({ method: 'POST', url: '/v1/ledgers', payload: { expertId: EXPERT.id } });
   assert.equal(anonymous.statusCode, 401);
 });
+
+// ── WS-71 거래 취소 ─────────────────────────────────────────────────────────
+// 완료 이력이 없는 새 원장을 쓴다(한 쌍당 원장은 하나이므로 새 당사자 쌍).
+const CANCEL_EXPERT = { id: randomUUID(), token: 'X'.repeat(43) };
+const CANCEL_CUSTOMER = { id: randomUUID(), token: 'Y'.repeat(43) };
+const CANCEL_LEDGER = randomUUID();
+
+test('a cancellation needs both parties: request then counterpart accept', async () => {
+  await seedMember(CANCEL_EXPERT, '고수D', true);
+  await seedMember(CANCEL_CUSTOMER, '고객E', false);
+  await pool.query(
+    `INSERT INTO kg_membership.ledgers(id,expert_member_id,customer_member_id) VALUES($1,$2,$3)`,
+    [CANCEL_LEDGER, CANCEL_EXPERT.id, CANCEL_CUSTOMER.id],
+  );
+
+  const initial = await app.inject({ method: 'GET', url: `/v1/ledgers/${CANCEL_LEDGER}/cancel`, headers: auth(CANCEL_CUSTOMER.token) });
+  assert.equal(initial.statusCode, 200);
+  assert.equal(initial.json().status, 'ACTIVE');
+  assert.equal(initial.json().requestedByMe, null);
+
+  // The reason is required when creating the request.
+  const noReason = await app.inject({
+    method: 'POST', url: `/v1/ledgers/${CANCEL_LEDGER}/cancel`, headers: auth(CANCEL_EXPERT.token), payload: {},
+  });
+  assert.equal(noReason.statusCode, 400);
+  assert.equal(noReason.json().error.code, 'REASON_REQUIRED');
+
+  const requested = await app.inject({
+    method: 'POST', url: `/v1/ledgers/${CANCEL_LEDGER}/cancel`, headers: auth(CANCEL_EXPERT.token),
+    payload: { reasonCode: 'SCHEDULE', detail: '일정이 맞지 않습니다' },
+  });
+  assert.equal(requested.statusCode, 200);
+  assert.equal(requested.json().status, 'CANCEL_REQUESTED');
+  assert.equal(requested.json().requestedByMe, true);
+  assert.equal(requested.json().reasonCode, 'SCHEDULE');
+
+  // The requester cannot accept their own request.
+  const selfAccept = await app.inject({
+    method: 'POST', url: `/v1/ledgers/${CANCEL_LEDGER}/cancel`, headers: auth(CANCEL_EXPERT.token), payload: {},
+  });
+  assert.equal(selfAccept.statusCode, 409);
+  assert.equal(selfAccept.json().error.code, 'CANCEL_ALREADY_REQUESTED');
+
+  const counterpartView = await app.inject({ method: 'GET', url: `/v1/ledgers/${CANCEL_LEDGER}/cancel`, headers: auth(CANCEL_CUSTOMER.token) });
+  assert.equal(counterpartView.json().status, 'CANCEL_REQUESTED');
+  assert.equal(counterpartView.json().requestedByMe, false);
+  assert.equal(counterpartView.json().detail, '일정이 맞지 않습니다');
+
+  const accepted = await app.inject({
+    method: 'POST', url: `/v1/ledgers/${CANCEL_LEDGER}/cancel`, headers: auth(CANCEL_CUSTOMER.token), payload: {},
+  });
+  assert.equal(accepted.statusCode, 200);
+  assert.equal(accepted.json().status, 'CANCELLED');
+  assert.equal(accepted.json().requestedByMe, false);
+  assert.ok(accepted.json().cancelledAt);
+
+  const row = (await pool.query(
+    `SELECT status, cancel_requested_by, cancel_reason_code, cancel_reason_detail,
+            cancel_requested_at IS NOT NULL AS requested, cancelled_at IS NOT NULL AS cancelled
+       FROM kg_membership.ledgers WHERE id=$1`, [CANCEL_LEDGER],
+  )).rows[0];
+  assert.equal(row.status, 'CANCELLED');
+  assert.equal(row.cancel_requested_by, CANCEL_EXPERT.id);
+  assert.equal(row.cancel_reason_code, 'SCHEDULE');
+  assert.equal(row.cancelled, true);
+
+  const again = await app.inject({
+    method: 'POST', url: `/v1/ledgers/${CANCEL_LEDGER}/cancel`, headers: auth(CANCEL_CUSTOMER.token),
+    payload: { reasonCode: 'PRICE' },
+  });
+  assert.equal(again.statusCode, 409);
+  assert.equal(again.json().error.code, 'ALREADY_CANCELLED');
+
+  const audited = (await pool.query(
+    `SELECT action FROM kg_membership.audit_log WHERE target_id=$1 AND target_type='ledger' ORDER BY id`,
+    [CANCEL_LEDGER],
+  )).rows.map(r => r.action);
+  assert.deepEqual(audited, ['LEDGER_CANCEL_REQUESTED', 'LEDGER_CANCELLED']);
+});
+
+test('a cancelled ledger refuses a review with 409', async () => {
+  const review = await app.inject({
+    method: 'POST', url: `/v1/ledgers/${CANCEL_LEDGER}/reviews`, headers: auth(CANCEL_CUSTOMER.token),
+    payload: { rating: 5, body: '취소된 거래 후기' },
+  });
+  assert.equal(review.statusCode, 409);
+  assert.equal(review.json().error.code, 'LEDGER_CANCELLED');
+});
+
+test('a completed ledger cannot be cancelled and a non-participant sees nothing', async () => {
+  // LEDGER 는 앞 테스트에서 COMPLETED agreement 가 생겼다.
+  const completed = await app.inject({
+    method: 'POST', url: `/v1/ledgers/${LEDGER}/cancel`, headers: auth(EXPERT.token),
+    payload: { reasonCode: 'PRICE' },
+  });
+  assert.equal(completed.statusCode, 409);
+  assert.equal(completed.json().error.code, 'LEDGER_COMPLETED');
+
+  const outsiderGet = await app.inject({ method: 'GET', url: `/v1/ledgers/${CANCEL_LEDGER}/cancel`, headers: auth(OUTSIDER.token) });
+  assert.equal(outsiderGet.statusCode, 404);
+  const outsiderPost = await app.inject({
+    method: 'POST', url: `/v1/ledgers/${CANCEL_LEDGER}/cancel`, headers: auth(OUTSIDER.token), payload: { reasonCode: 'OTHER' },
+  });
+  assert.equal(outsiderPost.statusCode, 404);
+  assert.equal(outsiderPost.json().error.code, 'LEDGER_NOT_FOUND');
+});
