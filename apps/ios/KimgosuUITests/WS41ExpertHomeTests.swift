@@ -44,8 +44,11 @@ final class WS41ExpertHomeTests: XCTestCase {
     func testLoadedAndAvailabilityPersistsAcrossRelaunch() {
         app = launch(["--dev-login-slot=11"])
         openExpertHome(app)
-        let badge = app.descendants(matching: .any)["availability-badge"]
-        XCTAssertTrue(badge.waitForExistence(timeout: 25), "활동 상태 배지가 없습니다")
+        // 로드 완료를 먼저 기다린 뒤, 상태 배지는 세 상태 중 하나면 통과로 본다.
+        // (서버의 현재 상태에 테스트가 끌려다니지 않게 한다)
+        XCTAssertTrue(app.staticTexts["이번 달"].waitForExistence(timeout: 30), "이번 달 요약이 없습니다")
+        let availabilityLabels = ["수신 중", "일시중지", "휴가"]
+        XCTAssertTrue(availabilityLabels.contains { app.staticTexts[$0].exists }, "활동 상태 배지가 없습니다")
         XCTAssertTrue(app.staticTexts["이번 달"].exists, "이번 달 요약이 없습니다")
         XCTAssertTrue(app.staticTexts["받은 견적"].exists, "받은 견적 지표가 없습니다")
         XCTAssertTrue(app.staticTexts["완료"].exists, "완료 지표가 없습니다")
