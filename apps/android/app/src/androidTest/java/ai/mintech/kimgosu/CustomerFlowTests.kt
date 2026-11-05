@@ -84,7 +84,7 @@ class CustomerFlowTests {
         compose.setContent {
             CustomerChatContent(expertNickname = "테스트11", state = state, sending = false, actionBusy = false,
                 actionError = null, onRetry = {}, onSend = {}, onPickPhoto = {}, onAccept = {}, onComplete = {},
-                onWriteReview = onWriteReview, onBack = {})
+                onWriteReview = onWriteReview, onOpenGallery = {}, onBack = {})
         }
     }
 

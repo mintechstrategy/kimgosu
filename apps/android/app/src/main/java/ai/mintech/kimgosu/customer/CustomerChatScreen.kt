@@ -5,6 +5,8 @@ import ai.mintech.kimgosu.auth.AuthTransport
 import ai.mintech.kimgosu.auth.MembershipHttp
 import ai.mintech.kimgosu.auth.SecureSession
 import ai.mintech.kimgosu.chat.ChatApi
+import ai.mintech.kimgosu.chat.ChatMediaGalleryScreen
+import ai.mintech.kimgosu.chat.GalleryCopy
 import ai.mintech.kimgosu.expert.ExpertCopy
 import ai.mintech.kimgosu.expert.ExpertFailure
 import ai.mintech.kimgosu.expert.ExpertLoading
@@ -32,6 +34,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -343,6 +346,11 @@ fun CustomerChatScreen(
             model.refresh(ledgerId)
         }
     }
+    var galleryOpen by rememberSaveable { mutableStateOf(false) }
+    if (galleryOpen) {
+        ChatMediaGalleryScreen(ledgerId = ledgerId, onClose = { galleryOpen = false })
+        return
+    }
     if (overlay is ChatSafetyOverlay.Blocked) {
         ChatBlockedScreen(
             model = blockedModel,
@@ -367,6 +375,9 @@ fun CustomerChatScreen(
             onSend = { text -> scope.launch { model.send(ledgerId, text) } },
             onPickPhoto = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
             onAccept = { quote -> scope.launch { model.respondQuote(ledgerId, quote, "accept") } },
+            onComplete = { quote -> scope.launch { model.confirmComplete(ledgerId, quote) } },
+            onWriteReview = { onWriteReview(ledgerId, expertNickname) },
+            onOpenGallery = { galleryOpen = true },
             onComplete = { quote -> scope.launch { model.confirmComplete(ledgerId, quote) } },
             onWriteReview = { onWriteReview(ledgerId, expertNickname) },
             onBack = onBack,
@@ -428,6 +439,7 @@ fun CustomerChatContent(
     onAccept: (CustomerQuote) -> Unit,
     onComplete: (CustomerQuote) -> Unit,
     onWriteReview: () -> Unit,
+    onOpenGallery: () -> Unit,
     onBack: () -> Unit,
     onReport: () -> Unit = {},
     onBlock: () -> Unit = {},
@@ -456,6 +468,10 @@ fun CustomerChatContent(
                 }
             }
             TextButton(onClick = onBack, modifier = Modifier.heightIn(min = 48.dp).testTag("customer-chat-back")) { ExpertCopy("뒤로") }
+        }
+        TextButton(onClick = onOpenGallery,
+            modifier = Modifier.padding(start = 8.dp, end = 20.dp).heightIn(min = 48.dp).testTag("customer-chat-gallery-entry")) {
+            ExpertCopy(GalleryCopy.ENTRY, color = DesignTokens.navy, weight = FontWeight.SemiBold)
         }
         when (state) {
             CustomerChatState.Loading -> ExpertLoading()

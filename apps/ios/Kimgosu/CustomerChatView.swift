@@ -251,6 +251,7 @@ struct KGCustomerChatView: View {
     @StateObject private var blockedModel = KGChatBlockedModel(gateway: KGUnavailableReportBlockGateway())
     @State private var draft = ""
     @State private var pickedPhoto: PhotosPickerItem?
+<<<<<<< HEAD
     @State private var reportOpen = false
     @State private var blockOpen = false
     @State private var blockedSubject: String?
@@ -285,6 +286,36 @@ struct KGCustomerChatView: View {
                 }
                 .background(Color.white)
             }
+=======
+    @State private var galleryOpen = false
+
+    var body: some View {
+        if galleryOpen {
+            KGChatMediaGalleryView(ledgerId: ledgerId, onClose: { galleryOpen = false })
+                .background(Color.white)
+        } else {
+            chatBody
+        }
+    }
+
+    private var chatBody: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    customerCopy("채팅", size: 12, color: DesignTokens.muted).accessibilityIdentifier("customer-chat-title")
+                    customerCopy((expertNickname.isEmpty ? "고수" : expertNickname) + " 님과의 거래", size: 19, bold: true)
+                }
+                Spacer()
+                Button("뒤로") { onBack() }.frame(minHeight: 44).accessibilityIdentifier("customer-chat-back")
+            }.padding(.horizontal, 20).padding(.top, 8)
+            Button(KGGalleryCopy.entry) { galleryOpen = true }
+                .font(.custom("Pretendard-SemiBold", size: KGGalleryTokens.body, relativeTo: .body))
+                .foregroundStyle(DesignTokens.navy)
+                .frame(minHeight: KGGalleryTokens.minTouch)
+                .padding(.horizontal, 20)
+                .accessibilityIdentifier("customer-chat-gallery-entry")
+            content
+>>>>>>> ws/WS-88
         }
         .task(id: ledgerId) { model.refresh(ledgerId: ledgerId) }
         .sheet(isPresented: $reportOpen) {
