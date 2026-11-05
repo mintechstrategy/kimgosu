@@ -14,6 +14,7 @@ import { registerQuoteRoutes } from './quotes.ts';
 import { registerUploadRoutes } from './uploads.ts';
 import { registerChatRoutes } from './chat.ts';
 import { registerReviewRoutes } from './reviews.ts';
+import { registerNotificationRoutes } from './notifications.ts';
 import { registerDevLoginRoutes } from './dev-login.ts';
 import { registerAdminRoutes } from './admin.ts';
 import { registerAdminSessionRoutes, createLoginLimiter } from './admin-session.ts';
@@ -218,6 +219,7 @@ export function buildApp(db: Sql, release: string, options: AuthOptions = {}) {
   registerUploadRoutes(app, db, authenticate);
   registerChatRoutes(app, db, authenticate);
   registerReviewRoutes(app, db, authenticate);
+  registerNotificationRoutes(app, db, authenticate);
   // Operator console: session exchange must be registered before the admin
   // routes so /v1/admin/session is resolvable without an admin session.
   registerAdminSessionRoutes(app, db, { limiter: adminLoginLimiter });

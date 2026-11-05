@@ -1,13 +1,12 @@
 package ai.mintech.kimgosu.expert
 
 import ai.mintech.kimgosu.ui.DesignTokens
+import ai.mintech.kimgosu.ui.RemoteImage
 import android.app.Application
-import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -41,9 +40,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -427,7 +423,7 @@ private fun ServiceForm(
         }
         images.forEachIndexed { index, image ->
             Row(Modifier.fillMaxWidth().testTag("service-photo-$index"), verticalAlignment = Alignment.CenterVertically) {
-                ServicePhoto(image.url, Modifier.size(64.dp))
+                RemoteImage(image.url, Modifier.size(64.dp))
                 ExpertCopy(
                     if (index == 0) "대표 사진" else "사진 " + (index + 1),
                     Modifier.weight(1f).padding(start = 12.dp), 13, color = DesignTokens.muted,
@@ -455,22 +451,5 @@ private fun ServiceForm(
                 Modifier.testTag(if (it.network) "service-save-network" else "service-save-error"), 13,
             )
         }
-    }
-}
-
-/**
- * 서버가 준 공개 URL 한 장. 로드 전·실패에는 회색 자리만 남겨 레이아웃이 흔들리지 않게 한다.
- * contentScale은 썸네일이면 Crop, 갤러리면 Fit을 쓴다.
- */
-@Composable
-internal fun ServicePhoto(url: String?, modifier: Modifier, contentScale: ContentScale = ContentScale.Crop) {
-    var bitmap by remember(url) { mutableStateOf<ImageBitmap?>(null) }
-    LaunchedEffect(url) {
-        bitmap = if (url == null) null else withContext(Dispatchers.IO) {
-            runCatching { URL(url).openStream().use { BitmapFactory.decodeStream(it) } }.getOrNull()?.asImageBitmap()
-        }
-    }
-    Box(modifier.background(Color(0xFFF4F4F4), RoundedCornerShape(6.dp)), contentAlignment = Alignment.Center) {
-        bitmap?.let { Image(it, null, Modifier.fillMaxSize(), contentScale = contentScale) }
     }
 }

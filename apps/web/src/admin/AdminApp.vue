@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
-import { AdminApiError, type AdminApi, type AdminMemberRow, type AdminOperator, type MemberDetail, type MemberStatus, type ReviewRow } from './api';
+import { AdminApiError, type AdminApi, type AdminMemberRow, type AdminOperator, type MemberDetail, type MemberStatus, type ReviewRow, type Stats } from './api';
 
 const props = defineProps<{ api: AdminApi; operator?: AdminOperator }>();
 const emit = defineEmits<{ 'logged-out': []; 'session-expired': [message: string] }>();
@@ -31,7 +31,47 @@ const submitting = ref(false);
 const actionError = ref('');
 
 /** 두 화면: 회원 관리, 리뷰 관리. 화면 상태는 각자 유지한다. */
-const tab = ref<'members' | 'reviews'>('members');
+const tab = ref<'dashboard' | 'members' | 'reviews'>('members');
+
+/**
+ * 대시보드(WS-72). 숫자는 전부 서버 집계값이고, 화면은 막대 길이만 그린다.
+ * 기간을 비우면 서버 기본값(최근 7일)을 쓰고, 응답의 from/to를 입력칸에 되돌려 표시한다.
+ */
+const stats = ref<Stats>();
+const statsFrom = ref('');
+const statsTo = ref('');
+const statsLoading = ref(false);
+const statsError = ref('');
+
+const statsEmpty = computed(() => {
+  const totals = stats.value?.totals;
+  return totals !== undefined && totals.trades === 0 && totals.reports === 0 && totals.newMembers === 0;
+});
+// 막대 길이를 정하기 위한 표시용 비율. 집계값 자체는 서버 값을 그대로 쓴다.
+const trendPeak = computed(() => Math.max(1, ...(stats.value?.daily.map(day => day.trades) ?? [])));
+const barWidth = (value: number) => `${Math.round((value / trendPeak.value) * 100)}%`;
+
+async function loadStats() {
+  if (!api.hasSession()) { emit('session-expired', '세션이 없습니다. 다시 로그인해주세요.'); return; }
+  statsLoading.value = true; statsError.value = '';
+  try {
+    const result = await api.stats({ from: statsFrom.value || undefined, to: statsTo.value || undefined });
+    stats.value = result;
+    statsFrom.value = result.from;
+    statsTo.value = result.to;
+    forbidden.value = false;
+  } catch (e) {
+    stats.value = undefined;
+    if (isForbidden(e)) { denyAccess(); return; }
+    if (e instanceof AdminApiError && ['AUTH_REQUIRED', 'SESSION_INVALID'].includes(e.code)) { endSession(e); return; }
+    statsError.value = messageFor(e);
+  } finally { statsLoading.value = false; }
+}
+
+function showDashboard() {
+  tab.value = 'dashboard';
+  if (!stats.value) void loadStats();
+}
 
 const REVIEW_PAGE_SIZE = 50;
 const reviews = ref<ReviewRow[]>([]);
@@ -270,12 +310,50 @@ const statusLabel = (value: MemberStatus) => value === 'ACTIVE' ? '이용 가능
 
   <template v-else>
   <nav class="tabs" aria-label="운영 콘솔 화면">
+    <button type="button" :class="{ active: tab === 'dashboard' }" :aria-current="tab === 'dashboard' ? 'page' : undefined" @click="showDashboard">대시보드</button>
     <button type="button" :class="{ active: tab === 'members' }" :aria-current="tab === 'members' ? 'page' : undefined" @click="tab = 'members'">회원 관리</button>
     <button type="button" :class="{ active: tab === 'reviews' }" :aria-current="tab === 'reviews' ? 'page' : undefined" @click="showReviews">리뷰 관리</button>
   </nav>
 
-  <main class="console" :aria-busy="listLoading || detailLoading || submitting || reviewLoading || reviewSubmitting">
-    <template v-if="tab === 'members'">
+  <main class="console" :aria-busy="listLoading || detailLoading || submitting || reviewLoading || reviewSubmitting || statsLoading">
+    <template v-if="tab === 'dashboard'">
+      <form class="range" aria-label="집계 기간" @submit.prevent="loadStats">
+        <label for="stats-from">시작일</label>
+        <input id="stats-from" v-model="statsFrom" type="date" :max="statsTo || undefined">
+        <label for="stats-to">종료일</label>
+        <input id="stats-to" v-model="statsTo" type="date" :min="statsFrom || undefined">
+        <button class="primary" type="submit" :disabled="statsLoading">{{ statsLoading ? '조회 중…' : '적용' }}</button>
+      </form>
+
+      <p v-if="statsError" class="notice error" role="alert">{{ statsError }} <button class="text" type="button" @click="loadStats">다시 조회</button></p>
+      <p v-else-if="statsLoading && !stats" class="notice" role="status">지표를 불러오는 중입니다…</p>
+
+      <template v-else-if="stats">
+        <p class="meta">{{ stats.from }} ~ {{ stats.to }} (KST, 종료일 포함) · 서버가 집계한 값이며 화면에서 다시 계산하지 않습니다.</p>
+        <div class="metrics">
+          <div class="metric"><span class="metric-label">거래 수</span><strong>{{ stats.totals.trades }}</strong><span class="meta">기간 내 합의 요청</span></div>
+          <div class="metric"><span class="metric-label">완료율</span><strong>{{ stats.totals.completionRate }}%</strong><span class="meta">완료 {{ stats.totals.completed }}건</span></div>
+          <div class="metric"><span class="metric-label">신고 수</span><strong>{{ stats.totals.reports }}</strong><span class="meta">접수된 신고</span></div>
+          <div class="metric"><span class="metric-label">신규 회원</span><strong>{{ stats.totals.newMembers }}</strong><span class="meta">기간 내 가입</span></div>
+        </div>
+
+        <h2 class="trend-title">최근 7일 추이 · 거래 수</h2>
+        <p v-if="statsEmpty" class="notice">선택한 기간에 거래·신고·신규 회원이 없습니다.</p>
+        <ol v-else class="trend" aria-label="일자별 거래 수">
+          <li v-for="day in stats.daily" :key="day.date">
+            <span class="trend-date">{{ day.date.slice(5) }}</span>
+            <span class="trend-track">
+              <span class="trend-bar" :style="{ width: barWidth(day.trades) }"></span>
+            </span>
+            <span class="trend-value">{{ day.trades }}</span>
+            <span class="meta trend-extra">완료 {{ day.completed }} · 신고 {{ day.reports }} · 신규 {{ day.newMembers }}</span>
+          </li>
+        </ol>
+        <p class="meta">막대 길이는 표시 비율일 뿐이며, 값은 모두 서버 응답의 daily 값입니다.</p>
+      </template>
+    </template>
+
+    <template v-else-if="tab === 'members'">
       <nav class="toolbar" aria-label="회원 검색">
         <form class="search" @submit.prevent="search">
           <label for="query">검색어</label>
@@ -504,6 +582,21 @@ button:disabled { opacity: .5; cursor: default; }
 .badge.withdrawn { background: #eef2f7; color: #5b6b80; }
 .badge.expert { background: #eef1ff; color: #2b2f8f; }
 .pagination { display: flex; align-items: center; gap: 12px; margin-top: 14px; }
+.range { display: flex; gap: 10px; align-items: end; flex-wrap: wrap; margin-top: 16px; }
+.range input { width: auto; }
+.range label { flex-basis: 100%; }
+.metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-top: 16px; }
+.metric { display: grid; gap: 4px; padding: 16px 18px; background: #fff; border: 1px solid var(--border); border-radius: 14px; }
+.metric-label { font-size: 13px; color: var(--muted); }
+.metric strong { font-size: 28px; line-height: 1.1; color: var(--navy); font-variant-numeric: tabular-nums; }
+.trend-title { margin: 28px 0 0; font-size: 16px; }
+.trend { list-style: none; padding: 0; margin: 12px 0 0; display: grid; gap: 8px; }
+.trend li { display: grid; grid-template-columns: 52px 1fr 40px; align-items: center; column-gap: 10px; }
+.trend-date { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.trend-track { display: block; height: 14px; border-radius: 7px; background: var(--track); }
+.trend-bar { display: block; height: 100%; min-width: 2px; border-radius: 7px; background: var(--navy); }
+.trend-value { font-size: 14px; font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; }
+.trend-extra { grid-column: 2 / 4; margin: 0; }
 .detail-head { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; align-items: start; }
 .detail-head h2 { margin: 0 0 4px; }
 .actions { display: flex; gap: 8px; flex-wrap: wrap; }

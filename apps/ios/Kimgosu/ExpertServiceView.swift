@@ -503,21 +503,14 @@ struct ServiceForm: View {
     }
 }
 
-/// 원격 사진 썸네일. 실패하면 회색 자리를 유지해 목록이 흔들리지 않게 한다.
+/// 원격 사진 썸네일. 실패하면 자리를 유지해 목록이 흔들리지 않게 한다.
 struct ServicePhotoThumb: View {
     let url: String?
     let size: CGFloat
 
     var body: some View {
-        AsyncImage(url: url.flatMap(URL.init(string:))) { phase in
-            switch phase {
-            case .success(let image):
-                image.resizable().scaledToFill()
-            default:
-                Color(white: 0.96)
-            }
-        }
-        .frame(width: size, height: size)
-        .clipShape(RoundedRectangle(cornerRadius: 6))
+        RemoteImage(url: url, contentMode: .fill)
+            .frame(width: size, height: size)
+            .clipShape(RoundedRectangle(cornerRadius: 6))
     }
 }

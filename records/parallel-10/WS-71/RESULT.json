@@ -1,0 +1,117 @@
+{
+  "ws": "WS-71",
+  "task": "거래 취소·환불 — 마이그레이션 023, POST /v1/ledgers/:id/cancel, AOS/iOS 원장 상세 취소 UI",
+  "status": "DONE",
+  "worktree": "/Users/mintech-mac/hermes/dev-profile/shared/projects/wt-WS-71",
+  "branch": "ws/WS-71",
+  "baseCommit": "5bd1dc9",
+  "summary": "거래(원장)에 양측 합의 취소를 추가했다. migration 023이 ledgers에 status(ACTIVE/CANCEL_REQUESTED/CANCELLED)와 취소 요청자·시각·사유 컬럼을 더하고, GET/POST /v1/ledgers/:id/cancel이 요청·수락을 같은 엔드포인트에서 서버 상태로 분기한다. 완료(COMPLETED) 거래 취소는 409 LEDGER_COMPLETED, 취소된 거래의 후기 작성은 409 LEDGER_CANCELLED로 막았다. AOS Compose와 iOS SwiftUI의 원장 상세(고객 채팅) 화면에 요청/수락/사유 선택 UI와 취소 상태 표시를 넣었고 두 앱 모두 빌드에 성공했다. 통합 테스트는 로컬 실제 PostgreSQL에서 실측했다. dev API 실거래와 시뮬레이터 실행 검증은 이 웨이브 공통 규칙(원격 쓰기 금지 / 시뮬레이터 실행 금지)으로 NOT_RUN이다.",
+  "changedFiles": [
+    "services/backend/migrations/023_ledger_cancellation.sql (신규)",
+    "services/backend/src/ledger.ts",
+    "services/backend/src/reviews.ts",
+    "services/backend/tests/ledger.integration.test.ts",
+    "contracts/ledger-quotes.v0.1.json",
+    "contracts/reviews.v0.1.json",
+    "tests/contract/ws27-contracts.test.ts",
+    "apps/android/app/src/main/java/ai/mintech/kimgosu/customer/CustomerChatScreen.kt",
+    "apps/ios/Kimgosu/CustomerChatView.swift",
+    "records/parallel-10/WS-71/RESULT.json"
+  ],
+  "design": {
+    "db": "kg_membership.ledgers에 status text NOT NULL DEFAULT 'ACTIVE' (CHECK ACTIVE/CANCEL_REQUESTED/CANCELLED), cancel_requested_by uuid FK, cancel_requested_at, cancel_reason_code, cancel_reason_detail(1..500), cancelled_at. CHECK 3건: 상태-타임스탬프 일치, 요청 상태는 요청자·시각·사유 필수, 사유 길이. 기존 컬럼 변경·삭제 없음(추가 전용).",
+    "api": [
+      "GET /v1/ledgers/:id/cancel — 당사자만. {status, requestedByMe, requestedAt, reasonCode, detail, cancelledAt}. 비당사자는 404 LEDGER_NOT_FOUND(원장 존재 은닉, 채팅·메모와 동일 규칙).",
+      "POST /v1/ledgers/:id/cancel { reasonCode?, detail? } — ACTIVE면 요청 생성(CANCEL_REQUESTED, reasonCode 필수: 없으면 400 REASON_REQUIRED), CANCEL_REQUESTED면 요청자가 아닌 쪽의 호출이 수락(CANCELLED). 요청자의 재호출은 409 CANCEL_ALREADY_REQUESTED, 취소 후 재호출은 409 ALREADY_CANCELLED.",
+      "완료 판정은 agreements.status='COMPLETED' 하나만 본다(견적 완료도 같은 행을 갱신하므로 단일 근거). 존재하면 409 LEDGER_COMPLETED.",
+      "취소는 ledger 단위라 견적·합의 전체를 덮는다. 서버가 상태를 판정하고 클라이언트는 상태를 보내지 않는다(사유 코드만 선택)."
+    ],
+    "reviewRule": "POST /v1/ledgers/:id/reviews가 ledger.status='CANCELLED'면 409 LEDGER_CANCELLED를 반환한다(기존 수정: 조회 컬럼 1개 추가 + 가드 1줄).",
+    "apps": "AOS Compose / iOS SwiftUI 동일 구조. 원장 상세 진입 시 GET .../cancel을 함께 읽어 취소 카드 상태 4종(요청 가능 · 내가 요청함/상대 수락 대기 · 상대가 요청함/수락 버튼 · 취소됨+사유)을 서버 값만으로 그린다. 요청은 사유 선택(4개 코드)+상세 사유(선택) 다이얼로그/시트. 취소된 거래에서는 견적 카드 액션(수락·완료·후기)을 숨기고 안내 문구로 대체한다. 화면 상태 4종(Loading/Empty/Failed/Ready)은 기존 구조를 유지한다.",
+    "designTokens": "DesignTokens(navy/lime/soft/border/muted/track)만 사용, 새 색·폰트·의존성 없음."
+  },
+  "verification": [
+    {
+      "check": "마이그레이션 023을 빈 DB에 순차 적용 (001~020 + 023)",
+      "command": "psql -v ON_ERROR_STOP=1 -f migrations/0*.sql (신규 DB kgtest_ws71a)",
+      "result": "PASS",
+      "evidence": "001~020 및 023 전부 오류 없이 적용. 023의 DROP CONSTRAINT IF EXISTS 4건은 'does not exist, skipping' NOTICE만 발생. 생성 확인: status, cancel_requested_by(FK), cancel_requested_at, cancel_reason_code, cancel_reason_detail, cancelled_at + CHECK ledger_status_valid/ledger_cancel_request_complete/ledger_cancelled_stamped/ledger_cancel_reason_length."
+    },
+    {
+      "check": "tsc (services/backend)",
+      "command": "cd services/backend && npm run check",
+      "result": "PASS",
+      "evidence": "tsc --noEmit 오류 출력 없음(exit 0)."
+    },
+    {
+      "check": "백엔드 유닛 테스트",
+      "command": "cd services/backend && npm test",
+      "result": "PASS",
+      "evidence": "tests 28 / pass 28 / fail 0."
+    },
+    {
+      "check": "거래 취소 통합 테스트 (실제 PostgreSQL, 신규 DB)",
+      "command": "KG_TEST_DATABASE_URL=postgres://postgres@127.0.0.1:55432/kgtest_ws71a node --test tests/ledger.integration.test.ts",
+      "result": "PASS",
+      "evidence": "tests 11 / pass 11 / fail 0. 신규 3건: (1) ACTIVE 조회 → 사유 없이 요청 400 REASON_REQUIRED → 고수 요청 200 CANCEL_REQUESTED(requestedByMe=true, reasonCode=SCHEDULE) → 요청자 재호출 409 CANCEL_ALREADY_REQUESTED → 상대 조회 requestedByMe=false·detail 확인 → 상대 수락 200 CANCELLED(cancelledAt 존재) → DB row status/cancel_requested_by/cancel_reason_code/cancelled_at 실측 → 재호출 409 ALREADY_CANCELLED → audit_log [LEDGER_CANCEL_REQUESTED, LEDGER_CANCELLED]. (2) 취소 원장 후기 작성 409 LEDGER_CANCELLED. (3) COMPLETED agreement가 있는 원장 취소 409 LEDGER_COMPLETED, 제3자 GET/POST 404 LEDGER_NOT_FOUND."
+    },
+    {
+      "check": "회귀: reviews / chat / quotes 통합 테스트 (같은 신규 DB)",
+      "command": "KG_TEST_DATABASE_URL=... node --test tests/{reviews,chat,quotes}.integration.test.ts",
+      "result": "PASS",
+      "evidence": "reviews 21/21, chat 15/15, quotes 8/8 통과. (공용 kgtest DB에서는 이 웨이브 이전부터 chat 스키마가 다른 브랜치 정의와 달라 chat 테스트가 500으로 실패했다 — 이 worktree의 마이그레이션으로 새로 만든 DB에서는 전부 통과하므로 이번 변경과 무관한 환경 문제로 판정.)"
+    },
+    {
+      "check": "계약 인벤토리 테스트",
+      "command": "node --test tests/contract/ws27-contracts.test.ts",
+      "result": "PASS",
+      "evidence": "tests 13 / pass 13 / fail 0. ledger-quotes 계약 operation = 실제 등록 라우트(양방향) 일치, 전체 33개 operation 등록 확인, 계약 밖 라우트 없음(문서화된 목록 외)."
+    },
+    {
+      "check": "AOS 빌드",
+      "command": "cd apps/android && JAVA_HOME=.local-toolchains/jdk17/jdk-17.0.21+9/Contents/Home ANDROID_HOME=.local-toolchains/android-sdk python3 build.py :app:assembleDevDebug",
+      "result": "PASS",
+      "evidence": "BUILD SUCCESSFUL in 11s, 38 actionable tasks. 최종 편집(Empty 상태 카드 포함) 후 재빌드로 확인."
+    },
+    {
+      "check": "iOS 빌드",
+      "command": "cd apps/ios && xcodebuild -project Kimgosu.xcodeproj -scheme Kimgosu -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build",
+      "result": "PASS",
+      "evidence": "** BUILD SUCCEEDED ** (최종 편집 후 재빌드)."
+    }
+  ],
+  "notRun": [
+    {
+      "item": "dev API(https://api-dev-kimgosu.mintech.ai) 실제 거래 호출",
+      "reason": "PLAN-WAVE10 공통 규칙 '원격 쓰기·커밋 금지'. 이번 검증은 로컬 실제 PostgreSQL 통합 테스트로 대체했고, dev 배포·원격 쓰기는 하지 않았다.",
+      "state": "NOT_RUN"
+    },
+    {
+      "item": "AOS 에뮬레이터 / iOS 시뮬레이터 실행 검증 및 양 앱 화면 동등성 QA",
+      "reason": "PLAN-WAVE10 공통 규칙 '시뮬레이터·에뮬레이터 실행 금지. 빌드까지만'.",
+      "state": "NOT_RUN (시뮬레이터 정책)"
+    },
+    {
+      "item": "두 앱에서 실제 취소 요청/수락을 눌러보는 동작 확인",
+      "reason": "위 실행 금지 정책. 서버 경로는 통합 테스트로 실측했고 앱은 빌드까지만 확인했다.",
+      "state": "NOT_RUN"
+    }
+  ],
+  "acceptance": [
+    { "criterion": "요청 → 상대 수락 → CANCELLED (통합 테스트 실측)", "result": "PASS", "evidence": "tests/ledger.integration.test.ts 'a cancellation needs both parties: request then counterpart accept' (200 → CANCEL_REQUESTED → 200 CANCELLED + DB row + audit)" },
+    { "criterion": "COMPLETED 거래 취소 → 409", "result": "PASS", "evidence": "같은 파일 'a completed ledger cannot be cancelled...' → 409 LEDGER_COMPLETED" },
+    { "criterion": "취소 거래 후기 작성 → 409", "result": "PASS", "evidence": "같은 파일 'a cancelled ledger refuses a review with 409' → 409 LEDGER_CANCELLED" },
+    { "criterion": "두 앱 빌드 성공", "result": "PASS", "evidence": "AOS assembleDevDebug BUILD SUCCESSFUL, iOS BUILD SUCCEEDED" }
+  ],
+  "limits": [
+    "고수 쪽 원장 상세(받은 견적 화면)는 이 후보에서 아직 라우팅되지 않아(기존 공백, WS-43 몫) 앱에서 고수가 직접 취소를 요청/수락하는 진입점은 없다. 서버 경로는 고수 토큰으로 통합 테스트에서 검증했고, 취소 카드 자체는 어느 당사자가 열어도 동작하도록 역할 비의존으로 구현했다.",
+    "취소된 원장에서도 채팅 메시지 전송과 견적 '완료 확인' API는 서버가 막지 않는다(이번 카드 범위 밖). 후기 작성만 409로 막았고, 취소 거래가 COMPLETED로 바뀌어도 후기는 계속 409다.",
+    "환불(결제)은 이번 카드에 결제 도메인이 없어 취소 상태 기록까지만 구현했다. 금액 환불 집행은 별도 카드다.",
+    "로컬 kgtest DB에는 023을 적용했고, 신규 검증용 DB(kgtest_ws71a)는 이 worktree 마이그레이션으로 새로 만들었다. 운영·Railway DB에는 적용하지 않았다.",
+    "커밋·push하지 않았다(지시대로). 변경은 worktree 작업 트리에만 있다."
+  ],
+  "next": [
+    "WS-43(받은 견적·원장 상세 라우팅) 연결 후 고수 쪽 취소 진입점 노출 확인",
+    "결제 도메인 도입 시 취소 → 환불 집행 연결"
+  ]
+}
