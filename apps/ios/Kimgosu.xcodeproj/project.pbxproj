@@ -45,6 +45,7 @@ D00000000000000000000002 = {isa = PBXBuildFile; fileRef = D100000000000000000000
 		FC00000000000000000003 = {isa = PBXBuildFile; fileRef = FC00000000000000000004; };
 		FD00000000000000000003 = {isa = PBXBuildFile; fileRef = FD00000000000000000001; };
 		FD00000000000000000004 = {isa = PBXBuildFile; fileRef = FD00000000000000000002; };
+		A00000000000000000000070 = {isa = PBXBuildFile; fileRef = A10000000000000000000070; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -94,6 +95,7 @@ D10000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = folder; 
 		FC00000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Kimgosu/ReportBlockView.swift; sourceTree = "<group>"; };
 		FD00000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Kimgosu/ChatGalleryTokens.swift; sourceTree = "<group>"; };
 		FD00000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Kimgosu/ChatGalleryView.swift; sourceTree = "<group>"; };
+		A10000000000000000000070 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Kimgosu/AdminNoticeViews.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -147,6 +149,7 @@ D10000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = folder; 
 				F10000000000000000000013,
 				FB00000000000000000001,
 				FC00000000000000000004,
+				A10000000000000000000070,
 				A00000000000000000000004 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -280,6 +283,7 @@ D10000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = folder; 
 				FC00000000000000000003,
 				FD00000000000000000003,
 				FD00000000000000000004,
+				A00000000000000000000070,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

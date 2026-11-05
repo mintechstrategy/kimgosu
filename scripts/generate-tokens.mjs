@@ -9,9 +9,16 @@ const tokens = JSON.parse(readFileSync(join(root, 'design/tokens.json'), 'utf8')
 
 const hex = /^#[0-9a-fA-F]{6}$/;
 for (const [name, token] of Object.entries(tokens.color)) {
+<<<<<<< HEAD
   for (const value of [token.value, token.web].filter(Boolean)) {
     if (!hex.test(value)) {
       throw new Error(`color.${name}: expected #RRGGBB, got ${value}`);
+=======
+  for (const platform of ['value', 'web']) {
+    const value = token[platform];
+    if (value !== undefined && !hex.test(value)) {
+      throw new Error(`color.${name}.${platform}: expected #RRGGBB, got ${value}`);
+>>>>>>> ws/WS-89
     }
   }
 }
@@ -23,7 +30,10 @@ const ident = (name) => (name === '2xl' ? 'xxl' : name);
 const cap = (name) => name[0].toUpperCase() + name.slice(1);
 const web = (token) => token.web ?? token.value;
 const channels = (value) => [1, 3, 5].map((i) => parseInt(value.slice(i, i + 2), 16));
-const header = (comment) => `${comment} Generated from design/tokens.json by scripts/generate-tokens.mjs — do not edit.\n`;
+const header = (comment) => `${comment} Generated from design/tokens.json by scripts/generate-tokens.mjs — do not edit.` + '\n';
+
+// Token group names become identifiers: space.2xl -> space_2xl (a leading digit is not a valid identifier).
+const identifier = (group, name) => `${group}_${name}`;
 
 const css = [
   '/* Generated from design/tokens.json by scripts/generate-tokens.mjs — do not edit. */',
@@ -45,6 +55,7 @@ const swift = [
     return `    static let ${name} = Color(red: ${r} / 255, green: ${g} / 255, blue: ${b} / 255)`;
   }),
   '',
+<<<<<<< HEAD
   ...scale(tokens.space).map(([name, token]) => `    static let space${cap(ident(name))}: CGFloat = ${token.value}`),
   '',
   ...scale(tokens.type).map(([name, token]) => `    static let type${cap(name)}Size: CGFloat = ${token.size}`),
@@ -52,6 +63,21 @@ const swift = [
   ...scale(tokens.radius).map(([name, token]) => `    static let radius${cap(name)}: CGFloat = ${token.value}`),
   '',
   `    static let touchIosMinPt: CGFloat = ${tokens.touch.iosMinPt}`,
+=======
+  ...Object.entries(tokens.space)
+    .filter(([name]) => !name.startsWith('_'))
+    .map(([name, token]) => `    static let ${identifier('space', name)}: CGFloat = ${token.value}`),
+  '',
+  ...Object.entries(tokens.type)
+    .filter(([name]) => !name.startsWith('_'))
+    .map(([name, token]) => `    static let ${identifier('type', name)}: CGFloat = ${token.size}`),
+  '',
+  ...Object.entries(tokens.radius).map(([name, token]) => `    static let ${identifier('radius', name)}: CGFloat = ${token.value}`),
+  '',
+  `    static let fontFamilyIos = "${tokens.typography.fontFamily.ios}"`,
+  `    static let touchIosMinPt: CGFloat = ${tokens.touch.iosMinPt}`,
+  `    static let touchAndroidMinDp: CGFloat = ${tokens.touch.androidMinDp}`,
+>>>>>>> ws/WS-89
   '}',
   '',
 ].join('\n');
@@ -67,12 +93,26 @@ const kotlin = [
   'object DesignTokens {',
   ...Object.entries(tokens.color).map(([name, token]) => `    val ${name} = Color(0xFF${token.value.slice(1).toUpperCase()})`),
   '',
+<<<<<<< HEAD
   ...scale(tokens.space).map(([name, token]) => `    val space${cap(ident(name))} = ${token.value}.dp`),
   '',
   ...scale(tokens.type).map(([name, token]) => `    val type${cap(name)}Size = ${token.size}.sp`),
   '',
   ...scale(tokens.radius).map(([name, token]) => `    val radius${cap(name)} = ${token.value}.dp`),
   '',
+=======
+  ...Object.entries(tokens.space)
+    .filter(([name]) => !name.startsWith('_'))
+    .map(([name, token]) => `    const val ${identifier('space', name)} = ${token.value}`),
+  '',
+  ...Object.entries(tokens.type)
+    .filter(([name]) => !name.startsWith('_'))
+    .map(([name, token]) => `    const val ${identifier('type', name)} = ${token.size}`),
+  '',
+  ...Object.entries(tokens.radius).map(([name, token]) => `    const val ${identifier('radius', name)} = ${token.value}`),
+  '',
+  `    const val touchIosMinPt = ${tokens.touch.iosMinPt}`,
+>>>>>>> ws/WS-89
   `    const val touchAndroidMinDp = ${tokens.touch.androidMinDp}`,
   '}',
   '',
