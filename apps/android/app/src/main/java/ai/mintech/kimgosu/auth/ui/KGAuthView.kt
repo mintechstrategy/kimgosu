@@ -1,6 +1,8 @@
 package ai.mintech.kimgosu.auth.ui
 
 import android.graphics.BitmapFactory
+import ai.mintech.kimgosu.settings.AlarmConsentScreen
+import ai.mintech.kimgosu.settings.ConsentStart
 import ai.mintech.kimgosu.ui.DesignTokens
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
@@ -31,6 +33,12 @@ import androidx.compose.ui.unit.sp
 private val BrandFont = staticCompositionLocalOf<FontFamily> { FontFamily.Default }
 
 @Composable fun KGAuthView(state: AuthState, onEvent: (AuthEvent) -> Unit, modifier: Modifier = Modifier) {
+    // 알림 설정·동의 화면은 자체 모델과 4상태를 가진 화면이 그린다(WS-87). 나머지 회원 화면은 그대로 둔다.
+    when (state.screen) {
+        AuthScreen.F4_NOTI -> { AlarmConsentScreen(ConsentStart.NOTIFICATIONS) { onEvent(AuthEvent(AuthAction.BACK)) }; return }
+        AuthScreen.CONSENT_HISTORY -> { AlarmConsentScreen(ConsentStart.HISTORY) { onEvent(AuthEvent(AuthAction.BACK)) }; return }
+        else -> Unit
+    }
     val assets = LocalContext.current.assets
     val fonts = remember { FontFamily(Font("regular.otf", assets), Font("semibold.otf", assets, FontWeight.SemiBold), Font("bold.otf", assets, FontWeight.Bold)) }
     val surface = AuthSurfaces.getValue(state.screen)
@@ -54,9 +62,7 @@ private val BrandFont = staticCompositionLocalOf<FontFamily> { FontFamily.Defaul
                         "sms" -> Sms(state, onEvent)
                         "document" -> Document(state, onEvent)
                         "account" -> Account(state, onEvent)
-                        "notifications" -> Notifications(state, onEvent)
                         "withdraw" -> Withdraw(state, onEvent)
-                        "history" -> History(state, onEvent)
                         "member" -> Member(state, onEvent)
                         else -> Status(state, onEvent)
                     }
@@ -178,30 +184,6 @@ private val BrandFont = staticCompositionLocalOf<FontFamily> { FontFamily.Defaul
     Action("고객센터", !s.busy && s.supportAvailable, event = AuthEvent(AuthAction.SUPPORT), onEvent = emit)
     Action("고수 모드 · 후속 단계", false, event = AuthEvent(AuthAction.OPEN), onEvent = emit)
     Copy("고수는 필수정보 입력·신청 후 즉시 활성화합니다. 자격 인증 배지는 별도 확인 전 표시하지 않습니다.", 12, color = DesignTokens.muted)
-}
-private val NotificationLabels = listOf("advertising" to "광고 알림", "chat" to "채팅 알림", "comment" to "댓글 알림", "quote" to "신규 견적 알림", "inquiry" to "신규 문의/제안 알림")
-@Composable private fun Notifications(s: AuthState, emit: (AuthEvent) -> Unit) {
-    Heading("앱 푸시"); Copy(AuthSurfaces.getValue(s.screen).body)
-    Copy("OS 알림 권한: ${s.osPermission}", 12, color = DesignTokens.muted)
-    Action("OS 알림 설정 열기", event = AuthEvent(AuthAction.OPEN_OS_SETTINGS), onEvent = emit)
-    NotificationLabels.forEach { (key, title) ->
-        Row(Modifier.fillMaxWidth().heightIn(min = 56.dp), verticalAlignment = Alignment.CenterVertically) {
-            Copy(title, bold = true, modifier = Modifier.weight(1f))
-            // An absent preferences payload (failed fetch) must not render as "all off" or accept a PATCH.
-            Switch(s.notifications[key] == true, { emit(AuthEvent(AuthAction.CHANGE_NOTIFICATION, key, it.toString())) }, enabled = !s.busy && s.notifications.isNotEmpty() && (key != "advertising" || s.marketingConsented),
-                colors = SwitchDefaults.colors(checkedThumbColor = DesignTokens.navy, checkedTrackColor = DesignTokens.lime, uncheckedThumbColor = DesignTokens.navy, uncheckedTrackColor = DesignTokens.track, uncheckedBorderColor = DesignTokens.muted), modifier = Modifier.semantics { contentDescription = title })
-        }
-    }
-    if (s.notifications.isNotEmpty()) Panel("마케팅 정보 수신 동의: ${if (s.marketingConsented) "동의" else "미동의"}\n광고알림 OFF만으로 동의가 철회되지 않습니다. 철회는 아래 동의 내역에서 별도로 진행하세요.")
-    Action("동의 내역·철회", event = AuthEvent(AuthAction.OPEN, AuthScreen.CONSENT_HISTORY.name), onEvent = emit)
-}
-@Composable private fun History(s: AuthState, emit: (AuthEvent) -> Unit) {
-    Heading("내 동의 내역"); Copy(AuthSurfaces.getValue(s.screen).body)
-    // Only an actually loaded, empty consent list may read as "no records"; a failed fetch already shows its error.
-    if (s.records.isEmpty() && s.error.isEmpty() && !s.busy) Panel("표시할 동의 내역이 없습니다.")
-    s.records.forEach { Panel("${it.title}\n버전 ${it.version} · ${it.status}\n${it.recordedAt}") }
-    Action("마케팅 동의 철회", s.marketingConsented && !s.busy, event = AuthEvent(AuthAction.OPEN, AuthScreen.CONSENT_WITHDRAW_CONFIRM.name), onEvent = emit)
-    Action("마케팅 동의문 열람", event = AuthEvent(AuthAction.OPEN_DOCUMENT, AuthDocumentKind.MARKETING.name), onEvent = emit)
 }
 @Composable private fun Withdraw(s: AuthState, emit: (AuthEvent) -> Unit) {
     val f = AuthSurfaces.getValue(s.screen)

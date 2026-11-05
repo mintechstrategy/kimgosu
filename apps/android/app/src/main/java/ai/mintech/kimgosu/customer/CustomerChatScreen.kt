@@ -33,7 +33,10 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
+import ai.mintech.kimgosu.chat.ChatMediaGalleryScreen
+import ai.mintech.kimgosu.chat.GalleryCopy
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -375,6 +378,11 @@ fun CustomerChatScreen(
         }
     }
     LaunchedEffect(ledgerId) { model.refresh(ledgerId) }
+    var galleryOpen by rememberSaveable { mutableStateOf(false) }
+    if (galleryOpen) {
+        ChatMediaGalleryScreen(ledgerId = ledgerId, onClose = { galleryOpen = false })
+        return
+    }
     CustomerChatContent(
         expertNickname = expertNickname,
         state = model.state,
@@ -389,6 +397,7 @@ fun CustomerChatScreen(
         onRequestCancel = { reason, detail -> scope.launch { model.requestCancel(ledgerId, reason, detail) } },
         onAcceptCancel = { scope.launch { model.acceptCancel(ledgerId) } },
         onWriteReview = { onWriteReview(ledgerId, expertNickname) },
+        onOpenGallery = { galleryOpen = true },
         onBack = onBack,
     )
 }
@@ -408,6 +417,7 @@ fun CustomerChatContent(
     onRequestCancel: (String, String) -> Unit,
     onAcceptCancel: () -> Unit,
     onWriteReview: () -> Unit,
+    onOpenGallery: () -> Unit,
     onBack: () -> Unit,
 ) {
     var draft by remember { mutableStateOf("") }
@@ -419,6 +429,7 @@ fun CustomerChatContent(
                 ExpertCopy(expertNickname.ifBlank { "고수" } + " 님과의 거래", Modifier.padding(top = 2.dp), 19, bold = true)
             }
             TextButton(onClick = onBack, modifier = Modifier.heightIn(min = 48.dp).testTag("customer-chat-back")) { ExpertCopy("뒤로") }
+            TextButton(onClick = onOpenGallery, modifier = Modifier.heightIn(min = 48.dp).testTag("customer-chat-gallery-entry")) { ExpertCopy(GalleryCopy.ENTRY) }
         }
         when (state) {
             CustomerChatState.Loading -> ExpertLoading()

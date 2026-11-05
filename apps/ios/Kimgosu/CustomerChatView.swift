@@ -304,8 +304,18 @@ struct KGCustomerChatView: View {
     @State private var cancelSheet = false
     @State private var cancelReason = kgCancelReasons[0].code
     @State private var cancelDetail = ""
+    @State private var galleryOpen = false
 
     var body: some View {
+        if galleryOpen {
+            KGChatMediaGalleryView(ledgerId: ledgerId, onClose: { galleryOpen = false })
+                .background(Color.white)
+        } else {
+            chatBody
+        }
+    }
+
+    private var chatBody: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
@@ -315,6 +325,12 @@ struct KGCustomerChatView: View {
                 Spacer()
                 Button("뒤로") { onBack() }.frame(minHeight: 44).accessibilityIdentifier("customer-chat-back")
             }.padding(.horizontal, 20).padding(.top, 8)
+            Button(KGGalleryCopy.entry) { galleryOpen = true }
+                .font(.custom("Pretendard-SemiBold", size: KGGalleryTokens.body, relativeTo: .body))
+                .foregroundStyle(DesignTokens.navy)
+                .frame(minHeight: KGGalleryTokens.minTouch)
+                .padding(.horizontal, 20)
+                .accessibilityIdentifier("customer-chat-gallery-entry")
             content
         }
         .background(Color.white)
