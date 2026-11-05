@@ -246,24 +246,90 @@ struct KGCustomerChatView: View {
     let onBack: () -> Void
     let onWriteReview: (String, String) -> Void
     @StateObject private var model = KGCustomerChatModel()
+    @StateObject private var reportModel = KGChatReportModel(gateway: KGUnavailableReportBlockGateway())
+    @StateObject private var blockModel = KGChatBlockConfirmModel(gateway: KGUnavailableReportBlockGateway())
+    @StateObject private var blockedModel = KGChatBlockedModel(gateway: KGUnavailableReportBlockGateway())
     @State private var draft = ""
     @State private var pickedPhoto: PhotosPickerItem?
+    @State private var reportOpen = false
+    @State private var blockOpen = false
+    @State private var blockedSubject: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    customerCopy("채팅", size: 12, color: DesignTokens.muted).accessibilityIdentifier("customer-chat-title")
-                    customerCopy((expertNickname.isEmpty ? "고수" : expertNickname) + " 님과의 거래", size: 19, bold: true)
+        Group {
+            if blockedSubject != nil {
+                KGChatBlockedView(model: blockedModel,
+                                  ledgerId: ledgerId,
+                                  onReport: { reportOpen = true },
+                                  onBackToList: onBack,
+                                  onSupport: nil)
+                    .task { await blockedModel.load(ledgerId: ledgerId, subject: expertNickname, blockedByMe: true) }
+            } else {
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            customerCopy("채팅", size: 12, color: DesignTokens.muted).accessibilityIdentifier("customer-chat-title")
+                            customerCopy((expertNickname.isEmpty ? "고수" : expertNickname) + " 님과의 거래", size: 19, bold: true)
+                        }
+                        Spacer()
+                        Menu {
+                            Button(KGReportBlockStrings.bEntry) { blockOpen = true }
+                            Button(KGReportBlockStrings.rEntry) { reportOpen = true }
+                        } label: {
+                            customerCopy("더보기").frame(minHeight: 44)
+                        }
+                        .accessibilityIdentifier("customer-chat-options")
+                        Button("뒤로") { onBack() }.frame(minHeight: 44).accessibilityIdentifier("customer-chat-back")
+                    }.padding(.horizontal, 20).padding(.top, 8)
+                    content
                 }
-                Spacer()
-                Button("뒤로") { onBack() }.frame(minHeight: 44).accessibilityIdentifier("customer-chat-back")
-            }.padding(.horizontal, 20).padding(.top, 8)
-            content
+                .background(Color.white)
+            }
         }
-        .background(Color.white)
         .task(id: ledgerId) { model.refresh(ledgerId: ledgerId) }
+        .sheet(isPresented: $reportOpen) {
+            KGChatReportSheet(model: reportModel, ledgerId: ledgerId,
+                              onClose: closeReport,
+                              onDone: { reportOpen = false; model.refresh(ledgerId: ledgerId) },
+                              onDiscard: { reportOpen = false },
+                              onBackToList: { reportOpen = false; onBack() })
+                .task { await reportModel.load(ledgerId: ledgerId, subject: expertNickname) }
+                .interactiveDismissDisabled()
+        }
+        .sheet(isPresented: $blockOpen) {
+            KGChatBlockConfirmDialog(model: blockModel, ledgerId: ledgerId,
+                                     onCancel: { blockOpen = false },
+                                     onBackToList: { blockOpen = false; onBack() })
+                .task {
+                    if await blockModel.load(ledgerId: ledgerId, subject: expertNickname) {
+                        blockOpen = false
+                        blockedSubject = expertNickname
+                    }
+                }
+                .interactiveDismissDisabled()
+        }
+        .onChange(of: blockModel.blockedConfirmed) { _, confirmed in
+            if confirmed {
+                blockOpen = false
+                blockedSubject = expertNickname
+            }
+        }
+        .onChange(of: blockedModel.restored) { _, restored in
+            if restored {
+                blockedSubject = nil
+                model.refresh(ledgerId: ledgerId)
+            }
+        }
     }
+
+    private func closeReport() {
+        switch reportModel.state {
+        case .review: reportModel.edit()
+        case .discard: reportModel.keepEditing()
+        default: if !reportModel.requestDiscard() { reportOpen = false }
+        }
+    }
+
 
     @ViewBuilder private var content: some View {
         switch model.state {

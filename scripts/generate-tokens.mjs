@@ -9,14 +9,18 @@ const tokens = JSON.parse(readFileSync(join(root, 'design/tokens.json'), 'utf8')
 
 const hex = /^#[0-9a-fA-F]{6}$/;
 for (const [name, token] of Object.entries(tokens.color)) {
-  for (const [platform, value] of Object.entries(token)) {
+  for (const value of [token.value, token.web].filter(Boolean)) {
     if (!hex.test(value)) {
-      throw new Error(`color.${name}.${platform}: expected #RRGGBB, got ${value}`);
+      throw new Error(`color.${name}: expected #RRGGBB, got ${value}`);
     }
   }
 }
 
 const kebab = (name) => name.replace(/[A-Z]/g, (c) => '-' + c.toLowerCase());
+const scale = (group) => Object.entries(group).filter(([name]) => !name.startsWith('_'));
+// "2xl" is not an identifier on either platform.
+const ident = (name) => (name === '2xl' ? 'xxl' : name);
+const cap = (name) => name[0].toUpperCase() + name.slice(1);
 const web = (token) => token.web ?? token.value;
 const channels = (value) => [1, 3, 5].map((i) => parseInt(value.slice(i, i + 2), 16));
 const header = (comment) => `${comment} Generated from design/tokens.json by scripts/generate-tokens.mjs — do not edit.\n`;
@@ -40,6 +44,14 @@ const swift = [
     const [r, g, b] = channels(token.value);
     return `    static let ${name} = Color(red: ${r} / 255, green: ${g} / 255, blue: ${b} / 255)`;
   }),
+  '',
+  ...scale(tokens.space).map(([name, token]) => `    static let space${cap(ident(name))}: CGFloat = ${token.value}`),
+  '',
+  ...scale(tokens.type).map(([name, token]) => `    static let type${cap(name)}Size: CGFloat = ${token.size}`),
+  '',
+  ...scale(tokens.radius).map(([name, token]) => `    static let radius${cap(name)}: CGFloat = ${token.value}`),
+  '',
+  `    static let touchIosMinPt: CGFloat = ${tokens.touch.iosMinPt}`,
   '}',
   '',
 ].join('\n');
@@ -49,9 +61,19 @@ const kotlin = [
   'package ai.mintech.kimgosu.ui',
   '',
   'import androidx.compose.ui.graphics.Color',
+  'import androidx.compose.ui.unit.dp',
+  'import androidx.compose.ui.unit.sp',
   '',
   'object DesignTokens {',
   ...Object.entries(tokens.color).map(([name, token]) => `    val ${name} = Color(0xFF${token.value.slice(1).toUpperCase()})`),
+  '',
+  ...scale(tokens.space).map(([name, token]) => `    val space${cap(ident(name))} = ${token.value}.dp`),
+  '',
+  ...scale(tokens.type).map(([name, token]) => `    val type${cap(name)}Size = ${token.size}.sp`),
+  '',
+  ...scale(tokens.radius).map(([name, token]) => `    val radius${cap(name)} = ${token.value}.dp`),
+  '',
+  `    const val touchAndroidMinDp = ${tokens.touch.androidMinDp}`,
   '}',
   '',
 ].join('\n');

@@ -26,6 +26,8 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
@@ -309,6 +311,12 @@ fun CustomerChatScreen(
     val context: Context = LocalContext.current.applicationContext
     val model = remember(ledgerId) { CustomerChatModel(MembershipHttp(context), SecureSession(context)) }
     val scope = rememberCoroutineScope()
+    val gateway: ReportBlockGateway = remember { UnavailableReportBlockGateway }
+    val reportModel = remember(ledgerId) { ChatReportModel(gateway) }
+    val blockModel = remember(ledgerId) { ChatBlockConfirmModel(gateway) }
+    val blockedModel = remember(ledgerId) { ChatBlockedModel(gateway) }
+    var overlay by remember(ledgerId) { mutableStateOf<ChatSafetyOverlay>(ChatSafetyOverlay.None) }
+    val subject = expertNickname.ifBlank { "" }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) scope.launch {
             val photo = withContext(Dispatchers.IO) { readPhoto(context, uri) }
@@ -316,20 +324,95 @@ fun CustomerChatScreen(
         }
     }
     LaunchedEffect(ledgerId) { model.refresh(ledgerId) }
-    CustomerChatContent(
-        expertNickname = expertNickname,
-        state = model.state,
-        sending = model.sending || model.sendingPhoto,
-        actionBusy = model.actionBusy,
-        actionError = model.actionError,
-        onRetry = { scope.launch { model.refresh(ledgerId) } },
-        onSend = { text -> scope.launch { model.send(ledgerId, text) } },
-        onPickPhoto = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
-        onAccept = { quote -> scope.launch { model.respondQuote(ledgerId, quote, "accept") } },
-        onComplete = { quote -> scope.launch { model.confirmComplete(ledgerId, quote) } },
-        onWriteReview = { onWriteReview(ledgerId, expertNickname) },
-        onBack = onBack,
-    )
+    LaunchedEffect(overlay) {
+        when (val current = overlay) {
+            is ChatSafetyOverlay.Report -> reportModel.load(ledgerId, current.subject)
+            is ChatSafetyOverlay.Block -> if (blockModel.load(ledgerId, current.subject)) {
+                overlay = ChatSafetyOverlay.Blocked(current.subject)
+            }
+            is ChatSafetyOverlay.Blocked -> blockedModel.load(ledgerId, current.subject, blockedByMe = true)
+            ChatSafetyOverlay.None -> Unit
+        }
+    }
+    LaunchedEffect(blockModel.blockedConfirmed) {
+        if (blockModel.blockedConfirmed) overlay = ChatSafetyOverlay.Blocked(subject)
+    }
+    LaunchedEffect(blockedModel.restored) {
+        if (blockedModel.restored) {
+            overlay = ChatSafetyOverlay.None
+            model.refresh(ledgerId)
+        }
+    }
+    if (overlay is ChatSafetyOverlay.Blocked) {
+        ChatBlockedScreen(
+            model = blockedModel,
+            onReport = { overlay = ChatSafetyOverlay.Report(subject) },
+            onSupport = null,
+            onBackToList = onBack,
+            onRetry = { scope.launch { blockedModel.retryLoad() } },
+            onRetryHistory = { scope.launch { blockedModel.retryHistory() } },
+            onUnblock = { blockedModel.askUnblock() },
+            onUnblockConfirm = { scope.launch { blockedModel.unblock() } },
+            onUnblockCancel = { blockedModel.cancelUnblock() },
+            onCheckResult = { scope.launch { blockedModel.checkResult() } },
+        )
+    } else {
+        CustomerChatContent(
+            expertNickname = expertNickname,
+            state = model.state,
+            sending = model.sending || model.sendingPhoto,
+            actionBusy = model.actionBusy,
+            actionError = model.actionError,
+            onRetry = { scope.launch { model.refresh(ledgerId) } },
+            onSend = { text -> scope.launch { model.send(ledgerId, text) } },
+            onPickPhoto = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+            onAccept = { quote -> scope.launch { model.respondQuote(ledgerId, quote, "accept") } },
+            onComplete = { quote -> scope.launch { model.confirmComplete(ledgerId, quote) } },
+            onWriteReview = { onWriteReview(ledgerId, expertNickname) },
+            onBack = onBack,
+            onReport = { overlay = ChatSafetyOverlay.Report(subject) },
+            onBlock = { overlay = ChatSafetyOverlay.Block(subject) },
+        )
+    }
+    if (overlay is ChatSafetyOverlay.Report) {
+        ChatReportSheet(
+            model = reportModel,
+            ledgerId = ledgerId,
+            onReasonChange = reportModel::onReasonChange,
+            onReview = reportModel::review,
+            onEdit = reportModel::edit,
+            onSubmit = { scope.launch { reportModel.submit(ledgerId) } },
+            onRetry = {
+                reportModel.retry()
+                scope.launch { reportModel.submit(ledgerId) }
+            },
+            onCheckResult = { scope.launch { reportModel.checkResult(ledgerId) } },
+            onClose = {
+                when (reportModel.state) {
+                    is ReportSheetState.Review -> reportModel.edit()
+                    is ReportSheetState.Discard -> reportModel.keepEditing()
+                    else -> if (!reportModel.requestDiscard()) overlay = ChatSafetyOverlay.None
+                }
+            },
+            onDone = {
+                overlay = ChatSafetyOverlay.None
+                scope.launch { model.refresh(ledgerId) }
+            },
+            onDiscard = { overlay = ChatSafetyOverlay.None },
+            onKeepEdit = reportModel::keepEditing,
+            onBackToList = { overlay = ChatSafetyOverlay.None; onBack() },
+        )
+    }
+    if (overlay is ChatSafetyOverlay.Block) {
+        ChatBlockConfirmDialog(
+            model = blockModel,
+            onConfirm = { scope.launch { blockModel.confirm(ledgerId) } },
+            onRetry = { scope.launch { blockModel.confirm(ledgerId) } },
+            onCheckResult = { scope.launch { blockModel.checkResult(ledgerId) } },
+            onCancel = { overlay = ChatSafetyOverlay.None },
+            onBackToList = { overlay = ChatSafetyOverlay.None; onBack() },
+        )
+    }
 }
 
 @Composable
@@ -346,13 +429,31 @@ fun CustomerChatContent(
     onComplete: (CustomerQuote) -> Unit,
     onWriteReview: () -> Unit,
     onBack: () -> Unit,
+    onReport: () -> Unit = {},
+    onBlock: () -> Unit = {},
 ) {
     var draft by remember { mutableStateOf("") }
+    var optionsOpen by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().background(Color.White).safeDrawingPadding().testTag("customer-chat")) {
         Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 ExpertCopy("채팅", size = 12, color = DesignTokens.muted)
                 ExpertCopy(expertNickname.ifBlank { "고수" } + " 님과의 거래", Modifier.padding(top = 2.dp), 19, bold = true)
+            }
+            Box {
+                TextButton(onClick = { optionsOpen = true }, modifier = Modifier.heightIn(min = 48.dp).testTag("customer-chat-options")) {
+                    ExpertCopy("더보기")
+                }
+                DropdownMenu(expanded = optionsOpen, onDismissRequest = { optionsOpen = false }) {
+                    DropdownMenuItem(text = { ExpertCopy(ReportBlockStrings.B_ENTRY) }, onClick = {
+                        optionsOpen = false
+                        onBlock()
+                    })
+                    DropdownMenuItem(text = { ExpertCopy(ReportBlockStrings.R_ENTRY) }, onClick = {
+                        optionsOpen = false
+                        onReport()
+                    })
+                }
             }
             TextButton(onClick = onBack, modifier = Modifier.heightIn(min = 48.dp).testTag("customer-chat-back")) { ExpertCopy("뒤로") }
         }
