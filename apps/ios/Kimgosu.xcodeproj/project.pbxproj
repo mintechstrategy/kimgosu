@@ -39,7 +39,6 @@ D00000000000000000000002 = {isa = PBXBuildFile; fileRef = D100000000000000000000
 		F00000000000000000000009 = {isa = PBXBuildFile; fileRef = F10000000000000000000009; };
 		F00000000000000000000011 = {isa = PBXBuildFile; fileRef = F10000000000000000000011; };
 		F00000000000000000000010 = {isa = PBXBuildFile; fileRef = F10000000000000000000010; };
-		F00000000000000000000011 = {isa = PBXBuildFile; fileRef = F10000000000000000000011; };
 		F00000000000000000000012 = {isa = PBXBuildFile; fileRef = F10000000000000000000012; };
 		F00000000000000000000013 = {isa = PBXBuildFile; fileRef = F10000000000000000000013; };
 		FA00000000000000000001 = {isa = PBXBuildFile; fileRef = FB00000000000000000001; };
@@ -48,6 +47,7 @@ D00000000000000000000002 = {isa = PBXBuildFile; fileRef = D100000000000000000000
 		FD00000000000000000004 = {isa = PBXBuildFile; fileRef = FD00000000000000000002; };
 		A00000000000000000000070 = {isa = PBXBuildFile; fileRef = A10000000000000000000070; };
 		FA00000000000000000002 = {isa = PBXBuildFile; fileRef = FB00000000000000000002; };
+		FE00000000000000000002 = {isa = PBXBuildFile; fileRef = FE00000000000000000001; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -89,7 +89,7 @@ D10000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = folder; 
 		F10000000000000000000007 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Kimgosu/CustomerExpertView.swift; sourceTree = "<group>"; };
 		F10000000000000000000008 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Kimgosu/CustomerChatView.swift; sourceTree = "<group>"; };
 		F10000000000000000000009 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Kimgosu/CustomerReviewView.swift; sourceTree = "<group>"; };
-		F10000000000000000000011 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Kimgosu/NotificationsView.swift; sourceTree = "<group>"; };
+		FE00000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Kimgosu/NotificationsView.swift; sourceTree = "<group>"; };
 		F10000000000000000000010 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KimgosuUITests/WS53CustomerFlowTests.swift; sourceTree = "<group>"; };
 		F10000000000000000000011 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Kimgosu/AlarmConsentTokens.swift; sourceTree = "<group>"; };
 		F10000000000000000000012 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Kimgosu/AlarmConsentStrings.swift; sourceTree = "<group>"; };
@@ -266,6 +266,7 @@ D10000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = folder; 
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				FE00000000000000000002,
 				A00000000000000000000040 /* Kimgosu/KimgosuApp.swift in Sources */,
 				B00000000000000000000001,
 				B00000000000000000000002,
