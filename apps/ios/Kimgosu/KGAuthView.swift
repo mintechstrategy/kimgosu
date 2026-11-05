@@ -6,6 +6,14 @@ struct KGAuthView: View {
     let onEvent: (KGAuthEvent) -> Void
     private var surface: KGAuthSurface { KGAuthSurfaces[state.screen]! }
     var body: some View {
+        // 알림 설정·동의 화면은 자체 모델과 4상태를 가진 화면이 그린다(WS-87). 나머지 회원 화면은 그대로 둔다.
+        if state.screen == .F4_NOTI || state.screen == .CONSENT_HISTORY {
+            KGAlarmConsentView(start: state.screen == .F4_NOTI ? .notifications : .history) { send(.BACK) }
+        } else {
+            page
+        }
+    }
+    private var page: some View {
         VStack(spacing: 0) {
             HStack {
                 Button { send(.BACK) } label: {
@@ -39,9 +47,7 @@ struct KGAuthView: View {
         case "sms": sms
         case "document": document
         case "account": account
-        case "notifications": notifications
         case "withdraw": withdraw
-        case "history": history
         case "member": member
         default: status
         }
@@ -252,31 +258,6 @@ struct KGAuthView: View {
             action("고객센터", enabled: !state.busy && state.supportAvailable, .SUPPORT)
             action("고수 모드 · 후속 단계", enabled: false, .OPEN)
             kgCopy("고수는 필수정보 입력·신청 후 즉시 활성화합니다. 자격 인증 배지는 별도 확인 전 표시하지 않습니다.", size: 12, color: DesignTokens.muted)
-        }
-    }
-    private var notifications: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            heading("앱 푸시"); kgCopy(surface.body)
-            kgCopy("OS 알림 권한: \(state.osPermission)", size: 12, color: DesignTokens.muted)
-            action("OS 알림 설정 열기", .OPEN_OS_SETTINGS)
-            ForEach(["advertising", "chat", "comment", "quote", "inquiry"], id: \.self) { key in
-                let titles = ["advertising": "광고 알림", "chat": "채팅 알림", "comment": "댓글 알림", "quote": "신규 견적 알림", "inquiry": "신규 문의/제안 알림"]
-                Toggle(titles[key]!, isOn: Binding(get: { state.notifications[key] == true }, set: { send(.CHANGE_NOTIFICATION, key, String($0)) }))
-                    .toggleStyle(KGAuthSwitchStyle(label: titles[key]!)).disabled(state.busy || (key == "advertising" && !state.marketingConsented))
-            }
-            panel("마케팅 정보 수신 동의: \(state.marketingConsented ? "동의" : "미동의")\n광고알림 OFF만으로 동의가 철회되지 않습니다. 철회는 아래 동의 내역에서 별도로 진행하세요.")
-            action("동의 내역·철회", .OPEN, key: "CONSENT_HISTORY")
-        }
-    }
-    private var history: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            heading("내 동의 내역"); kgCopy(surface.body)
-            if state.records.isEmpty { panel("표시할 동의 내역이 없습니다.") }
-            ForEach(Array(state.records.enumerated()), id: \.offset) { _, record in
-                panel("\(record.title)\n버전 \(record.version) · \(record.status)\n\(record.recordedAt)")
-            }
-            action("마케팅 동의 철회", enabled: state.marketingConsented && !state.busy, .OPEN, key: "CONSENT_WITHDRAW_CONFIRM")
-            action("마케팅 동의문 열람", .OPEN_DOCUMENT, key: "MARKETING")
         }
     }
     private var withdraw: some View {
