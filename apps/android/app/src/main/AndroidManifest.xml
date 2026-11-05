@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- 알림 설정 화면이 OS 권한 상태(허용/거부/미결정)와 로컬 네트워크 상태를 구분해 안내하기 위해 선언한다.
+         선언만으로 시스템 권한 팝업이 뜨지 않으며, 이 화면은 팝업을 자동 요청하지 않는다. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <application android:label="${appLabel}" android:icon="@drawable/app_icon" android:theme="@style/AppTheme" android:allowBackup="false" android:supportsRtl="true" android:usesCleartextTraffic="false">
         <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTop">
             <intent-filter>

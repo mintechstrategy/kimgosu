@@ -1,0 +1,119 @@
+{
+  "ws": "WS-87",
+  "status": "DONE",
+  "summary": "설정·알림 동의 스펙(design/settings-alarm-consent)을 AOS(Compose)·iOS(SwiftUI)에 동시 구현했다. F4_NOTI·CONSENT_HISTORY·CONSENT_WITHDRAW_CONFIRM·MARKETING_DOC·PERMISSION_NOTIFICATIONS 5개 화면을 각 4상태(로딩·빈·오류·네트워크 실패)로 만들고, 서버 저장값 초기화·조작 후 재조회 확정·철회 시 동의/광고OFF/철회이력 3중 확인을 코드로 강제했다. 문구는 screens.md 89개 전체를 대조 스크립트로 PASS, 화면 파일 하드코딩 색·크기는 0건 PASS, 두 앱 빌드 성공. 실행·시뮬레이터 검증은 카드 지시대로 QA 슬롯 몫으로 남겼다(NOT_RUN).",
+  "branch": "ws/WS-87",
+  "baseSha": "5bd1dc90b89964d8e9b1d343864fa9e47ee464f8",
+  "commits": "없음(커밋·push 금지 지시 준수)",
+  "executedAt": "2026-11-05T09:28:48+09:00",
+  "changedFiles": [
+    "apps/android/app/src/main/java/ai/mintech/kimgosu/settings/AlarmConsentModel.kt — 신규. 선호 조회/저장, 동의 이력 조회, 마케팅 철회, 문서 조회, OS 권한 읽기. 쓰기 1건 처리중 다른 쓰기 잠금, 저장 후 재조회 일치 확인, 409는 재조회 후 사용자 재조작, IOException은 결과 불명(Uncertain)",
+    "apps/android/app/src/main/java/ai/mintech/kimgosu/settings/AlarmConsentScreen.kt — 신규. F4_NOTI·CONSENT_HISTORY·MARKETING_DOC + 철회 모달 + 권한 모달, 각 4상태",
+    "apps/android/app/src/main/java/ai/mintech/kimgosu/settings/AlarmConsentStrings.kt — 신규. screens.md 문구 89개 + 값 삽입 함수 4개",
+    "apps/android/app/src/main/java/ai/mintech/kimgosu/settings/ConsentTokens.kt — 신규. design/tokens.json confirmed 키의 색·간격·타이포·radius·touch 별칭. 수치가 존재하는 유일한 파일",
+    "apps/android/app/src/main/java/ai/mintech/kimgosu/auth/ui/KGAuthView.kt — F4_NOTI/CONSENT_HISTORY 진입 시 새 화면을 그리고, 대체된 옛 알림·이력 컴포저블(Notifications/History)과 분기 2줄 제거. 나머지 회원 화면 무변경",
+    "apps/android/app/src/main/AndroidManifest.xml — POST_NOTIFICATIONS, ACCESS_NETWORK_STATE 선언 추가(OS 권한 허용/거부/미결정 구분, 전송 전 오프라인 판정). 선언만으로 권한 팝업은 뜨지 않으며 이 화면은 자동 요청하지 않음",
+    "apps/ios/Kimgosu/AlarmConsentView.swift — 신규. 같은 5화면 + 2모달, 모델 포함",
+    "apps/ios/Kimgosu/AlarmConsentStrings.swift — 신규. Android와 동일 문구",
+    "apps/ios/Kimgosu/AlarmConsentTokens.swift — 신규. Android 토큰과 같은 이름·값",
+    "apps/ios/Kimgosu/KGAuthView.swift — F4_NOTI/CONSENT_HISTORY 진입 시 KGAlarmConsentView 렌더, 옛 notifications/history 뷰 제거, 나머지 본문은 page로 분리해 그대로",
+    "apps/ios/Kimgosu.xcodeproj/project.pbxproj — 신규 Swift 3개 파일 등록(F1000…0011~0013, Sources 포함)",
+    "scripts/alarm-consent-strings-check.mjs — 신규. screens.md ↔ 양 앱 문자열 파일 대조기",
+    "scripts/alarm-consent-hardcode-check.mjs — 신규. 화면 파일의 직접 색·dp·sp·여백·프레임·투명도 검사기"
+  ],
+  "acceptance": {
+    "두 앱 빌드 성공": {
+      "status": "PASS",
+      "android": "cd apps/android && JAVA_HOME=…/jdk17/jdk-17.0.21+9/Contents/Home python3 build.py :app:assembleDevDebug → BUILD SUCCESSFUL (apk 15,514,737B, app-dev-debug.apk)",
+      "androidTestCompile": ":app:compileDevDebugAndroidTestKotlin → BUILD SUCCESSFUL (기존 계측 테스트 소스 회귀 없음)",
+      "ios": "cd apps/ios && xcodebuild -project Kimgosu.xcodeproj -scheme Kimgosu -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build → ** BUILD SUCCEEDED **",
+      "note": "저장소의 apps/android/build.py는 .local-toolchains/jdk17 아래 JDK home이 정확히 1개일 때만 동작한다. 이 머신에는 2개라 JAVA_HOME을 명시해 실행했다(스크립트는 수정하지 않음)."
+    },
+    "문구 대조 스크립트 PASS": {
+      "status": "PASS",
+      "command": "node scripts/alarm-consent-strings-check.mjs",
+      "output": "PASS — screens.md 문구 89개가 Android AlarmConsentStrings.kt와 iOS AlarmConsentStrings.swift에 그대로 있습니다.",
+      "covers": "공통 8 + F4_NOTI 30 + CONSENT_HISTORY 22 + 철회 모달 11 + MARKETING_DOC 11 + PERMISSION_NOTIFICATIONS 7 = 89행(값 삽입 4종 H_VERSION·H_RECORDED·D_VERSION·D_EFFECTIVE는 함수 형태로 별도 검사)",
+      "specPath": "/Users/mintech-mac/hermes/dev-profile/shared/projects/kimgosu/design/settings-alarm-consent/screens.md (작업 트리에 스펙 사본을 만들지 않고 원본을 읽음)"
+    },
+    "하드코딩 grep 0건 PASS": {
+      "status": "PASS",
+      "command": "node scripts/alarm-consent-hardcode-check.mjs",
+      "output": "PASS — 화면·문자열 파일 5개에 직접 색·크기 수치 0건. 값은 토큰 파일에만 있음",
+      "rules": [
+        "직접 색상(Color(0x/red:))",
+        "직접 dp",
+        "직접 sp",
+        "size: 숫자",
+        "padding(숫자)",
+        "spacing: 숫자",
+        "frame(...숫자)",
+        "strokeWidth=숫자",
+        "opacity(숫자)",
+        "font(.system(size:숫자))"
+      ],
+      "tokens": "apps/android/.../settings/ConsentTokens.kt, apps/ios/Kimgosu/AlarmConsentTokens.swift — 두 파일만 수치 보유"
+    },
+    "상태 4종 코드 위치 기록": {
+      "status": "PASS",
+      "android": {
+        "F4_NOTI": "AlarmConsentScreen.kt:132(로딩) / :134(빈) / :138(오류) / :143(네트워크 실패)",
+        "CONSENT_HISTORY": "AlarmConsentScreen.kt:245(로딩) / :257(빈) / :247(오류) / :251(네트워크 실패)",
+        "MARKETING_DOC": "AlarmConsentScreen.kt:296(로딩) / :297(빈) / :298(오류) / :299(네트워크 실패)",
+        "PERMISSION_NOTIFICATIONS": "AlarmConsentScreen.kt:375(로딩) / :392(빈·미확인) / :394(오류) / :385(오프라인 부가 안내 P_OFFLINE)",
+        "CONSENT_WITHDRAW_CONFIRM": "AlarmConsentScreen.kt:333(조회중 H_LOADING) / :347(처리중 W_LOADING) / Enum Withdraw.Empty·Unavailable(빈) / :355(오류) / :357(네트워크 실패) / Uncertain(W_CHECK)"
+      },
+      "ios": {
+        "F4_NOTI": "AlarmConsentView.swift:446(로딩) / :448(빈) / :451(오류) / :455(네트워크 실패)",
+        "CONSENT_HISTORY": "AlarmConsentView.swift:540(로딩) / :550(빈) / :542(오류) / :545(네트워크 실패)",
+        "MARKETING_DOC": "AlarmConsentView.swift:597(로딩) / :598(빈) / :599(오류) / :600(네트워크 실패)",
+        "PERMISSION_NOTIFICATIONS": "AlarmConsentView.swift:675(로딩) / :688(빈·미확인) / :690(오류) / :681(오프라인 부가 안내 P_OFFLINE)",
+        "CONSENT_WITHDRAW_CONFIRM": "AlarmConsentView.swift:630(조회중) / :640(처리중) / .empty·.unavailable(빈) / :647(오류) / :650(네트워크 실패) / .uncertain(W_CHECK)"
+      }
+    },
+    "실행 검증은 QA 슬롯에서": {
+      "status": "NOT_RUN",
+      "reason": "카드 지시(레인은 빌드까지만)와 웨이브 규칙상 시뮬레이터·에뮬레이터 실행 금지. 앱 실행·화면 캡처·실제 API/DB 거래·스크린리더 낭독·AOS/iOS 동등성은 QA 슬롯에서 수행한다."
+    }
+  },
+  "implementationNotes": [
+    "F4_NOTI 조회: GET /v1/me/notifications + GET /v1/me/consents를 함께 읽는다. 선호 5키가 모두 boolean이고 version이 0 이상일 때만 READY, 하나라도 누락/타입 불일치면 EMPTY(다섯 OFF를 그리지 않음).",
+    "저장: PATCH /v1/me/notifications(expectedVersion) → 즉시 GET 재조회 → 같은 키 값이 요청값과 일치할 때만 확정·S_SAVED 1회 낭독. 불일치/409는 재조회 후 S_REFRESHED로 사용자가 다시 조작. 실패는 확인된 실패(S_SAVE_ERROR)와 결과 불명(S_UNCERTAIN, 쓰기 잠금+RETRY 재조회)으로 분리.",
+    "전송 전 오프라인: ConnectivityManager/NWPathMonitor로 로컬 네트워크를 먼저 확인해 S_SAVE_OFFLINE/S_OFFLINE로 분류한다. 이 값으로 저장 성공을 만들지 않는다.",
+    "광고 알림: marketing != CONSENTED(미동의·미확인)이면 스위치 비활성 + S_MARKETING_REQUIRED. 서버가 광고 ON·미동의 모순이어도 클라이언트가 OFF로 고치지 않는다.",
+    "철회: 철회 전 최신 동의 재조회(Checking) → W_CONFIRM → POST /v1/me/consents/withdraw {kind:MARKETING} → consents·notifications 재조회 → '현재 미동의 AND 최신 MARKETING 상태 WITHDRAWN AND advertising=false' 3조건이 모두 맞을 때만 완료(H_WITHDRAW_DONE/H_WITHDRAW_EFFECT 영속 표시). 하나라도 어긋나면 W_UNCERTAIN+W_CHECK, W_CHECK는 재조회만 한다.",
+    "OS 권한: Android는 NotificationManager.areNotificationsEnabled + (API33+) POST_NOTIFICATIONS 부여 여부로 허용/거부/미결정 구분, iOS는 UNUserNotificationCenter authorizationStatus로 구분(provisional/ephemeral은 UNKNOWN으로 남겨 허용으로 과장하지 않음). 화면 진입·스위치 조작으로 권한 팝업을 자동 요청하지 않는다.",
+    "MARKETING_DOC: GET /v1/policies/MARKETING(공개) 응답의 status/version/effectiveAt/body만 표시. 404는 D_PREPARING, READY인데 version·effectiveAt 누락은 D_META_MISSING, DRAFT는 D_DRAFT + 초안 원문. 로컬 파일로 READY를 만들지 않는다.",
+    "접근성: 스위치 contentDescription=레이블 + stateDescription(켜짐/꺼짐/저장 중/변경할 수 없음), 제목 heading, 상태·행 오류 liveRegion(Android)/updatesFrequently(iOS), 터치 하한 48dp/44pt, 모달은 Dialog(iOS는 scrim+isModal)로 배경 차단·CANCEL 우선 배치."
+  ],
+  "knownGapsAndRisks": [
+    "BLOCKED(서버 계약): GET /v1/me/consents는 services/backend/src/app.ts:170-176에서 DISTINCT ON(d.kind)로 종류별 최신 1건만 반환한다. 스펙 §5가 요구하는 '이력 연속 목록/복수 건'은 현재 API로는 실제 데이터를 만들 수 없다. 화면은 서버가 준 배열을 그대로 순서대로 그리며(중복 식별자만 제거) 클라이언트가 가짜 이력을 만들지 않는다. 여러 건 이력의 실제 표시 검증은 서버가 이력 배열을 제공한 뒤 가능하다.",
+    "PARTIAL(서버 계약): 스펙 §9는 '마케팅 현재 동의의 확인 여부와 false를 구분'하는 별도 상태를 서버가 제공해야 한다고 요구한다. 현재 계약에는 그 필드가 없어, MARKETING 기록이 없으면 UI는 UNKNOWN(확인할 수 없음)으로 표시하고 미동의로 추정하지 않는다. 서버 응답에 명시적 unknown/확인시각 필드가 추가되면 그대로 매핑하면 된다.",
+    "MARKETING_DOC 진입 경로 두 개 중 회원가입 약관 화면(E2_TERMS)의 '전문 보기'는 기존 문서 뷰를 그대로 둔다(스펙 §7 '기존 폼 계약 변경 금지'). 새 D_* 문서 화면은 이 기능(동의 내역 → 동의문 열람)에서만 쓰인다.",
+    "AndroidManifest에 POST_NOTIFICATIONS/ACCESS_NETWORK_STATE를 선언했다. 선언만으로 런타임 팝업은 뜨지 않지만, 앱 전체 권한 목록이 바뀌는 변경이므로 QA에서 설치·권한 화면을 함께 확인해야 한다.",
+    "AuthModel의 기존 알림/동의 상태 필드와 CHANGE_NOTIFICATION·WITHDRAW_MARKETING 핸들러는 다른 화면·기존 계측 테스트가 참조하므로 삭제하지 않았다. 새 화면은 자체 모델을 쓰므로 이 경로와 상태가 중복 존재한다(동작 충돌은 없음: 새 화면은 AuthModel 상태를 읽지 않음).",
+    "빌드는 Debug(개발 flavor / iOS Simulator) 기준이다. Release/서명 빌드·실기기 설치는 이 레인 범위가 아니며 NOT_RUN."
+  ],
+  "verified": [
+    "node scripts/alarm-consent-strings-check.mjs → PASS (89문구, 양 앱)",
+    "node scripts/alarm-consent-hardcode-check.mjs → PASS (화면·문자열 5파일 하드코딩 0건)",
+    "Android :app:assembleDevDebug → BUILD SUCCESSFUL (APK 생성 확인)",
+    "Android :app:compileDevDebugAndroidTestKotlin → BUILD SUCCESSFUL",
+    "iOS xcodebuild Debug iphonesimulator CODE_SIGNING_ALLOWED=NO → BUILD SUCCEEDED",
+    "Kotlin 신규 파일 컴파일 경고 0건(settings 패키지)"
+  ],
+  "notRun": [
+    "앱 실행·시뮬레이터/에뮬레이터 기동 (웨이브 규칙: 레인은 빌드까지)",
+    "화면 캡처·시각 대조(V01~V03)",
+    "실제 API/DB 거래: 선호 저장·재조회, 철회·이력 반영, 문서 조회 (C02~C04, C08)",
+    "오류 주입·중단·재진입 조작(C05), 계정 전환(C06)",
+    "스크린리더 낭독·접근성 트리·OS 설정 이동(C07)",
+    "AOS/iOS 결과 동등성 QA",
+    "Release/서명 빌드, 실기기 설치"
+  ],
+  "nextActions": [
+    "QA 슬롯: 개발 서버 계정으로 F4_NOTI 5스위치 순서·문구, 저장 후 재조회, 광고 잠금, 4상태 각각 확인",
+    "QA 슬롯: 철회 성공/실패/불명 3경로와 H_WITHDRAW_DONE 영속 표시 확인",
+    "서버 담당: GET /v1/me/consents 이력 배열 제공 여부와 마케팅 '확인 여부' 필드 계약 확정(위 BLOCKED/PARTIAL 해소 조건)"
+  ]
+}
