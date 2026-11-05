@@ -90,7 +90,7 @@ D10000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = folder; 
 		F10000000000000000000008 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Kimgosu/CustomerChatView.swift; sourceTree = "<group>"; };
 		F10000000000000000000009 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Kimgosu/CustomerReviewView.swift; sourceTree = "<group>"; };
 		FE00000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Kimgosu/NotificationsView.swift; sourceTree = "<group>"; };
-		F10000000000000000000010 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KimgosuUITests/WS53CustomerFlowTests.swift; sourceTree = "<group>"; };
+		F10000000000000000000010 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KimgosuUITests/WS52CustomerFlowTests.swift; sourceTree = "<group>"; };
 		F10000000000000000000011 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Kimgosu/AlarmConsentTokens.swift; sourceTree = "<group>"; };
 		F10000000000000000000012 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Kimgosu/AlarmConsentStrings.swift; sourceTree = "<group>"; };
 		F10000000000000000000013 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Kimgosu/AlarmConsentView.swift; sourceTree = "<group>"; };

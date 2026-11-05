@@ -16,38 +16,39 @@ enum DesignTokens {
     static let danger = Color(red: 180 / 255, green: 35 / 255, blue: 50 / 255)
     static let dangerBg = Color(red: 255 / 255, green: 241 / 255, blue: 242 / 255)
 
-    static let spaceXs: CGFloat = 4
-    static let spaceSm: CGFloat = 8
-    static let spaceMd: CGFloat = 12
-    static let spaceLg: CGFloat = 16
-    static let spaceXl: CGFloat = 20
-    static let spaceXxl: CGFloat = 24
-
-    static let typeCaptionSize: CGFloat = 12
-    static let typeBodySize: CGFloat = 14
-    static let typeBodyStrongSize: CGFloat = 14
-    static let typeSubtitleSize: CGFloat = 16
-    static let typeTitleSize: CGFloat = 20
-    static let typeDisplaySize: CGFloat = 34
-
-    static let radiusSm: CGFloat = 6
-    static let radiusMd: CGFloat = 10
-
-    static let touchIosMinPt: CGFloat = 44
     static let space_xs: CGFloat = 4
     static let space_sm: CGFloat = 8
     static let space_md: CGFloat = 12
     static let space_lg: CGFloat = 16
     static let space_xl: CGFloat = 20
     static let space_2xl: CGFloat = 24
+
     static let type_caption: CGFloat = 12
     static let type_body: CGFloat = 14
     static let type_bodyStrong: CGFloat = 14
     static let type_subtitle: CGFloat = 16
     static let type_title: CGFloat = 20
     static let type_display: CGFloat = 34
+
     static let radius_sm: CGFloat = 6
     static let radius_md: CGFloat = 10
+
+
+    static let spaceXs = space_xs
+    static let spaceSm = space_sm
+    static let spaceMd = space_md
+    static let spaceLg = space_lg
+    static let spaceXl = space_xl
+    static let space2xl = space_2xl
+    static let typeCaptionSize = type_caption
+    static let typeBodySize = type_body
+    static let typeBodyStrongSize = type_bodyStrong
+    static let typeSubtitleSize = type_subtitle
+    static let typeTitleSize = type_title
+    static let typeDisplaySize = type_display
+    static let radiusSm = radius_sm
+    static let radiusMd = radius_md
     static let fontFamilyIos = "Pretendard-Regular"
+    static let touchIosMinPt: CGFloat = 44
     static let touchAndroidMinDp: CGFloat = 48
 }

@@ -9,16 +9,10 @@ const tokens = JSON.parse(readFileSync(join(root, 'design/tokens.json'), 'utf8')
 
 const hex = /^#[0-9a-fA-F]{6}$/;
 for (const [name, token] of Object.entries(tokens.color)) {
-<<<<<<< HEAD
-  for (const value of [token.value, token.web].filter(Boolean)) {
-    if (!hex.test(value)) {
-      throw new Error(`color.${name}: expected #RRGGBB, got ${value}`);
-=======
   for (const platform of ['value', 'web']) {
     const value = token[platform];
     if (value !== undefined && !hex.test(value)) {
       throw new Error(`color.${name}.${platform}: expected #RRGGBB, got ${value}`);
->>>>>>> ws/WS-89
     }
   }
 }
@@ -45,6 +39,11 @@ const css = [
   '',
 ].join('\n');
 
+// 화면들이 이미 쓰고 있는 이름을 유지한다. 생성기가 이름을 바꾸면 기존 화면이 전부 깨진다.
+const aliasSpace = Object.keys(tokens.space).filter((n) => !n.startsWith('_')).map((n) => ['space' + cap(n), 'space_' + n]);
+const aliasType = Object.keys(tokens.type).filter((n) => !n.startsWith('_')).map((n) => ['type' + cap(n) + 'Size', 'type_' + n]);
+const aliasRadius = Object.keys(tokens.radius).map((n) => ['radius' + cap(n), 'radius_' + n]);
+
 const swift = [
   header('//'),
   'import SwiftUI',
@@ -55,15 +54,6 @@ const swift = [
     return `    static let ${name} = Color(red: ${r} / 255, green: ${g} / 255, blue: ${b} / 255)`;
   }),
   '',
-<<<<<<< HEAD
-  ...scale(tokens.space).map(([name, token]) => `    static let space${cap(ident(name))}: CGFloat = ${token.value}`),
-  '',
-  ...scale(tokens.type).map(([name, token]) => `    static let type${cap(name)}Size: CGFloat = ${token.size}`),
-  '',
-  ...scale(tokens.radius).map(([name, token]) => `    static let radius${cap(name)}: CGFloat = ${token.value}`),
-  '',
-  `    static let touchIosMinPt: CGFloat = ${tokens.touch.iosMinPt}`,
-=======
   ...Object.entries(tokens.space)
     .filter(([name]) => !name.startsWith('_'))
     .map(([name, token]) => `    static let ${identifier('space', name)}: CGFloat = ${token.value}`),
@@ -74,10 +64,13 @@ const swift = [
   '',
   ...Object.entries(tokens.radius).map(([name, token]) => `    static let ${identifier('radius', name)}: CGFloat = ${token.value}`),
   '',
+  '',
+  ...aliasSpace.map(([a, from]) => `    static let ${a} = ${from}`),
+  ...aliasType.map(([a, from]) => `    static let ${a} = ${from}`),
+  ...aliasRadius.map(([a, from]) => `    static let ${a} = ${from}`),
   `    static let fontFamilyIos = "${tokens.typography.fontFamily.ios}"`,
   `    static let touchIosMinPt: CGFloat = ${tokens.touch.iosMinPt}`,
   `    static let touchAndroidMinDp: CGFloat = ${tokens.touch.androidMinDp}`,
->>>>>>> ws/WS-89
   '}',
   '',
 ].join('\n');
@@ -93,14 +86,6 @@ const kotlin = [
   'object DesignTokens {',
   ...Object.entries(tokens.color).map(([name, token]) => `    val ${name} = Color(0xFF${token.value.slice(1).toUpperCase()})`),
   '',
-<<<<<<< HEAD
-  ...scale(tokens.space).map(([name, token]) => `    val space${cap(ident(name))} = ${token.value}.dp`),
-  '',
-  ...scale(tokens.type).map(([name, token]) => `    val type${cap(name)}Size = ${token.size}.sp`),
-  '',
-  ...scale(tokens.radius).map(([name, token]) => `    val radius${cap(name)} = ${token.value}.dp`),
-  '',
-=======
   ...Object.entries(tokens.space)
     .filter(([name]) => !name.startsWith('_'))
     .map(([name, token]) => `    const val ${identifier('space', name)} = ${token.value}`),
@@ -111,8 +96,15 @@ const kotlin = [
   '',
   ...Object.entries(tokens.radius).map(([name, token]) => `    const val ${identifier('radius', name)} = ${token.value}`),
   '',
+  '',
+  // 화면들이 쓰는 이름은 Dp·TextUnit 타입이어야 한다(예전 손으로 쓴 토큰과 동일).
+  ...Object.entries(tokens.space).filter(([n]) => !n.startsWith('_'))
+    .map(([n, v]) => `    val space${n[0].toUpperCase() + n.slice(1)} = ${v.value}.dp`),
+  ...Object.entries(tokens.type).filter(([n]) => !n.startsWith('_'))
+    .map(([n, v]) => `    val type${n[0].toUpperCase() + n.slice(1)}Size = ${v.size}.sp`),
+  ...Object.entries(tokens.radius)
+    .map(([n, v]) => `    val radius${n[0].toUpperCase() + n.slice(1)} = ${v.value}.dp`),
   `    const val touchIosMinPt = ${tokens.touch.iosMinPt}`,
->>>>>>> ws/WS-89
   `    const val touchAndroidMinDp = ${tokens.touch.androidMinDp}`,
   '}',
   '',

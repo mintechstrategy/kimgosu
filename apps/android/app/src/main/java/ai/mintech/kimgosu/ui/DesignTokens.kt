@@ -20,37 +20,38 @@ object DesignTokens {
     val danger = Color(0xFFB42332)
     val dangerBg = Color(0xFFFFF1F2)
 
-    val spaceXs = 4.dp
-    val spaceSm = 8.dp
-    val spaceMd = 12.dp
-    val spaceLg = 16.dp
-    val spaceXl = 20.dp
-    val spaceXxl = 24.dp
-
-    val typeCaptionSize = 12.sp
-    val typeBodySize = 14.sp
-    val typeBodyStrongSize = 14.sp
-    val typeSubtitleSize = 16.sp
-    val typeTitleSize = 20.sp
-    val typeDisplaySize = 34.sp
-
-    val radiusSm = 6.dp
-    val radiusMd = 10.dp
-
     const val space_xs = 4
     const val space_sm = 8
     const val space_md = 12
     const val space_lg = 16
     const val space_xl = 20
     const val space_2xl = 24
+
     const val type_caption = 12
     const val type_body = 14
     const val type_bodyStrong = 14
     const val type_subtitle = 16
     const val type_title = 20
     const val type_display = 34
+
     const val radius_sm = 6
     const val radius_md = 10
+
+
+    val spaceXs = 4.dp
+    val spaceSm = 8.dp
+    val spaceMd = 12.dp
+    val spaceLg = 16.dp
+    val spaceXl = 20.dp
+    val space2xl = 24.dp
+    val typeCaptionSize = 12.sp
+    val typeBodySize = 14.sp
+    val typeBodyStrongSize = 14.sp
+    val typeSubtitleSize = 16.sp
+    val typeTitleSize = 20.sp
+    val typeDisplaySize = 34.sp
+    val radiusSm = 6.dp
+    val radiusMd = 10.dp
     const val touchIosMinPt = 44
     const val touchAndroidMinDp = 48
 }
